@@ -1,7 +1,7 @@
 import streamlit as st
 
 
-st.set_page_config(page_title="Hello World Counter", page_icon="👋")
+st.set_page_config(page_title="Hello World Counter", page_icon=":wave:")
 
 if "count" not in st.session_state:
     st.session_state.count = 0
