@@ -1,2 +1,4 @@
 streamlit[auth]
 httpx
+pymongo[srv]
+pytest

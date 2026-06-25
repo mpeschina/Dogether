@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+testpaths = ["test"]
+python_files = ["test_*.py"]
+addopts = "--strict-markers --strict-config"
+pythonpath = ["."]
