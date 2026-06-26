@@ -1,6 +1,18 @@
 # Dogether
 
-A small Streamlit app testing Google Login. 
+Dogether is a Streamlit prototype for shared daily and weekly goals. Users sign in
+with Google, add friends by email, approve friend requests, and create shared
+goals where every participant has their own progress and target.
+
+## Features
+
+- Google-authenticated account view with name, email, and completion stats
+- Main shared-goals view with participant progress numbers and progress bars
+- Friend invitations by email with approval/decline notifications
+- Friends view with accepted friends plus incoming and outgoing pending invites
+- Goal creation for accepted friends with daily/weekly schedule classes
+- Per-user target/progress updates and leave-goal behavior
+- JSON persistence with period history for account stats
 
 ## Run locally for development
 
@@ -11,13 +23,11 @@ A small Streamlit app testing Google Login.
 
 ### Setup
 
-The project is in a dev container. 
-Dependencies are installed via the devcontainer.json file.
-Python deps are in requirements.txt
-
+The project is in a dev container. Dependencies are installed via the
+`devcontainer.json` file. Python dependencies are listed in `requirements.txt`.
 
 Create `.streamlit/secrets.toml` with your local Google OIDC credentials and
-persistence settings:
+JSON persistence settings:
 
 ```toml
 [auth]
@@ -44,9 +54,33 @@ saved.
 
 To stop the server, press `Ctrl+C` in the terminal.
 
+## App behavior
+
+Friend invites are stored inside the JSON persistence file. No email is sent.
+When the invited Google email signs in, the pending invite appears in the
+Notifications and Friends views.
+
+Goals can be shared only with accepted friends. After a goal is created, the
+shared description, schedule class, and participant list are immutable. Each
+participant can update only their own current progress and target, or leave the
+goal so it no longer appears in their active list.
+
+Supported schedule classes are:
+
+- `daily`: fulfilled when the daily progress reaches the target
+- `weekly`: fulfilled when the weekly progress reaches the target
+- `daily with X per week`: daily progress resets each day; weekly completion is
+  based on summed daily progress reaching `X * target`
+- `weekly with X per month`: weekly progress resets each Monday; monthly
+  completion is based on summed weekly progress reaching `X * target`
+
+Days start at midnight in `Europe/Berlin`, and weeks start on Monday. Completed
+period history is stored for account stats; there is no per-goal history table
+in this prototype.
+
 ## Tests
 
-Install the requirements and run the pytest suite from the repository root:
+Run the pytest suite from the repository root:
 
 ```bash
 ./run_tests.sh
@@ -54,11 +88,8 @@ Install the requirements and run the pytest suite from the repository root:
 
 ## Persistence
 
-The app stores a counter and text value per authenticated user, keyed by the
-stable OpenID Connect `sub` claim from `st.user`.
-
-Local development defaults to `data/users.json`. Configure persistence in
-`.streamlit/secrets.toml`:
+This prototype intentionally supports only JSON persistence. Local development
+defaults to `data/users.json`, configured through `.streamlit/secrets.toml`:
 
 ```toml
 [persistence]
@@ -66,20 +97,13 @@ backend = "json"
 json_path = "data/users.json"
 ```
 
-To use MongoDB Atlas, switch the same configuration to:
-
-```toml
-[persistence]
-backend = "mongodb"
-mongodb_uri = "mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/"
-mongodb_database = "dogether"
-mongodb_collection = "users"
-```
+The JSON document contains users, friend invites, friendships, goals, and period
+records. The file is written atomically with a temporary file replacement.
 
 ## Deploy on Streamlit Community Cloud
 
-The local `.streamlit/secrets.toml` file is intentionally excluded from Git.
-In the app's **Settings > Secrets**, add:
+The local `.streamlit/secrets.toml` file is intentionally excluded from Git. In
+the app's **Settings > Secrets**, add:
 
 ```toml
 [auth]
@@ -94,5 +118,5 @@ backend = "json"
 json_path = "data/users.json"
 ```
 
-Use the same production callback URL as an authorized redirect URI in the
-Google Cloud OAuth client, then restart the Streamlit app.
+Use the same production callback URL as an authorized redirect URI in the Google
+Cloud OAuth client, then restart the Streamlit app.
