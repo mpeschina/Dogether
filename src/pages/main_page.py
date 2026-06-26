@@ -5,7 +5,7 @@ import streamlit as st
 from src.pages.page_helpers import participant_name, progress_bar, schedule_label
 
 
-def render_main(persistence, user_id: str) -> None:
+def render_main(persistence, current_user: dict, user_id: str) -> None:
     stats = persistence.account_stats(user_id)
     metric_cols = st.columns(4)
     metric_cols[0].metric("Active goals", stats["active_goals"])
@@ -20,6 +20,7 @@ def render_main(persistence, user_id: str) -> None:
 
     all_participant_ids = sorted({uid for goal in goals for uid in goal.get("participants", {})})
     users = persistence.users_by_ids(all_participant_ids)
+    friend_ids = {friend["user_id"] for friend in persistence.list_friends(user_id)}
     for goal in goals:
         st.subheader(goal["description"])
         st.caption(schedule_label(goal))
@@ -31,7 +32,23 @@ def render_main(persistence, user_id: str) -> None:
         for participant_id in participant_ids:
             participant = goal["participants"][participant_id]
             cols = st.columns([2, 3, 4])
-            cols[0].write(participant_name(users, participant_id))
+            name_cols = cols[0].columns([2, 1])
+            name_cols[0].write(participant_name(users, participant_id))
+            participant_user = users.get(participant_id, {})
+            participant_email = participant_user.get("email")
+            can_invite_participant = (
+                participant_id != user_id
+                and participant_id not in friend_ids
+                and bool(participant_email)
+            )
+            if can_invite_participant:
+                if name_cols[1].button("Add Friend", key=f"add_friend_{goal['id']}_{participant_id}"):
+                    try:
+                        persistence.create_friend_invite(user_id, current_user["email"], participant_email)
+                        st.success("Friend invite sent.")
+                        st.rerun()
+                    except ValueError as error:
+                        st.error(str(error))
             with cols[1]:
                 progress_bar(int(participant.get("current", 0)), int(participant.get("target", 1)))
             if participant_id == user_id:

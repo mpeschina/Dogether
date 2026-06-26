@@ -93,7 +93,7 @@ def mark_current_page(page_key: str) -> None:
 
 def main_page() -> None:
     mark_current_page("goals")
-    render_main(persistence, user_id)
+    render_main(persistence, current_user, user_id)
 
 
 def friends_page() -> None:
