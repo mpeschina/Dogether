@@ -6,7 +6,6 @@ from src.pages.page_helpers import participant_name, progress_bar, schedule_labe
 
 
 def render_main(persistence, user_id: str) -> None:
-    st.title("Shared Goals")
     stats = persistence.account_stats(user_id)
     metric_cols = st.columns(4)
     metric_cols[0].metric("Active goals", stats["active_goals"])

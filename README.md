@@ -8,7 +8,7 @@ goals where every participant has their own progress and target.
 
 - Google-authenticated account view with name, email, and completion stats
 - Main shared-goals view with participant progress numbers and progress bars
-- Friend invitations by email with approval/decline notifications
+- Friend invitations by email with approval/decline on the Friends view
 - Friends view with accepted friends plus incoming and outgoing pending invites
 - Goal creation for accepted friends with daily/weekly schedule classes
 - Per-user target/progress updates and leave-goal behavior
@@ -56,14 +56,16 @@ To stop the server, press `Ctrl+C` in the terminal.
 
 ## App behavior
 
-Friend invites are stored inside the JSON persistence file. No email is sent.
+Pending and declined friend invites are stored inside the JSON persistence file.
+Accepted invites are deleted after the friendship is created. No email is sent.
 When the invited Google email signs in, the pending invite appears in the
-Notifications and Friends views.
+Friends view.
 
 Goals can be shared only with accepted friends. After a goal is created, the
-shared description, schedule class, and participant list are immutable. Each
-participant can update only their own current progress and target, or leave the
-goal so it no longer appears in their active list.
+shared description and schedule class are immutable. Each participant can update
+only their own current progress and target, or leave the goal, which removes
+them from the stored participant list. Goals with no remaining participants are
+deleted.
 
 Supported schedule classes are:
 

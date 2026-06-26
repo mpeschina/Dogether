@@ -39,6 +39,16 @@ class Persistence(Protocol):
 
     def list_goals_for_user(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]: ...
 
+    def add_goal_friends(
+        self,
+        goal_id: str,
+        user_id: str,
+        friend_user_ids: list[str],
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
+    def list_users(self) -> list[dict[str, Any]]: ...
+
 
 class JsonPersistence:
     """Atomic JSON persistence for the Streamlit prototype."""
@@ -116,6 +126,11 @@ class JsonPersistence:
                 if user.get("email") == normalized_email:
                     return user
         return None
+
+    def list_users(self) -> list[dict[str, Any]]:
+        with self._lock:
+            users = list(self._read()["users"].values())
+        return sorted(users, key=lambda user: (user.get("name", ""), user.get("email", "")))
 
     def create_friend_invite(
         self,
@@ -216,6 +231,7 @@ class JsonPersistence:
                     "created_at": data["friendships"].get(friendship_id, {}).get("created_at", now_iso),
                     "updated_at": now_iso,
                 }
+                del data["friend_invites"][invite_id]
             self._write(data)
             return invite
 
@@ -305,6 +321,56 @@ class JsonPersistence:
             ]
         return sorted(goals, key=lambda goal: goal["created_at"])
 
+    def add_goal_friends(
+        self,
+        goal_id: str,
+        user_id: str,
+        friend_user_ids: list[str],
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        self.rollover_periods(now)
+        now_dt = _now(now)
+        with self._lock:
+            data = self._read()
+            goal = data["goals"].get(goal_id)
+            if not goal or not _goal_active_for_user(goal, user_id):
+                raise ValueError("Goal is not active for this user.")
+
+            active_friend_ids = {friend["user_id"] for friend in self.list_friends(user_id)}
+            requested_friend_ids = set(friend_user_ids)
+            invalid = sorted(requested_friend_ids - active_friend_ids)
+            if invalid:
+                raise ValueError("Goals can only be shared with accepted friends.")
+
+            existing_participant_ids = set(goal.get("participants", {}))
+            new_participant_ids = sorted(requested_friend_ids - existing_participant_ids)
+            if not new_participant_ids:
+                return goal
+
+            schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+            period_start = _period_start(now_dt, schedule["base"]).isoformat()
+            inviter = goal["participants"][user_id]
+            target = max(1, int(inviter.get("target", 1)))
+
+            for participant_id in new_participant_ids:
+                goal["participants"][participant_id] = {
+                    "target": target,
+                    "current": 0,
+                    "period_start": period_start,
+                    "left_at": None,
+                }
+
+            goal["participant_user_ids"] = [
+                *goal.get("participant_user_ids", []),
+                *[
+                    participant_id
+                    for participant_id in new_participant_ids
+                    if participant_id not in goal.get("participant_user_ids", [])
+                ],
+            ]
+            self._write(data)
+            return goal
+
     def update_goal_progress(
         self,
         goal_id: str,
@@ -336,7 +402,14 @@ class JsonPersistence:
             goal = data["goals"].get(goal_id)
             if not goal or user_id not in goal.get("participants", {}):
                 raise ValueError("Goal not found.")
-            goal["participants"][user_id]["left_at"] = _iso(now)
+            del goal["participants"][user_id]
+            goal["participant_user_ids"] = [
+                participant_id
+                for participant_id in goal.get("participant_user_ids", [])
+                if participant_id != user_id
+            ]
+            if not goal["participants"]:
+                del data["goals"][goal_id]
             self._write(data)
 
     def rollover_periods(self, now: datetime | None = None) -> None:

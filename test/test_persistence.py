@@ -67,6 +67,7 @@ def test_friend_invite_lifecycle_and_duplicate_prevention(tmp_path: Path) -> Non
     assert persistence.incoming_friend_invites("bob@example.com") == [invite]
     persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True, now=at("2026-06-01T09:04:00"))
 
+    assert invite["id"] not in persistence.raw_data()["friend_invites"]
     assert [friend["user_id"] for friend in persistence.list_friends("alice")] == ["bob"]
     assert [friend["user_id"] for friend in persistence.list_friends("bob")] == ["alice"]
     with pytest.raises(ValueError, match="already friends"):
@@ -123,6 +124,50 @@ def test_goal_creation_requires_friends_and_creates_per_user_participants(tmp_pa
         persistence.create_goal("alice", "Stretch", "daily", 1, ["charlie"], 10)
 
 
+def test_goal_participant_can_add_more_accepted_friends(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice, _bob = users_and_friendship(persistence)
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie", at("2026-06-01T09:04:00"))
+    invite = persistence.create_friend_invite(
+        "alice",
+        alice["email"],
+        charlie["email"],
+        at("2026-06-01T09:05:00"),
+    )
+    persistence.respond_friend_invite(
+        invite["id"],
+        "charlie",
+        charlie["email"],
+        approve=True,
+        now=at("2026-06-01T09:06:00"),
+    )
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Read pages",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=["bob"],
+        target=20,
+        current=5,
+        now=at("2026-06-01T10:00:00"),
+    )
+
+    updated = persistence.add_goal_friends(
+        goal["id"],
+        "alice",
+        ["charlie"],
+        now=at("2026-06-01T11:00:00"),
+    )
+
+    assert updated["participant_user_ids"] == ["alice", "bob", "charlie"]
+    assert updated["participants"]["charlie"]["target"] == 20
+    assert updated["participants"]["charlie"]["current"] == 0
+    assert persistence.list_goals_for_user("charlie")[0]["id"] == goal["id"]
+
+    with pytest.raises(ValueError, match="accepted friends"):
+        persistence.add_goal_friends(goal["id"], "alice", ["dana"])
+
+
 def test_participant_updates_own_progress_and_can_leave_goal(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     users_and_friendship(persistence)
@@ -136,8 +181,30 @@ def test_participant_updates_own_progress_and_can_leave_goal(tmp_path: Path) -> 
     assert updated["participants"]["alice"]["target"] == 10
 
     persistence.leave_goal(goal["id"], "bob")
+    data = persistence.raw_data()
+
+    assert "bob" not in data["goals"][goal["id"]]["participants"]
+    assert data["goals"][goal["id"]]["participant_user_ids"] == ["alice"]
     assert persistence.list_goals_for_user("bob") == []
     assert persistence.list_goals_for_user("alice") != []
+
+
+def test_last_participant_leaving_deletes_goal_record(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    goal = persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Meditate",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=1,
+    )
+
+    persistence.leave_goal(goal["id"], alice["user_id"])
+
+    assert goal["id"] not in persistence.raw_data()["goals"]
+    assert persistence.list_goals_for_user(alice["user_id"]) == []
 
 
 def test_period_rollover_writes_history_and_resets_progress(tmp_path: Path) -> None:
