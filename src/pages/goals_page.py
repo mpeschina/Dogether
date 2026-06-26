@@ -47,6 +47,9 @@ def render_goals(persistence, user_id: str) -> None:
     goals = persistence.list_goals_for_user(user_id)
     if not goals:
         st.info("No active goals.")
+    active_goal_ids = {goal["id"] for goal in goals}
+    if st.session_state.get("goals_pending_leave_id") not in active_goal_ids:
+        st.session_state.pop("goals_pending_leave_id", None)
     for goal in goals:
         participant = goal["participants"][user_id]
         cols = st.columns([4, 2, 2, 3, 1])
@@ -59,25 +62,34 @@ def render_goals(persistence, user_id: str) -> None:
             for label, friend_id in friend_options.items()
             if friend_id not in existing_participant_ids
         }
-        with cols[3].form(f"add_friends_{goal['id']}"):
-            selected_new_friends = st.multiselect("Add friends", list(addable_friend_options))
-            add_submitted = st.form_submit_button("Add")
-            if add_submitted:
-                try:
-                    if not selected_new_friends:
-                        st.warning("Choose at least one friend to add.")
-                    else:
-                        persistence.add_goal_friends(
-                            goal_id=goal["id"],
-                            user_id=user_id,
-                            friend_user_ids=[addable_friend_options[label] for label in selected_new_friends],
-                        )
-                        st.success("Friends added.")
-                        st.rerun()
-                except ValueError as error:
-                    st.error(str(error))
-        if not addable_friend_options:
+        if addable_friend_options:
+            with cols[3].popover("Add Friends", use_container_width=True):
+                with st.form(f"add_friends_{goal['id']}"):
+                    selected_new_friends = st.multiselect("Friends", list(addable_friend_options))
+                    add_submitted = st.form_submit_button("Add")
+                    if add_submitted:
+                        try:
+                            if not selected_new_friends:
+                                st.warning("Choose at least one friend to add.")
+                            else:
+                                persistence.add_goal_friends(
+                                    goal_id=goal["id"],
+                                    user_id=user_id,
+                                    friend_user_ids=[addable_friend_options[label] for label in selected_new_friends],
+                                )
+                                st.success("Friends added.")
+                                st.rerun()
+                        except ValueError as error:
+                            st.error(str(error))
+        else:
             cols[3].caption("All friends are already on this goal.")
-        if cols[4].button("Leave", key=f"leave_{goal['id']}"):
-            persistence.leave_goal(goal["id"], user_id)
+        pending_leave = st.session_state.get("goals_pending_leave_id") == goal["id"]
+        leave_label = "Really Leave" if pending_leave else "Leave"
+        leave_type = "primary" if pending_leave else "secondary"
+        if cols[4].button(leave_label, key=f"leave_{goal['id']}", type=leave_type):
+            if pending_leave:
+                persistence.leave_goal(goal["id"], user_id)
+                st.session_state.pop("goals_pending_leave_id", None)
+            else:
+                st.session_state["goals_pending_leave_id"] = goal["id"]
             st.rerun()

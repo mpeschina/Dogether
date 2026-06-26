@@ -20,6 +20,9 @@ except Exception as error:
     st.stop()
 
 
+# 
+# Debug Mechanics
+#
 debug_user_id = st.session_state.get("debug_user_id") if json_mode else None
 if debug_user_id and isinstance(persistence, JsonPersistence):
     debug_user = persistence.get_user(debug_user_id)
@@ -36,6 +39,10 @@ if "is_logged_in" not in st.user and not json_mode:
     )
     st.stop()
 
+
+# 
+# Login 
+#
 if not debug_user and not st.user.get("is_logged_in", False):
     login_screen(persistence, json_mode)
     st.stop()
@@ -68,24 +75,39 @@ st.sidebar.caption(current_user["email"])
 if st.sidebar.button("Log out", use_container_width=True):
     st.session_state.pop("debug_user_id", None)
     st.session_state.pop("friend_request_alert_signature", None)
+    st.session_state.pop("goals_pending_leave_id", None)
+    st.session_state.pop("friends_pending_removals", None)
     if debug_user:
         st.rerun()
     st.logout()
 
 
+def mark_current_page(page_key: str) -> None:
+    previous_page_key = st.session_state.get("current_page_key")
+    if page_key != "manage_goals" or previous_page_key != "manage_goals":
+        st.session_state.pop("goals_pending_leave_id", None)
+    if page_key != "friends" or previous_page_key != "friends":
+        st.session_state.pop("friends_pending_removals", None)
+    st.session_state["current_page_key"] = page_key
+
+
 def main_page() -> None:
+    mark_current_page("goals")
     render_main(persistence, user_id)
 
 
 def friends_page() -> None:
+    mark_current_page("friends")
     render_friends(persistence, current_user, user_id)
 
 
 def goals_page() -> None:
+    mark_current_page("manage_goals")
     render_goals(persistence, user_id)
 
 
 def account_page() -> None:
+    mark_current_page("account")
     render_account(persistence, current_user, user_id)
 
 
