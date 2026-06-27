@@ -5,6 +5,7 @@ from html import escape
 
 import streamlit as st
 
+from src.pages.account_page import render_activity_diagram
 from src.pages.page_helpers import participant_name, progress_bar, schedule_label
 
 
@@ -29,6 +30,9 @@ def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str
 
 
 def render_main(persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
+    stats = persistence.account_stats(user_id, now=now)
+    render_activity_diagram(stats.get("activity_days", {}), now=now, days=365)
+
     goals = persistence.list_goals_for_user(user_id, now=now)
     if not goals:
         st.info("Create a shared goal with a friend to get started.")

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from html import escape
 
 import streamlit as st
-
-from src.db.persistence import activity_calendar_weeks
 
 
 def render_account(persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
@@ -23,54 +21,132 @@ def render_account(persistence, current_user: dict, user_id: str, now: datetime 
     cols[3].metric("Month completion", f"{stats['completion_rate']}%")
 
     st.subheader("Activity")
-    st.markdown(_activity_diagram(stats.get("activity_days", {}), now), unsafe_allow_html=True)
+    render_activity_diagram(stats.get("activity_days", {}), now=now, days=365)
 
 
-def _activity_diagram(activity_days: dict, now: datetime | None = None) -> str:
-    weeks = activity_calendar_weeks(activity_days, now)
-    rows = []
-    for week in weeks:
-        cells = []
-        for day in week:
-            if day is None:
-                cells.append("<td></td>")
-                continue
-            percent = float(day["percent"])
-            color = _activity_color(percent, int(day["active_goals"]))
-            title = escape(
-                f"{day['date']}: {day['fulfilled_goals']} / {day['active_goals']} goals fulfilled ({percent}%)"
+def render_activity_diagram(
+    activity_days: dict,
+    now: datetime | None = None,
+    *,
+    days: int = 365,
+    months: int | None = None,
+) -> None:
+    html = activity_diagram_html(activity_days, now=now, days=days, months=months)
+    if hasattr(st, "html"):
+        st.html(html)
+    else:
+        st.markdown(html, unsafe_allow_html=True)
+
+
+def activity_diagram_html(
+    activity_days: dict,
+    now: datetime | None = None,
+    *,
+    days: int = 365,
+    months: int | None = None,
+) -> str:
+    today = _local_date(now)
+    if months is not None:
+        months = max(1, int(months))
+        first_day = _shift_month(today.replace(day=1), -(months - 1))
+    else:
+        first_day = today - timedelta(days=max(1, int(days)) - 1)
+    end_day = today
+    grid_start = first_day - timedelta(days=first_day.weekday())
+    grid_end = today + timedelta(days=6 - today.weekday())
+    total_days = (grid_end - grid_start).days + 1
+    week_count = total_days // 7
+
+    month_labels = []
+    month_cursor = first_day.replace(day=1)
+    while month_cursor <= end_day:
+        label_day = max(month_cursor, first_day)
+        column = ((label_day - grid_start).days // 7) + 2
+        month_labels.append(
+            f"<div class='activity-month' style='grid-column:{column};'>{escape(month_cursor.strftime('%b'))}</div>"
+        )
+        month_cursor = _shift_month(month_cursor, 1)
+
+    weekday_labels = {
+        0: "M",
+        2: "W",
+        4: "F",
+    }
+    weekday_nodes = [
+        f"<div class='activity-weekday' style='grid-row:{weekday + 2};'>{label}</div>"
+        for weekday, label in weekday_labels.items()
+    ]
+
+    day_nodes = []
+    current_day = grid_start
+    while current_day <= grid_end:
+        week = ((current_day - grid_start).days // 7) + 2
+        weekday = current_day.weekday() + 2
+        is_visible_day = first_day <= current_day <= end_day
+        stats = activity_days.get(current_day.isoformat(), {}) if is_visible_day else {}
+        active_goals = int(stats.get("active_goals", 0) or 0)
+        fulfilled_goals = int(stats.get("fulfilled_goals", 0) or 0)
+        percent = float(stats.get("percent", 0.0) or 0.0)
+        color = _activity_color(percent, active_goals) if is_visible_day else "transparent"
+        title = escape(
+            f"{current_day.isoformat()}: {fulfilled_goals} / {active_goals} goals fulfilled ({percent}%)",
+            quote=True,
+        )
+        day_nodes.append(
+            (
+                f"<div class='activity-day' title='{title}' "
+                f"style='grid-column:{week};grid-row:{weekday};background:{color};'></div>"
             )
-            cells.append(
-                (
-                    "<td>"
-                    f"<div title='{title}' style='height:2.4rem;border-radius:6px;"
-                    f"background:{color};display:flex;align-items:center;justify-content:center;"
-                    "font-size:0.8rem;color:#111827;'>"
-                    f"{day['day']}"
-                    "</div>"
-                    "</td>"
-                )
-            )
-        rows.append(f"<tr>{''.join(cells)}</tr>")
+        )
+        current_day += timedelta(days=1)
+
+    legend_nodes = "".join(f"<span style='background:{color}'></span>" for color in _ACTIVITY_COLORS)
     return (
-        "<table style='width:100%;border-spacing:0.35rem;border-collapse:separate;'>"
-        "<thead><tr>"
-        "<th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>"
-        "</tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody>"
-        "</table>"
+        "<style>"
+        ".activity-shell{--cell:11px;--gap:3px;color:#57606a;max-width:100%;overflow-x:auto;"
+        "padding:0.15rem 0 0.35rem;}"
+        ".activity-grid{display:grid;grid-template-columns:22px repeat("
+        f"{week_count},var(--cell));grid-template-rows:18px repeat(7,var(--cell));"
+        "grid-auto-flow:column;gap:var(--gap);align-items:center;}"
+        ".activity-month{grid-row:1;font-size:0.76rem;line-height:1;color:#6e7781;white-space:nowrap;}"
+        ".activity-weekday{grid-column:1;font-size:0.68rem;line-height:1;color:#6e7781;}"
+        ".activity-day{width:var(--cell);height:var(--cell);border-radius:2px;box-shadow:inset 0 0 0 1px rgba(27,31,36,0.06);}"
+        ".activity-legend{display:flex;align-items:center;justify-content:flex-end;gap:0.35rem;"
+        "font-size:0.72rem;color:#6e7781;margin-top:0.55rem;}"
+        ".activity-legend span{width:var(--cell);height:var(--cell);border-radius:2px;"
+        "box-shadow:inset 0 0 0 1px rgba(27,31,36,0.06);}"
+        "</style>"
+        "<div class='activity-shell'>"
+        f"<div class='activity-grid'>{''.join(month_labels)}{''.join(weekday_nodes)}{''.join(day_nodes)}</div>"
+        f"<div class='activity-legend'>Less{legend_nodes}More</div>"
+        "</div>"
     )
+
+
+_ACTIVITY_COLORS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
 
 
 def _activity_color(percent: float, active_goals: int) -> str:
     if active_goals <= 0:
-        return "#f3f4f6"
+        return _ACTIVITY_COLORS[0]
     if percent >= 100:
-        return "#86efac"
-    if percent >= 67:
-        return "#bef264"
-    if percent >= 34:
-        return "#fde68a"
+        return _ACTIVITY_COLORS[4]
+    if percent >= 75:
+        return _ACTIVITY_COLORS[3]
+    if percent >= 50:
+        return _ACTIVITY_COLORS[2]
     if percent > 0:
-        return "#fdba74"
-    return "#fecaca"
+        return _ACTIVITY_COLORS[1]
+    return _ACTIVITY_COLORS[0]
+
+
+def _local_date(now: datetime | None = None) -> date:
+    if now is None:
+        return datetime.now().date()
+    return now.date()
+
+
+def _shift_month(day: date, offset: int) -> date:
+    month_index = day.year * 12 + day.month - 1 + offset
+    year, month_zero = divmod(month_index, 12)
+    return date(year, month_zero + 1, 1)

@@ -6,7 +6,6 @@ import os
 import tempfile
 import threading
 import uuid
-import calendar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Protocol
@@ -705,29 +704,6 @@ def _days_using_app(user: dict[str, Any], now: datetime) -> int:
     if not created_at:
         return 0
     return max(1, (now.date() - created_at.date()).days + 1)
-
-
-def activity_calendar_weeks(activity_days: dict[str, Any], now: datetime | None = None) -> list[list[dict[str, Any] | None]]:
-    local_now = _now(now)
-    first_day = local_now.replace(day=1).date()
-    _, days_in_month = calendar.monthrange(local_now.year, local_now.month)
-    start_offset = first_day.weekday()
-    cells: list[dict[str, Any] | None] = [None] * start_offset
-    for day_number in range(1, days_in_month + 1):
-        date_key = f"{local_now.year:04d}-{local_now.month:02d}-{day_number:02d}"
-        day_stats = activity_days.get(date_key, {})
-        cells.append(
-            {
-                "date": date_key,
-                "day": day_number,
-                "percent": float(day_stats.get("percent", 0.0) or 0.0),
-                "active_goals": int(day_stats.get("active_goals", 0) or 0),
-                "fulfilled_goals": int(day_stats.get("fulfilled_goals", 0) or 0),
-            }
-        )
-    while len(cells) % 7:
-        cells.append(None)
-    return [cells[index : index + 7] for index in range(0, len(cells), 7)]
 
 
 def create_persistence(
