@@ -31,7 +31,7 @@ def test_missing_file_gets_new_app_schema(tmp_path: Path) -> None:
         "friend_invites": {},
         "friendships": {},
         "goals": {},
-        "period_records": {},
+        "user_stats": {},
         "debug": {"time_offset_seconds": 0},
     }
 
@@ -152,8 +152,10 @@ def test_goal_creation_requires_friends_and_creates_per_user_participants(tmp_pa
     assert goal["participant_user_ids"] == ["alice", "bob"]
     assert goal["participants"]["alice"]["target"] == 20
     assert goal["participants"]["alice"]["current"] == 5
+    assert goal["participants"]["alice"]["completion_streak"] == 0
     assert goal["participants"]["bob"]["target"] == 20
     assert goal["participants"]["bob"]["current"] == 0
+    assert goal["participants"]["bob"]["completion_streak"] == 0
 
     with pytest.raises(ValueError, match="accepted friends"):
         persistence.create_goal("alice", "Stretch", "daily", 1, ["charlie"], 10)
@@ -197,6 +199,7 @@ def test_goal_participant_can_add_more_accepted_friends(tmp_path: Path) -> None:
     assert updated["participant_user_ids"] == ["alice", "bob", "charlie"]
     assert updated["participants"]["charlie"]["target"] == 20
     assert updated["participants"]["charlie"]["current"] == 0
+    assert updated["participants"]["charlie"]["completion_streak"] == 0
     assert persistence.list_goals_for_user("charlie")[0]["id"] == goal["id"]
 
     with pytest.raises(ValueError, match="accepted friends"):
@@ -242,7 +245,7 @@ def test_last_participant_leaving_deletes_goal_record(tmp_path: Path) -> None:
     assert persistence.list_goals_for_user(alice["user_id"]) == []
 
 
-def test_period_rollover_writes_history_and_resets_progress(tmp_path: Path) -> None:
+def test_period_rollover_updates_streak_activity_and_resets_progress(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
     goal = persistence.create_goal(
@@ -258,16 +261,37 @@ def test_period_rollover_writes_history_and_resets_progress(tmp_path: Path) -> N
 
     persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-02T08:00:00"))
     data = persistence.raw_data()
-    record = next(iter(data["period_records"].values()))
     updated_goal = data["goals"][goal["id"]]
+    activity = data["user_stats"]["alice"]["activity_days"]["2026-06-01"]
 
-    assert record["progress"] == 4
-    assert record["target"] == 3
-    assert record["completed"] is True
+    assert "period_records" not in data
     assert updated_goal["participants"]["alice"]["current"] == 0
+    assert updated_goal["participants"]["alice"]["completion_streak"] == 1
+    assert activity == {"active_goals": 1, "fulfilled_goals": 1, "percent": 100.0}
 
 
-def test_daily_x_per_week_uses_sum_progress_for_account_completion(tmp_path: Path) -> None:
+def test_missed_daily_period_resets_streak(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Drink water",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=3,
+        current=4,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-02T08:00:00"))
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-03T08:00:00"))
+
+    participant = persistence.raw_data()["goals"][goal["id"]]["participants"]["alice"]
+    assert participant["completion_streak"] == 0
+
+
+def test_daily_x_per_week_increments_streak_for_each_completed_daily_period(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
     goal = persistence.create_goal(
@@ -282,23 +306,16 @@ def test_daily_x_per_week_uses_sum_progress_for_account_completion(tmp_path: Pat
     )
 
     persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-02T08:00:00"))
-    persistence.update_goal_progress(goal["id"], alice["user_id"], current=9, now=at("2026-06-02T09:00:00"))
+    persistence.update_goal_progress(goal["id"], alice["user_id"], current=10, now=at("2026-06-02T09:00:00"))
     persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-03T08:00:00"))
     persistence.update_goal_progress(goal["id"], alice["user_id"], current=13, now=at("2026-06-03T09:00:00"))
-    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-08T08:00:00"))
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-04T08:00:00"))
 
-    stats = persistence.account_stats(alice["user_id"], now=at("2026-06-08T08:01:00"))
-
-    assert stats["completed_periods"] >= 1
-    aggregate_records = [
-        record
-        for record in persistence.raw_data()["period_records"].values()
-        if record["goal_id"] == goal["id"]
-    ]
-    assert sum(record["progress"] for record in aggregate_records[:3]) == 30
+    participant = persistence.raw_data()["goals"][goal["id"]]["participants"]["alice"]
+    assert participant["completion_streak"] == 2
 
 
-def test_weekly_x_per_month_uses_sum_progress_for_account_completion(tmp_path: Path) -> None:
+def test_weekly_x_per_month_increments_streak_for_each_completed_weekly_period(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
     goal = persistence.create_goal(
@@ -314,11 +331,56 @@ def test_weekly_x_per_month_uses_sum_progress_for_account_completion(tmp_path: P
 
     persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-08T08:00:00"))
     persistence.update_goal_progress(goal["id"], alice["user_id"], current=6, now=at("2026-06-08T09:00:00"))
-    persistence.list_goals_for_user(alice["user_id"], now=at("2026-07-06T08:00:00"))
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-15T08:00:00"))
 
-    stats = persistence.account_stats(alice["user_id"], now=at("2026-07-06T08:01:00"))
+    participant = persistence.raw_data()["goals"][goal["id"]]["participants"]["alice"]
+    assert participant["completion_streak"] == 1
 
-    assert stats["completed_periods"] >= 1
+
+def test_activity_summaries_keep_last_365_days(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2025-01-01T09:00:00"))
+    persistence.create_goal(
+        created_by="alice",
+        description="Drink water",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=1,
+        current=0,
+        now=at("2025-01-01T12:00:00"),
+    )
+
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-02-01T08:00:00"))
+
+    activity_days = persistence.raw_data()["user_stats"]["alice"]["activity_days"]
+    assert len(activity_days) == 365
+    assert "2025-01-01" not in activity_days
+    assert "2026-02-01" in activity_days
+
+
+def test_account_stats_report_current_month_rate_and_days_using_app(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Drink water",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=1,
+        current=1,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-02T08:00:00"))
+    persistence.update_goal_progress(goal["id"], alice["user_id"], current=0, now=at("2026-06-02T09:00:00"))
+    stats = persistence.account_stats(alice["user_id"], now=at("2026-06-02T10:00:00"))
+
+    assert stats["days_using_app"] == 2
+    assert stats["completion_rate"] == 50.0
+    assert stats["activity_days"]["2026-06-01"]["percent"] == 100.0
+    assert stats["activity_days"]["2026-06-02"]["percent"] == 0.0
 
 
 def test_factory_rejects_non_json_backend() -> None:

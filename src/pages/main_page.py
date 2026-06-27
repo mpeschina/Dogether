@@ -29,13 +29,6 @@ def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str
 
 
 def render_main(persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
-    stats = persistence.account_stats(user_id, now=now)
-    metric_cols = st.columns(4)
-    metric_cols[0].metric("Active goals", stats["active_goals"])
-    metric_cols[1].metric("Friends", stats["friend_count"])
-    metric_cols[2].metric("Completed periods", stats["completed_periods"])
-    metric_cols[3].metric("Completion rate", f"{stats['completion_rate']}%")
-
     goals = persistence.list_goals_for_user(user_id, now=now)
     if not goals:
         st.info("Create a shared goal with a friend to get started.")

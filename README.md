@@ -12,7 +12,7 @@ goals where every participant has their own progress and target.
 - Friends view with accepted friends plus incoming and outgoing pending invites
 - Goal creation for accepted friends with daily/weekly schedule classes
 - Per-user target/progress updates and leave-goal behavior
-- JSON persistence with period history for account stats
+- JSON persistence with compact streak and activity stats
 
 ## Run locally for development
 
@@ -79,9 +79,9 @@ Supported schedule classes are:
 - `weekly with X per month`: weekly progress resets each Monday; monthly
   completion is based on summed weekly progress reaching `X * target`
 
-Days start at midnight in `Europe/Berlin`, and weeks start on Monday. Completed
-period history is stored for account stats; there is no per-goal history table
-in this prototype.
+Days start at midnight in `Europe/Berlin`, and weeks start on Monday. The app
+does not store per-period completion history; it keeps current per-goal streaks
+and compact per-user daily activity summaries for stats.
 
 ## Tests
 
@@ -102,8 +102,8 @@ backend = "json"
 json_path = "data/users.json"
 ```
 
-The JSON document contains users, friend invites, friendships, goals, and period
-records. The file is written atomically with a temporary file replacement.
+The JSON document contains users, friend invites, friendships, goals, and compact
+user stats. The file is written atomically with a temporary file replacement.
 
 ## Debug Time Travel
 

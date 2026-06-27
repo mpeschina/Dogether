@@ -6,7 +6,7 @@ import os
 import tempfile
 import threading
 import uuid
-from collections import defaultdict
+import calendar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Protocol
@@ -322,6 +322,7 @@ class JsonPersistence:
                         "target": target,
                         "current": current if participant_id == created_by else 0,
                         "period_start": period_start,
+                        "completion_streak": 0,
                         "left_at": None,
                     }
                     for participant_id in participant_ids
@@ -330,6 +331,8 @@ class JsonPersistence:
                 "archived_at": None,
             }
             data["goals"][goal_id] = goal
+            for participant_id in participant_ids:
+                _refresh_activity_day(data, participant_id, now_dt.date())
             self._write(data)
             return goal
 
@@ -379,6 +382,7 @@ class JsonPersistence:
                     "target": target,
                     "current": 0,
                     "period_start": period_start,
+                    "completion_streak": 0,
                     "left_at": None,
                 }
 
@@ -390,6 +394,8 @@ class JsonPersistence:
                     if participant_id not in goal.get("participant_user_ids", [])
                 ],
             ]
+            for participant_id in new_participant_ids:
+                _refresh_activity_day(data, participant_id, now_dt.date())
             self._write(data)
             return goal
 
@@ -415,6 +421,7 @@ class JsonPersistence:
                 participant["current"] = max(0, int(current))
             elif delta:
                 participant["current"] = max(0, int(participant.get("current", 0)) + int(delta))
+            _refresh_activity_day(data, user_id, _now(now).date())
             self._write(data)
             return goal
 
@@ -424,6 +431,7 @@ class JsonPersistence:
             goal = data["goals"].get(goal_id)
             if not goal or user_id not in goal.get("participants", {}):
                 raise ValueError("Goal not found.")
+            now_dt = _now(now)
             del goal["participants"][user_id]
             goal["participant_user_ids"] = [
                 participant_id
@@ -432,6 +440,7 @@ class JsonPersistence:
             ]
             if not goal["participants"]:
                 del data["goals"][goal_id]
+            _refresh_activity_day(data, user_id, now_dt.date())
             self._write(data)
 
     def rollover_periods(self, now: datetime | None = None) -> None:
@@ -451,28 +460,29 @@ class JsonPersistence:
                         period_end = _next_period_start(stored_start, schedule["base"])
                         progress = max(0, int(participant.get("current", 0)))
                         target = max(1, int(participant.get("target", 1)))
-                        record = _period_record(
-                            goal,
-                            user_id,
-                            stored_start,
-                            period_end,
-                            progress,
-                            target,
-                            schedule,
-                            now_dt,
+                        completed = progress >= target
+                        participant["completion_streak"] = (
+                            max(0, int(participant.get("completion_streak", 0))) + 1
+                            if completed
+                            else 0
                         )
-                        data["period_records"][record["id"]] = record
+                        _refresh_activity_day(data, user_id, stored_start.date())
                         participant["current"] = 0
                         participant["period_start"] = period_end.isoformat()
                         stored_start = period_end
                         changed = True
+                    if changed:
+                        _refresh_activity_day(data, user_id, now_dt.date())
             if changed:
                 self._write(data)
 
-    def account_stats(self, user_id: str, now: datetime | None = None) -> dict[str, int | float]:
+    def account_stats(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:
         self.rollover_periods(now)
+        now_dt = _now(now)
         with self._lock:
             data = self._read()
+            _refresh_activity_day(data, user_id, now_dt.date())
+            self._write(data)
             active_goals = sum(1 for goal in data["goals"].values() if _goal_active_for_user(goal, user_id))
             friend_count = len(
                 [
@@ -481,22 +491,23 @@ class JsonPersistence:
                     if friendship.get("active") and user_id in friendship.get("user_ids", [])
                 ]
             )
-            records = [
-                record
-                for record in data["period_records"].values()
-                if record.get("user_id") == user_id
+            user = data["users"].get(user_id, {})
+            stats = _user_stats(data, user_id)
+            month_prefix = f"{now_dt.year:04d}-{now_dt.month:02d}-"
+            month_days = [
+                day
+                for date_key, day in stats.get("activity_days", {}).items()
+                if date_key.startswith(month_prefix)
             ]
-            completed_periods = sum(1 for record in records if record.get("completed"))
-            aggregate = _aggregate_completion_counts(records)
-            total_periods = len(records) + aggregate["total"]
-            total_completed = completed_periods + aggregate["completed"]
-            completion_rate = round((total_completed / total_periods) * 100, 1) if total_periods else 0.0
+            active_goal_days = sum(max(0, int(day.get("active_goals", 0))) for day in month_days)
+            fulfilled_goal_days = sum(max(0, int(day.get("fulfilled_goals", 0))) for day in month_days)
+            completion_rate = round((fulfilled_goal_days / active_goal_days) * 100, 1) if active_goal_days else 0.0
             return {
                 "active_goals": active_goals,
                 "friend_count": friend_count,
-                "completed_periods": total_completed,
-                "recorded_periods": total_periods,
+                "days_using_app": _days_using_app(user, now_dt),
                 "completion_rate": completion_rate,
+                "activity_days": dict(sorted(stats.get("activity_days", {}).items())),
             }
 
     def raw_data(self) -> dict[str, Any]:
@@ -510,7 +521,7 @@ def _empty_store() -> dict[str, Any]:
         "friend_invites": {},
         "friendships": {},
         "goals": {},
-        "period_records": {},
+        "user_stats": {},
         "debug": {"time_offset_seconds": 0},
     }
 
@@ -525,9 +536,11 @@ def _normalise_store(data: dict[str, Any]) -> dict[str, Any]:
         for user_id, user in users.items()
         if isinstance(user, dict) and "email" in user and "user_id" in user
     }
-    for key in ["friend_invites", "friendships", "goals", "period_records"]:
+    for key in ["friend_invites", "friendships", "goals", "user_stats"]:
         value = data.get(key, {})
         store[key] = value if isinstance(value, dict) else {}
+    _normalise_goal_participants(store["goals"])
+    _normalise_user_stats(store["user_stats"])
     debug = data.get("debug", {}) if isinstance(data.get("debug"), dict) else {}
     try:
         offset_seconds = int(debug.get("time_offset_seconds", 0) or 0)
@@ -616,61 +629,105 @@ def _next_period_start(period_start: datetime, base: str) -> datetime:
     raise ValueError(f"Unsupported period base: {base}")
 
 
-def _period_record(
-    goal: dict[str, Any],
-    user_id: str,
-    period_start: datetime,
-    period_end: datetime,
-    progress: int,
-    target: int,
-    schedule: dict[str, Any],
-    created_at: datetime | None = None,
-) -> dict[str, Any]:
-    return {
-        "id": f"record_{goal['id']}_{user_id}_{period_start.date().isoformat()}",
-        "goal_id": goal["id"],
-        "user_id": user_id,
-        "schedule_class": goal.get("schedule_class", "daily"),
-        "required_periods": schedule["required_periods"],
-        "period_start": period_start.isoformat(),
-        "period_end": period_end.isoformat(),
-        "progress": progress,
-        "target": target,
-        "completed": progress >= target,
-        "aggregate_key": _aggregate_key(period_start, schedule["aggregate"]),
-        "created_at": _iso(created_at),
-    }
-
-
-def _aggregate_key(period_start: datetime, aggregate: str) -> str:
-    local = _now(period_start)
-    if aggregate == "day":
-        return local.date().isoformat()
-    if aggregate == "week":
-        week_start = _period_start(local, "week")
-        return week_start.date().isoformat()
-    if aggregate == "month":
-        return f"{local.year:04d}-{local.month:02d}"
-    raise ValueError(f"Unsupported aggregate: {aggregate}")
-
-
-def _aggregate_completion_counts(records: list[dict[str, Any]]) -> dict[str, int]:
-    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
-    for record in records:
-        if record.get("schedule_class") not in {"daily_x_per_week", "weekly_x_per_month"}:
+def _normalise_goal_participants(goals: dict[str, Any]) -> None:
+    for goal in goals.values():
+        if not isinstance(goal, dict):
             continue
-        grouped[(record["goal_id"], record["schedule_class"], record["aggregate_key"])].append(record)
+        participants = goal.get("participants", {})
+        if not isinstance(participants, dict):
+            goal["participants"] = {}
+            continue
+        for participant in participants.values():
+            if isinstance(participant, dict):
+                participant["completion_streak"] = max(0, int(participant.get("completion_streak", 0) or 0))
 
-    total = 0
-    completed = 0
-    for group in grouped.values():
-        total += 1
-        progress = sum(max(0, int(record.get("progress", 0))) for record in group)
-        target = max(1, int(group[0].get("target", 1)))
-        required = max(1, int(group[0].get("required_periods", 1)))
-        if progress >= target * required:
-            completed += 1
-    return {"total": total, "completed": completed}
+
+def _normalise_user_stats(user_stats: dict[str, Any]) -> None:
+    for user_id, stats in list(user_stats.items()):
+        if not isinstance(stats, dict):
+            user_stats[user_id] = {"activity_days": {}}
+            continue
+        days = stats.get("activity_days", {})
+        stats["activity_days"] = days if isinstance(days, dict) else {}
+
+
+def _user_stats(data: dict[str, Any], user_id: str) -> dict[str, Any]:
+    stats = data.setdefault("user_stats", {}).setdefault(user_id, {})
+    activity_days = stats.get("activity_days")
+    if not isinstance(activity_days, dict):
+        activity_days = {}
+        stats["activity_days"] = activity_days
+    return stats
+
+
+def _refresh_activity_day(data: dict[str, Any], user_id: str, day: Any) -> None:
+    date_key = day.isoformat() if hasattr(day, "isoformat") else str(day)
+    active_goals = 0
+    fulfilled_goals = 0
+    for goal in data.get("goals", {}).values():
+        if not isinstance(goal, dict) or not _goal_active_for_user(goal, user_id):
+            continue
+        participant = goal["participants"][user_id]
+        period_start = _parse_dt(participant.get("period_start"))
+        if period_start and period_start.date().isoformat() != date_key:
+            schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+            if schedule["base"] == "day":
+                continue
+            period_end = _next_period_start(_period_start(period_start, schedule["base"]), schedule["base"])
+            day_start = _now(datetime.fromisoformat(date_key))
+            if not (period_start.date() <= day_start.date() < period_end.date()):
+                continue
+        active_goals += 1
+        current = max(0, int(participant.get("current", 0)))
+        target = max(1, int(participant.get("target", 1)))
+        if current >= target:
+            fulfilled_goals += 1
+
+    percent = round((fulfilled_goals / active_goals) * 100, 1) if active_goals else 0.0
+    stats = _user_stats(data, user_id)
+    activity_days = stats["activity_days"]
+    activity_days[date_key] = {
+        "active_goals": active_goals,
+        "fulfilled_goals": fulfilled_goals,
+        "percent": percent,
+    }
+    _trim_activity_days(activity_days)
+
+
+def _trim_activity_days(activity_days: dict[str, Any]) -> None:
+    sorted_keys = sorted(activity_days)
+    for date_key in sorted_keys[:-365]:
+        del activity_days[date_key]
+
+
+def _days_using_app(user: dict[str, Any], now: datetime) -> int:
+    created_at = _parse_dt(user.get("created_at"))
+    if not created_at:
+        return 0
+    return max(1, (now.date() - created_at.date()).days + 1)
+
+
+def activity_calendar_weeks(activity_days: dict[str, Any], now: datetime | None = None) -> list[list[dict[str, Any] | None]]:
+    local_now = _now(now)
+    first_day = local_now.replace(day=1).date()
+    _, days_in_month = calendar.monthrange(local_now.year, local_now.month)
+    start_offset = first_day.weekday()
+    cells: list[dict[str, Any] | None] = [None] * start_offset
+    for day_number in range(1, days_in_month + 1):
+        date_key = f"{local_now.year:04d}-{local_now.month:02d}-{day_number:02d}"
+        day_stats = activity_days.get(date_key, {})
+        cells.append(
+            {
+                "date": date_key,
+                "day": day_number,
+                "percent": float(day_stats.get("percent", 0.0) or 0.0),
+                "active_goals": int(day_stats.get("active_goals", 0) or 0),
+                "fulfilled_goals": int(day_stats.get("fulfilled_goals", 0) or 0),
+            }
+        )
+    while len(cells) % 7:
+        cells.append(None)
+    return [cells[index : index + 7] for index in range(0, len(cells), 7)]
 
 
 def create_persistence(
