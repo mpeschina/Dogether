@@ -20,7 +20,8 @@ def participant_name(users: dict[str, dict], participant_id: str) -> str:
     return user.get("name") or user.get("email") or participant_id
 
 
-def progress_bar(current: int, target: int) -> None:
+def progress_bar(current: int, target: int, show_caption: bool = True) -> None:
     target = max(1, int(target))
     st.progress(min(1.0, max(0.0, current / target)))
-    st.caption(f"{current} / {target}")
+    if show_caption:
+        st.caption(f"{current} / {target}")
