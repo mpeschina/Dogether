@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import html
 
 import streamlit as st
@@ -42,7 +43,7 @@ def _friend_request_action_styles() -> None:
     )
 
 
-def render_friends(persistence, current_user: dict, user_id: str) -> None:
+def render_friends(persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
     _friend_request_action_styles()
 
     st.title("Friends")
@@ -51,7 +52,7 @@ def render_friends(persistence, current_user: dict, user_id: str) -> None:
         submitted = st.form_submit_button("Send invite")
         if submitted:
             try:
-                persistence.create_friend_invite(user_id, current_user["email"], email)
+                persistence.create_friend_invite(user_id, current_user["email"], email, now=now)
                 st.success("Friend invite created.")
             except ValueError as error:
                 st.error(str(error))
@@ -75,7 +76,7 @@ def render_friends(persistence, current_user: dict, user_id: str) -> None:
         cols[1].write(friend.get("email", ""))
         if cols[2].button(remove_label, key=f"remove_friend_{friend_id}", type=remove_type):
             if confirm_remove:
-                persistence.remove_friend(user_id, friend_id)
+                persistence.remove_friend(user_id, friend_id, now=now)
                 pending_removals.discard(friend_id)
             else:
                 pending_removals.add(friend_id)
@@ -111,11 +112,11 @@ def render_friends(persistence, current_user: dict, user_id: str) -> None:
             st.markdown('<div class="friend-request-actions"></div>', unsafe_allow_html=True)
             cols = st.columns([1, 1, 5])
             if cols[0].button("Yes", key=f"accept_{invite['id']}"):
-                persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=True)
+                persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=True, now=now)
                 st.success("Friend request accepted.")
                 st.rerun()
             if cols[1].button("No", key=f"decline_{invite['id']}"):
-                persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=False)
+                persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=False, now=now)
                 st.info("Friend request declined.")
                 st.rerun()
 

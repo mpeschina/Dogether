@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import streamlit as st
 
 from src.pages.page_helpers import schedule_label
 
 
-def render_goals(persistence, user_id: str) -> None:
+def render_goals(persistence, user_id: str, now: datetime | None = None) -> None:
     st.title("Create / Manage Shared Goals")
     friends = persistence.list_friends(user_id)
     friend_options = {f"{friend.get('name', friend['email'])} <{friend['email']}>": friend["user_id"] for friend in friends}
@@ -37,6 +39,7 @@ def render_goals(persistence, user_id: str) -> None:
                     friend_user_ids=[friend_options[label] for label in selected_friends],
                     target=int(target),
                     current=int(0),
+                    now=now,
                 )
                 st.success("Goal created.")
                 st.rerun()
@@ -44,7 +47,7 @@ def render_goals(persistence, user_id: str) -> None:
                 st.error(str(error))
 
     st.subheader("Your active goals")
-    goals = persistence.list_goals_for_user(user_id)
+    goals = persistence.list_goals_for_user(user_id, now=now)
     if not goals:
         st.info("No active goals.")
     active_goal_ids = {goal["id"] for goal in goals}
@@ -76,6 +79,7 @@ def render_goals(persistence, user_id: str) -> None:
                                     goal_id=goal["id"],
                                     user_id=user_id,
                                     friend_user_ids=[addable_friend_options[label] for label in selected_new_friends],
+                                    now=now,
                                 )
                                 st.success("Friends added.")
                                 st.rerun()
@@ -88,7 +92,7 @@ def render_goals(persistence, user_id: str) -> None:
         leave_type = "primary" if pending_leave else "secondary"
         if cols[4].button(leave_label, key=f"leave_{goal['id']}", type=leave_type):
             if pending_leave:
-                persistence.leave_goal(goal["id"], user_id)
+                persistence.leave_goal(goal["id"], user_id, now=now)
                 st.session_state.pop("goals_pending_leave_id", None)
             else:
                 st.session_state["goals_pending_leave_id"] = goal["id"]

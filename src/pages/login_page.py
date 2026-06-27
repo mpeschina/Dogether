@@ -1,18 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime
 import uuid
 from typing import Any
 
 import streamlit as st
 
-from src.db.persistence import JsonPersistence, normalize_email
+from src.db.persistence import normalize_email
 
 
-def login_screen(persistence: Any | None = None, json_mode: bool = False) -> None:
+def login_screen(persistence: Any | None = None, debug_enabled: bool = False, now: datetime | None = None) -> None:
     st.header("Dogether")
     st.button("Log in with Google", on_click=st.login)
 
-    if not json_mode or not isinstance(persistence, JsonPersistence):
+    if not debug_enabled:
         return
 
     st.divider()
@@ -29,7 +30,7 @@ def login_screen(persistence: Any | None = None, json_mode: bool = False) -> Non
             st.error("Enter a valid email address.")
         else:
             existing = persistence.find_user_by_email(normalized_email)
-            user = existing or persistence.upsert_user(f"debug_{uuid.uuid4().hex[:12]}", normalized_email, name)
+            user = existing or persistence.upsert_user(f"debug_{uuid.uuid4().hex[:12]}", normalized_email, name, now=now)
             _log_in_debug_user(user)
 
     users = persistence.list_users()

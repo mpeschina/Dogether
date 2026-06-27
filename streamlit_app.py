@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.db.persistence import JsonPersistence, get_persistence, persistence_settings
+from src.db.persistence import get_persistence, persistence_settings
 from src.pages.account_page import render_account
+from src.pages.debug_page import DebugMechanics, render_debug
 from src.pages.friends_page import render_friends
 from src.pages.goals_page import render_goals
 from src.pages.login_page import login_screen
@@ -13,26 +14,18 @@ st.set_page_config(page_title="Dogether", page_icon=":white_check_mark:", layout
 
 try:
     configured_persistence = persistence_settings()
-    json_mode = configured_persistence["backend"].strip().lower() == "json"
     persistence = get_persistence(**configured_persistence)
+    debug = DebugMechanics.from_secrets(persistence)
+    app_now = debug.effective_now
 except Exception as error:
     st.error(f"Could not load Dogether: {error}")
     st.stop()
 
 
-# 
-# Debug Mechanics
-#
-debug_user_id = st.session_state.get("debug_user_id") if json_mode else None
-if debug_user_id and isinstance(persistence, JsonPersistence):
-    debug_user = persistence.get_user(debug_user_id)
-    if not debug_user:
-        st.session_state.pop("debug_user_id", None)
-        st.rerun()
-else:
-    debug_user = None
+debug_user = debug.current_debug_user()
+debug_login = debug.debug_login_enabled
 
-if "is_logged_in" not in st.user and not json_mode:
+if "is_logged_in" not in st.user and not debug_login:
     st.error(
         "Authentication is not configured for this deployment. Add the "
         "[auth] settings to the app's secrets and restart it."
@@ -40,11 +33,11 @@ if "is_logged_in" not in st.user and not json_mode:
     st.stop()
 
 
-# 
+#
 # Login 
 #
 if not debug_user and not st.user.get("is_logged_in", False):
-    login_screen(persistence, json_mode)
+    login_screen(persistence, debug_login, now=app_now)
     st.stop()
 
 if debug_user:
@@ -64,7 +57,7 @@ if not user_email:
     st.stop()
 
 try:
-    current_user = persistence.upsert_user(user_id, user_email, user_name)
+    current_user = persistence.upsert_user(user_id, user_email, user_name, now=app_now)
 except Exception as error:
     st.error(f"Could not load Dogether: {error}")
     st.stop()
@@ -73,7 +66,7 @@ except Exception as error:
 st.sidebar.title("Dogether")
 st.sidebar.caption(current_user["email"])
 if st.sidebar.button("Log out", use_container_width=True):
-    st.session_state.pop("debug_user_id", None)
+    debug.clear_debug_user()
     st.session_state.pop("friend_request_alert_signature", None)
     st.session_state.pop("goals_pending_leave_id", None)
     st.session_state.pop("friends_pending_removals", None)
@@ -93,36 +86,45 @@ def mark_current_page(page_key: str) -> None:
 
 def main_page() -> None:
     mark_current_page("goals")
-    render_main(persistence, current_user, user_id)
+    render_main(persistence, current_user, user_id, now=app_now)
 
 
 def friends_page() -> None:
     mark_current_page("friends")
-    render_friends(persistence, current_user, user_id)
+    render_friends(persistence, current_user, user_id, now=app_now)
 
 
 def goals_page() -> None:
     mark_current_page("manage_goals")
-    render_goals(persistence, user_id)
+    render_goals(persistence, user_id, now=app_now)
 
 
 def account_page() -> None:
     mark_current_page("account")
-    render_account(persistence, current_user, user_id)
+    render_account(persistence, current_user, user_id, now=app_now)
+
+
+def debug_page() -> None:
+    mark_current_page("debug")
+    render_debug(persistence)
 
 
 goals_page_entry = st.Page(main_page, title="Goals", default=True, icon=":material/dashboard:")
 friends_page_entry = st.Page(friends_page, title="Friends", icon=":material/group:")
 manage_goals_page_entry = st.Page(goals_page, title="Manage Goals", icon=":material/flag:")
 account_page_entry = st.Page(account_page, title="Account", icon=":material/account_circle:")
+debug_page_entry = st.Page(debug_page, title="Debug", icon=":material/bug_report:")
+page_entries = [
+    goals_page_entry,
+    friends_page_entry,
+    manage_goals_page_entry,
+    account_page_entry,
+]
+if debug.enabled:
+    page_entries.append(debug_page_entry)
 
 page = st.navigation(
-    [
-        goals_page_entry,
-        friends_page_entry,
-        manage_goals_page_entry,
-        account_page_entry,
-    ]
+    page_entries
 )
 
 

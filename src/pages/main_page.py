@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from html import escape
 
 import streamlit as st
@@ -27,15 +28,15 @@ def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str
     return [current_user_id, *[uid for uid in ordered_ids if uid != current_user_id]]
 
 
-def render_main(persistence, current_user: dict, user_id: str) -> None:
-    stats = persistence.account_stats(user_id)
+def render_main(persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
+    stats = persistence.account_stats(user_id, now=now)
     metric_cols = st.columns(4)
     metric_cols[0].metric("Active goals", stats["active_goals"])
     metric_cols[1].metric("Friends", stats["friend_count"])
     metric_cols[2].metric("Completed periods", stats["completed_periods"])
     metric_cols[3].metric("Completion rate", f"{stats['completion_rate']}%")
 
-    goals = persistence.list_goals_for_user(user_id)
+    goals = persistence.list_goals_for_user(user_id, now=now)
     if not goals:
         st.info("Create a shared goal with a friend to get started.")
         return
@@ -77,7 +78,7 @@ def render_main(persistence, current_user: dict, user_id: str) -> None:
                     if can_invite_participant:
                         if name_cols[1].button("Add Friend", key=f"add_friend_{goal['id']}_{participant_id}"):
                             try:
-                                persistence.create_friend_invite(user_id, current_user["email"], participant_email)
+                                persistence.create_friend_invite(user_id, current_user["email"], participant_email, now=now)
                                 st.success("Friend invite sent.")
                                 st.rerun()
                             except ValueError as error:
@@ -94,6 +95,7 @@ def render_main(persistence, current_user: dict, user_id: str) -> None:
                                 goal["id"],
                                 user_id,
                                 current=int(participant.get("target", 1)),
+                                now=now,
                             )
                             st.rerun()
                         with action_cols[1].popover("...", use_container_width=True):
@@ -106,11 +108,11 @@ def render_main(persistence, current_user: dict, user_id: str) -> None:
                             )
                             detail_cols = st.columns(3)
                             if detail_cols[0].button("Save", key=f"save_{goal['id']}", use_container_width=True):
-                                persistence.update_goal_progress(goal["id"], user_id, current=current)
+                                persistence.update_goal_progress(goal["id"], user_id, current=current, now=now)
                                 st.rerun()
                             if detail_cols[1].button("+1", key=f"plus_{goal['id']}", use_container_width=True):
-                                persistence.update_goal_progress(goal["id"], user_id, delta=1)
+                                persistence.update_goal_progress(goal["id"], user_id, delta=1, now=now)
                                 st.rerun()
                             if detail_cols[2].button("-1", key=f"minus_{goal['id']}", use_container_width=True):
-                                persistence.update_goal_progress(goal["id"], user_id, delta=-1)
+                                persistence.update_goal_progress(goal["id"], user_id, delta=-1, now=now)
                                 st.rerun()

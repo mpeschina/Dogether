@@ -6,6 +6,7 @@ import json
 import pytest
 
 from src.db.persistence import JsonPersistence, create_persistence, persistence_settings
+from src.pages.debug_page import DebugMechanics, debug_now, debug_view_enabled
 
 BERLIN = ZoneInfo("Europe/Berlin")
 
@@ -31,6 +32,7 @@ def test_missing_file_gets_new_app_schema(tmp_path: Path) -> None:
         "friendships": {},
         "goals": {},
         "period_records": {},
+        "debug": {"time_offset_seconds": 0},
     }
 
 
@@ -97,6 +99,39 @@ def test_pending_invite_appears_when_email_owner_logs_in(tmp_path: Path) -> None
     future = persistence.upsert_user("future-user", "future@example.com", "Future")
 
     assert persistence.incoming_friend_invites(future["email"])[0]["id"] == invite["id"]
+
+
+def test_debug_time_offset_is_persisted_and_applied_only_when_enabled(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    persistence = JsonPersistence(path)
+
+    assert persistence.debug_time_offset_seconds() == 0
+    assert persistence.add_debug_time_offset(60 * 60) == 60 * 60
+    assert JsonPersistence(path).debug_time_offset_seconds() == 60 * 60
+
+    server_now = at("2026-06-01T10:00:00")
+    assert debug_now(persistence, False, server_now) == server_now
+    assert debug_now(persistence, True, server_now) == at("2026-06-01T11:00:00")
+
+
+def test_debug_view_enabled_comes_from_secrets() -> None:
+    assert debug_view_enabled({"debug": {"view": True}}) is True
+    assert debug_view_enabled({"debug": {"view": "yes"}}) is True
+    assert debug_view_enabled({"debug": {"enabled": "yes"}}) is False
+    assert debug_view_enabled({"debug_view": True}) is False
+    assert debug_view_enabled({"debug_view": "false"}) is False
+
+
+def test_debug_mechanics_uses_same_secrets_flag(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+
+    enabled = DebugMechanics.from_secrets(persistence, secrets={"debug": {"view": True}})
+    disabled = DebugMechanics.from_secrets(persistence, secrets={"debug": {"view": False}})
+
+    assert enabled.enabled is True
+    assert enabled.debug_login_enabled is True
+    assert disabled.enabled is False
+    assert disabled.debug_login_enabled is False
 
 
 def test_goal_creation_requires_friends_and_creates_per_user_participants(tmp_path: Path) -> None:

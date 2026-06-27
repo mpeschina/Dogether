@@ -40,6 +40,9 @@ server_metadata_url = "https://accounts.google.com/.well-known/openid-configurat
 [persistence]
 backend = "json"
 json_path = "data/users.json"
+
+[debug]
+view = true
 ```
 
 Then start the Streamlit development server:
@@ -101,6 +104,14 @@ json_path = "data/users.json"
 
 The JSON document contains users, friend invites, friendships, goals, and period
 records. The file is written atomically with a temporary file replacement.
+
+## Debug Time Travel
+
+Set `[debug].view = true` in `.streamlit/secrets.toml` to show the Debug page
+and local debug login. The Debug page can add one hour or one day to the app's
+effective time. That offset is persisted in the JSON database and is applied to
+goal period rollover and completion calculations only while the debug view is
+enabled.
 
 ## Deploy on Streamlit Community Cloud
 

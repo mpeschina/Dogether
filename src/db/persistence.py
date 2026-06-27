@@ -49,6 +49,10 @@ class Persistence(Protocol):
 
     def list_users(self) -> list[dict[str, Any]]: ...
 
+    def debug_time_offset_seconds(self) -> int: ...
+
+    def add_debug_time_offset(self, seconds: int) -> int: ...
+
 
 class JsonPersistence:
     """Atomic JSON persistence for the Streamlit prototype."""
@@ -131,6 +135,24 @@ class JsonPersistence:
         with self._lock:
             users = list(self._read()["users"].values())
         return sorted(users, key=lambda user: (user.get("name", ""), user.get("email", "")))
+
+    def debug_time_offset_seconds(self) -> int:
+        with self._lock:
+            return int(self._read().get("debug", {}).get("time_offset_seconds", 0))
+
+    def add_debug_time_offset(self, seconds: int) -> int:
+        with self._lock:
+            data = self._read()
+            debug = data.setdefault("debug", {})
+            debug["time_offset_seconds"] = max(0, int(debug.get("time_offset_seconds", 0)) + int(seconds))
+            self._write(data)
+            return int(debug["time_offset_seconds"])
+
+    def reset_debug_time_offset(self) -> None:
+        with self._lock:
+            data = self._read()
+            data.setdefault("debug", {})["time_offset_seconds"] = 0
+            self._write(data)
 
     def create_friend_invite(
         self,
@@ -437,6 +459,7 @@ class JsonPersistence:
                             progress,
                             target,
                             schedule,
+                            now_dt,
                         )
                         data["period_records"][record["id"]] = record
                         participant["current"] = 0
@@ -488,6 +511,7 @@ def _empty_store() -> dict[str, Any]:
         "friendships": {},
         "goals": {},
         "period_records": {},
+        "debug": {"time_offset_seconds": 0},
     }
 
 
@@ -504,6 +528,12 @@ def _normalise_store(data: dict[str, Any]) -> dict[str, Any]:
     for key in ["friend_invites", "friendships", "goals", "period_records"]:
         value = data.get(key, {})
         store[key] = value if isinstance(value, dict) else {}
+    debug = data.get("debug", {}) if isinstance(data.get("debug"), dict) else {}
+    try:
+        offset_seconds = int(debug.get("time_offset_seconds", 0) or 0)
+    except (TypeError, ValueError):
+        offset_seconds = 0
+    store["debug"] = {"time_offset_seconds": max(0, offset_seconds)}
     return store
 
 
@@ -594,6 +624,7 @@ def _period_record(
     progress: int,
     target: int,
     schedule: dict[str, Any],
+    created_at: datetime | None = None,
 ) -> dict[str, Any]:
     return {
         "id": f"record_{goal['id']}_{user_id}_{period_start.date().isoformat()}",
@@ -607,7 +638,7 @@ def _period_record(
         "target": target,
         "completed": progress >= target,
         "aggregate_key": _aggregate_key(period_start, schedule["aggregate"]),
-        "created_at": _iso(),
+        "created_at": _iso(created_at),
     }
 
 
