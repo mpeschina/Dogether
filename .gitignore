@@ -183,3 +183,9 @@ cython_debug/
 
 # Local persistence data
 data/*.json
+
+# Keep the committed Streamlit custom component build for deployment.
+!push_component/
+!push_component/frontend/
+!push_component/frontend/build/
+!push_component/frontend/build/**
