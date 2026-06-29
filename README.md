@@ -153,3 +153,34 @@ mongodb_collection = "users"
 
 Use the same production callback URL as an authorized redirect URI in the Google
 Cloud OAuth client, then restart the Streamlit app.
+
+Please Note: 
+
+If MongoDB Atlas reports an SSL handshake error from Streamlit Cloud, first
+verify the app's Streamlit secrets contain the full `mongodb+srv://...` URI.
+Then check Atlas **Network Access**: Atlas only accepts clients whose source IP
+is in the project's IP access list, and Streamlit Community Cloud outbound IPs
+can change. For a prototype, add `0.0.0.0/0` in Atlas Network Access; for a
+production app, use a host with stable outbound networking or a private network
+path.
+
+Streamlits Cloud IPs are listed here: 
+https://docs.streamlit.io/deploy/streamlit-community-cloud/status
+35.230.127.150
+35.203.151.101
+34.19.100.134
+34.83.176.217
+35.230.58.211
+35.203.187.165
+35.185.209.55
+34.127.88.74
+34.127.0.121
+35.230.78.192
+35.247.110.67
+35.197.92.111
+34.168.247.159
+35.230.56.30
+34.127.33.101
+35.227.190.87
+35.199.156.97
+34.82.135.155
