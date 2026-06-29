@@ -8,6 +8,8 @@ import streamlit as st
 from src.db.persistence import Persistence
 from src.pages.account_page import render_activity_diagram
 from src.pages.page_helpers import participant_name, progress_bar, schedule_label
+from src.push.notifications import create_friend_invite_with_push
+from src.push.storage import PushStorage
 
 
 def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str]:
@@ -30,7 +32,14 @@ def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str
     return [current_user_id, *[uid for uid in ordered_ids if uid != current_user_id]]
 
 
-def render_main(persistence: Persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
+def render_main(
+    persistence: Persistence,
+    current_user: dict,
+    user_id: str,
+    push_storage: PushStorage | None = None,
+    push_settings: dict[str, str] | None = None,
+    now: datetime | None = None,
+) -> None:
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)
 
@@ -76,7 +85,15 @@ def render_main(persistence: Persistence, current_user: dict, user_id: str, now:
                     if can_invite_participant:
                         if name_cols[1].button("Add Friend", key=f"add_friend_{goal['id']}_{participant_id}"):
                             try:
-                                persistence.create_friend_invite(user_id, current_user["email"], participant_email, now=now)
+                                create_friend_invite_with_push(
+                                    persistence,
+                                    push_storage,
+                                    push_settings or {},
+                                    from_user_id=user_id,
+                                    from_email=current_user["email"],
+                                    to_email=participant_email,
+                                    now=now,
+                                )
                                 st.success("Friend invite sent.")
                                 st.rerun()
                             except ValueError as error:

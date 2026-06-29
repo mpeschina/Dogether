@@ -2,3 +2,5 @@ streamlit[auth]
 httpx
 pymongo[srv]
 pytest
+pywebpush
+py-vapid

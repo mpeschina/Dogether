@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "build": "mkdir -p build && cp src/index.html build/index.html"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

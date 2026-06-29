@@ -7,6 +7,8 @@ from typing import Any, Mapping
 import streamlit as st
 
 from src.db.persistence import APP_ZONE, Persistence
+from src.push.sender import push_configured, send_push_to_user
+from src.push.storage import PushStorage
 
 
 @dataclass
@@ -67,7 +69,11 @@ def debug_now(persistence: Persistence, debug_mode: bool, now: datetime | None =
     return server_now + timedelta(seconds=int(persistence.debug_time_offset_seconds()))
 
 
-def render_debug(persistence: Persistence) -> None:
+def render_debug(
+    persistence: Persistence,
+    push_storage: PushStorage | None = None,
+    push_settings: Mapping[str, str] | None = None,
+) -> None:
     st.title("Debug")
     offset_seconds = int(persistence.debug_time_offset_seconds())
     server_now = _server_now()
@@ -88,6 +94,55 @@ def render_debug(persistence: Persistence) -> None:
     if action_cols[2].button("Reset", use_container_width=True):
         persistence.reset_debug_time_offset()
         st.rerun()
+
+    render_debug_push_notification(persistence, push_storage, push_settings or {})
+
+
+def render_debug_push_notification(
+    persistence: Persistence,
+    push_storage: PushStorage | None,
+    push_settings: Mapping[str, str],
+) -> None:
+    st.subheader("Push Notification")
+    if not push_configured(push_settings):
+        st.info("Push notifications are not configured for this deployment.")
+        return
+    if push_storage is None:
+        st.info("Push notification storage is unavailable.")
+        return
+
+    with st.form("debug_push_notification"):
+        email = st.text_input("Recipient email")
+        title = st.text_input("Title", "Dogether debug")
+        body = st.text_area("Body", "This is a debug push notification.")
+        url = st.text_input("URL", "/")
+        submitted = st.form_submit_button("Send push notification")
+
+    if not submitted:
+        return
+
+    recipient = persistence.find_user_by_email(email)
+    if not recipient:
+        st.error("No Dogether user found for that email address.")
+        return
+
+    result = send_push_to_user(
+        push_storage,
+        recipient["user_id"],
+        title=title.strip() or "Dogether debug",
+        body=body.strip(),
+        url=url.strip() or "/",
+        vapid_private_key=push_settings["vapid_private_key"],
+        vapid_subject=push_settings["vapid_subject"],
+    )
+    if result["sent"]:
+        st.success(f"Sent {result['sent']} push notification(s) to {recipient['email']}.")
+    elif result["removed"]:
+        st.info("No active subscriptions remained; expired subscriptions were removed.")
+    else:
+        st.info("No active push subscriptions found for that user.")
+    if result["errors"]:
+        st.error("; ".join(result["errors"]))
 
 
 def _server_now(now: datetime | None = None) -> datetime:

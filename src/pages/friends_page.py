@@ -6,6 +6,8 @@ import html
 import streamlit as st
 
 from src.db.persistence import Persistence
+from src.push.notifications import create_friend_invite_with_push
+from src.push.storage import PushStorage
 
 
 def _friend_request_action_styles() -> None:
@@ -45,7 +47,14 @@ def _friend_request_action_styles() -> None:
     )
 
 
-def render_friends(persistence: Persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
+def render_friends(
+    persistence: Persistence,
+    current_user: dict,
+    user_id: str,
+    push_storage: PushStorage | None = None,
+    push_settings: dict[str, str] | None = None,
+    now: datetime | None = None,
+) -> None:
     _friend_request_action_styles()
 
     st.title("Friends")
@@ -54,7 +63,15 @@ def render_friends(persistence: Persistence, current_user: dict, user_id: str, n
         submitted = st.form_submit_button("Send invite")
         if submitted:
             try:
-                persistence.create_friend_invite(user_id, current_user["email"], email, now=now)
+                create_friend_invite_with_push(
+                    persistence,
+                    push_storage,
+                    push_settings or {},
+                    from_user_id=user_id,
+                    from_email=current_user["email"],
+                    to_email=email,
+                    now=now,
+                )
                 st.success("Friend invite created.")
             except ValueError as error:
                 st.error(str(error))

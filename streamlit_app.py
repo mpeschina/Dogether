@@ -9,12 +9,28 @@ from src.pages.friends_page import render_friends
 from src.pages.goals_page import render_goals
 from src.pages.login_page import login_screen
 from src.pages.main_page import render_main
+from src.push.sender import push_config
+from src.push.storage import get_push_storage, push_storage_settings
 
 st.set_page_config(page_title="Dogether", page_icon=":white_check_mark:", layout="wide")
+
+st.markdown(
+    """
+    <link rel="manifest" href="/app/static/manifest.json">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Dogether">
+    <link rel="apple-touch-icon" href="/app/static/icon-192.png">
+    """,
+    unsafe_allow_html=True,
+)
 
 try:
     configured_persistence = persistence_settings()
     persistence: Persistence = get_persistence(**configured_persistence)
+    configured_push_storage = push_storage_settings()
+    push_storage = get_push_storage(**configured_push_storage)
+    configured_push = push_config()
     debug = DebugMechanics.from_secrets(persistence)
     app_now = debug.effective_now
 except Exception as error:
@@ -86,12 +102,12 @@ def mark_current_page(page_key: str) -> None:
 
 def main_page() -> None:
     mark_current_page("goals")
-    render_main(persistence, current_user, user_id, now=app_now)
+    render_main(persistence, current_user, user_id, push_storage, configured_push, now=app_now)
 
 
 def friends_page() -> None:
     mark_current_page("friends")
-    render_friends(persistence, current_user, user_id, now=app_now)
+    render_friends(persistence, current_user, user_id, push_storage, configured_push, now=app_now)
 
 
 def goals_page() -> None:
@@ -101,12 +117,12 @@ def goals_page() -> None:
 
 def account_page() -> None:
     mark_current_page("account")
-    render_account(persistence, current_user, user_id, now=app_now)
+    render_account(persistence, current_user, user_id, push_storage, configured_push, now=app_now)
 
 
 def debug_page() -> None:
     mark_current_page("debug")
-    render_debug(persistence)
+    render_debug(persistence, push_storage, configured_push)
 
 
 goals_page_entry = st.Page(main_page, title="Goals", default=True, icon=":material/dashboard:")
