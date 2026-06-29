@@ -3,7 +3,6 @@
 Dogether is a Streamlit prototype for shared daily and weekly goals. Users sign in
 with Google, add friends by email, approve friend requests, and create shared goals.
 
-
 ## Features
 
 - Google-authenticated account view with name, email, and completion stats
