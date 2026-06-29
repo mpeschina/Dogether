@@ -59,7 +59,7 @@ Streamlit will print the local URL in the terminal, typically
 `http://localhost:8501`. The app automatically reloads when source files are
 saved.
 
-(Manage Google Cloud: https://console.cloud.google.com/)
+(Manage Google Cloud: https://console.cloud.google.com/auth/)
 
 ## App behavior
 
@@ -184,3 +184,6 @@ https://docs.streamlit.io/deploy/streamlit-community-cloud/status
 35.227.190.87
 35.199.156.97
 34.82.135.155
+
+## Links
+https://docs.streamlit.io/develop/tutorials/authentication/google
