@@ -6,14 +6,17 @@ from typing import Any
 
 import streamlit as st
 
-from src.db.persistence import normalize_email
+from src.db.persistence import Persistence, normalize_email
 
 
-def login_screen(persistence: Any | None = None, debug_enabled: bool = False, now: datetime | None = None) -> None:
+def login_screen(persistence: Persistence | None = None, debug_enabled: bool = False, now: datetime | None = None) -> None:
     st.header("Dogether")
     st.button("Log in with Google", on_click=st.login)
 
     if not debug_enabled:
+        return
+    if persistence is None:
+        st.error("Debug login requires persistence.")
         return
 
     st.divider()

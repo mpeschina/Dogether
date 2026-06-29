@@ -1,0 +1,219 @@
+"""Shared persistence constants and domain helpers for Dogether."""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any
+from zoneinfo import ZoneInfo
+
+
+APP_ZONE = ZoneInfo("Europe/Berlin")
+UTC = timezone.utc
+SCHEDULES = {
+    "daily": {"label": "Daily", "base": "day", "required_periods": 1, "aggregate": "day"},
+    "weekly": {"label": "Weekly", "base": "week", "required_periods": 1, "aggregate": "week"},
+    "daily_x_per_week": {
+        "label": "Daily with X per week",
+        "base": "day",
+        "required_periods": 5,
+        "aggregate": "week",
+    },
+    "weekly_x_per_month": {
+        "label": "Weekly with X per month",
+        "base": "week",
+        "required_periods": 3,
+        "aggregate": "month",
+    },
+}
+
+
+def _empty_store() -> dict[str, Any]:
+    return {
+        "users": {},
+        "friend_invites": {},
+        "friendships": {},
+        "goals": {},
+        "user_stats": {},
+        "debug": {"time_offset_seconds": 0},
+    }
+
+
+def _normalise_store(data: dict[str, Any]) -> dict[str, Any]:
+    # Old demo files had only {"users": {id: {"count": ..., "text": ...}}}; ignore
+    # entries that are not Dogether profiles and initialise missing collections.
+    store = _empty_store()
+    users = data.get("users", {}) if isinstance(data.get("users"), dict) else {}
+    store["users"] = {
+        user_id: user
+        for user_id, user in users.items()
+        if isinstance(user, dict) and "email" in user and "user_id" in user
+    }
+    for key in ["friend_invites", "friendships", "goals", "user_stats"]:
+        value = data.get(key, {})
+        store[key] = value if isinstance(value, dict) else {}
+    _normalise_goal_participants(store["goals"])
+    _normalise_user_stats(store["user_stats"])
+    debug = data.get("debug", {}) if isinstance(data.get("debug"), dict) else {}
+    try:
+        offset_seconds = int(debug.get("time_offset_seconds", 0) or 0)
+    except (TypeError, ValueError):
+        offset_seconds = 0
+    store["debug"] = {"time_offset_seconds": max(0, offset_seconds)}
+    return store
+
+
+def normalize_email(email: str) -> str:
+    return str(email or "").strip().lower()
+
+
+def _now(now: datetime | None = None) -> datetime:
+    if now is None:
+        return datetime.now(APP_ZONE)
+    if now.tzinfo is None:
+        return now.replace(tzinfo=APP_ZONE)
+    return now.astimezone(APP_ZONE)
+
+
+def _iso(now: datetime | None = None) -> str:
+    return _now(now).astimezone(UTC).isoformat()
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return _now(parsed)
+
+
+def _new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+def _friendship_id(first_user_id: str, second_user_id: str) -> str:
+    first, second = sorted([first_user_id, second_user_id])
+    return f"friendship_{first}_{second}"
+
+
+def _find_user_by_email(data: dict[str, Any], email: str) -> dict[str, Any] | None:
+    for user in data["users"].values():
+        if user.get("email") == normalize_email(email):
+            return user
+    return None
+
+
+def _active_friendship(data: dict[str, Any], first_user_id: str, second_user_id: str) -> bool:
+    friendship = data["friendships"].get(_friendship_id(first_user_id, second_user_id))
+    return bool(friendship and friendship.get("active"))
+
+
+def _goal_active_for_user(goal: dict[str, Any], user_id: str) -> bool:
+    participant = goal.get("participants", {}).get(user_id)
+    return bool(participant and not participant.get("left_at") and not goal.get("archived_at"))
+
+
+def _schedule(schedule_class: str, required_periods: int | None = None) -> dict[str, Any]:
+    if schedule_class not in SCHEDULES:
+        raise ValueError("Unsupported schedule class.")
+    schedule = dict(SCHEDULES[schedule_class])
+    if schedule_class in {"daily_x_per_week", "weekly_x_per_month"}:
+        schedule["required_periods"] = max(1, int(required_periods or schedule["required_periods"]))
+    return schedule
+
+
+def _period_start(now: datetime, base: str) -> datetime:
+    local = _now(now)
+    if base == "day":
+        return local.replace(hour=0, minute=0, second=0, microsecond=0)
+    if base == "week":
+        start = local - timedelta(days=local.weekday())
+        return start.replace(hour=0, minute=0, second=0, microsecond=0)
+    raise ValueError(f"Unsupported period base: {base}")
+
+
+def _next_period_start(period_start: datetime, base: str) -> datetime:
+    if base == "day":
+        return period_start + timedelta(days=1)
+    if base == "week":
+        return period_start + timedelta(weeks=1)
+    raise ValueError(f"Unsupported period base: {base}")
+
+
+def _normalise_goal_participants(goals: dict[str, Any]) -> None:
+    for goal in goals.values():
+        if not isinstance(goal, dict):
+            continue
+        participants = goal.get("participants", {})
+        if not isinstance(participants, dict):
+            goal["participants"] = {}
+            continue
+        for participant in participants.values():
+            if isinstance(participant, dict):
+                participant["completion_streak"] = max(0, int(participant.get("completion_streak", 0) or 0))
+
+
+def _normalise_user_stats(user_stats: dict[str, Any]) -> None:
+    for user_id, stats in list(user_stats.items()):
+        if not isinstance(stats, dict):
+            user_stats[user_id] = {"activity_days": {}}
+            continue
+        days = stats.get("activity_days", {})
+        stats["activity_days"] = days if isinstance(days, dict) else {}
+
+
+def _user_stats(data: dict[str, Any], user_id: str) -> dict[str, Any]:
+    stats = data.setdefault("user_stats", {}).setdefault(user_id, {})
+    activity_days = stats.get("activity_days")
+    if not isinstance(activity_days, dict):
+        activity_days = {}
+        stats["activity_days"] = activity_days
+    return stats
+
+
+def _refresh_activity_day(data: dict[str, Any], user_id: str, day: Any) -> None:
+    date_key = day.isoformat() if hasattr(day, "isoformat") else str(day)
+    active_goals = 0
+    fulfilled_goals = 0
+    for goal in data.get("goals", {}).values():
+        if not isinstance(goal, dict) or not _goal_active_for_user(goal, user_id):
+            continue
+        participant = goal["participants"][user_id]
+        period_start = _parse_dt(participant.get("period_start"))
+        if period_start and period_start.date().isoformat() != date_key:
+            schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+            if schedule["base"] == "day":
+                continue
+            period_end = _next_period_start(_period_start(period_start, schedule["base"]), schedule["base"])
+            day_start = _now(datetime.fromisoformat(date_key))
+            if not (period_start.date() <= day_start.date() < period_end.date()):
+                continue
+        active_goals += 1
+        current = max(0, int(participant.get("current", 0)))
+        target = max(1, int(participant.get("target", 1)))
+        if current >= target:
+            fulfilled_goals += 1
+
+    percent = round((fulfilled_goals / active_goals) * 100, 1) if active_goals else 0.0
+    stats = _user_stats(data, user_id)
+    activity_days = stats["activity_days"]
+    activity_days[date_key] = {
+        "active_goals": active_goals,
+        "fulfilled_goals": fulfilled_goals,
+        "percent": percent,
+    }
+    _trim_activity_days(activity_days)
+
+
+def _trim_activity_days(activity_days: dict[str, Any]) -> None:
+    sorted_keys = sorted(activity_days)
+    for date_key in sorted_keys[:-365]:
+        del activity_days[date_key]
+
+
+def _days_using_app(user: dict[str, Any], now: datetime) -> int:
+    created_at = _parse_dt(user.get("created_at"))
+    if not created_at:
+        return 0
+    return max(1, (now.date() - created_at.date()).days + 1)

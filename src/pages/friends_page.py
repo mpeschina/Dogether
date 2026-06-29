@@ -5,6 +5,8 @@ import html
 
 import streamlit as st
 
+from src.db.persistence import Persistence
+
 
 def _friend_request_action_styles() -> None:
     st.markdown(
@@ -43,7 +45,7 @@ def _friend_request_action_styles() -> None:
     )
 
 
-def render_friends(persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
+def render_friends(persistence: Persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
     _friend_request_action_styles()
 
     st.title("Friends")

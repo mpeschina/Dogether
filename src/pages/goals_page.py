@@ -4,10 +4,11 @@ from datetime import datetime
 
 import streamlit as st
 
+from src.db.persistence import Persistence
 from src.pages.page_helpers import schedule_label
 
 
-def render_goals(persistence, user_id: str, now: datetime | None = None) -> None:
+def render_goals(persistence: Persistence, user_id: str, now: datetime | None = None) -> None:
     st.title("Create / Manage Shared Goals")
     friends = persistence.list_friends(user_id)
     friend_options = {f"{friend.get('name', friend['email'])} <{friend['email']}>": friend["user_id"] for friend in friends}

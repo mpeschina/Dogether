@@ -5,6 +5,7 @@ from html import escape
 
 import streamlit as st
 
+from src.db.persistence import Persistence
 from src.pages.account_page import render_activity_diagram
 from src.pages.page_helpers import participant_name, progress_bar, schedule_label
 
@@ -29,7 +30,7 @@ def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str
     return [current_user_id, *[uid for uid in ordered_ids if uid != current_user_id]]
 
 
-def render_main(persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
+def render_main(persistence: Persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)
 

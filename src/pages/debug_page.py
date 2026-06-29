@@ -6,18 +6,18 @@ from typing import Any, Mapping
 
 import streamlit as st
 
-from src.db.persistence import APP_ZONE
+from src.db.persistence import APP_ZONE, Persistence
 
 
 @dataclass
 class DebugMechanics:
-    persistence: Any
+    persistence: Persistence
     enabled: bool
 
     @classmethod
     def from_secrets(
         cls,
-        persistence: Any,
+        persistence: Persistence,
         secrets: Mapping[str, Any] | None = None,
     ) -> "DebugMechanics":
         return cls(
@@ -60,14 +60,14 @@ def debug_view_enabled(secrets: Mapping[str, Any] | None = None) -> bool:
     return False
 
 
-def debug_now(persistence: Any, debug_mode: bool, now: datetime | None = None) -> datetime:
+def debug_now(persistence: Persistence, debug_mode: bool, now: datetime | None = None) -> datetime:
     server_now = _server_now(now)
-    if not debug_mode or not hasattr(persistence, "debug_time_offset_seconds"):
+    if not debug_mode:
         return server_now
     return server_now + timedelta(seconds=int(persistence.debug_time_offset_seconds()))
 
 
-def render_debug(persistence: Any) -> None:
+def render_debug(persistence: Persistence) -> None:
     st.title("Debug")
     offset_seconds = int(persistence.debug_time_offset_seconds())
     server_now = _server_now()

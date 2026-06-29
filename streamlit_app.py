@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.db.persistence import get_persistence, persistence_settings
+from src.db.persistence import Persistence, get_persistence, persistence_settings
 from src.pages.account_page import render_account
 from src.pages.debug_page import DebugMechanics, render_debug
 from src.pages.friends_page import render_friends
@@ -14,7 +14,7 @@ st.set_page_config(page_title="Dogether", page_icon=":white_check_mark:", layout
 
 try:
     configured_persistence = persistence_settings()
-    persistence = get_persistence(**configured_persistence)
+    persistence: Persistence = get_persistence(**configured_persistence)
     debug = DebugMechanics.from_secrets(persistence)
     app_now = debug.effective_now
 except Exception as error:

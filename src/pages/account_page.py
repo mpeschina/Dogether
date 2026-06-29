@@ -5,8 +5,10 @@ from html import escape
 
 import streamlit as st
 
+from src.db.persistence import Persistence
 
-def render_account(persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
+
+def render_account(persistence: Persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
     st.title("Account")
     st.write("Name")
     st.subheader(current_user["name"])
