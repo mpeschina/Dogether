@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Mapping
 
 import streamlit as st
@@ -95,7 +96,22 @@ def render_debug(
         persistence.reset_debug_time_offset()
         st.rerun()
 
+    render_deployment_diagnostics()
     render_debug_push_notification(persistence, push_storage, push_settings or {})
+
+
+def render_deployment_diagnostics() -> None:
+    st.subheader("Deployment Diagnostics")
+    rows = {
+        "static serving": st.get_option("server.enableStaticServing"),
+        ".streamlit/config.toml exists": Path(".streamlit/config.toml").exists(),
+        "static/sw.js exists": Path("static/sw.js").exists(),
+        "static/manifest.json exists": Path("static/manifest.json").exists(),
+        "static/icon-192.png exists": Path("static/icon-192.png").exists(),
+        "static/icon-512.png exists": Path("static/icon-512.png").exists(),
+        "push component build exists": Path("push_component/frontend/build/index.html").exists(),
+    }
+    st.table([{"Check": key, "Value": value} for key, value in rows.items()])
 
 
 def render_debug_push_notification(
