@@ -59,7 +59,7 @@ Streamlit will print the local URL in the terminal, typically
 `http://localhost:8501`. The app automatically reloads when source files are
 saved.
 
-To stop the server, press `Ctrl+C` in the terminal.
+(Manage Google Cloud: https://console.cloud.google.com/)
 
 ## App behavior
 
