@@ -1,8 +1,8 @@
 # Dogether
 
 Dogether is a Streamlit prototype for shared daily and weekly goals. Users sign in
-with Google, add friends by email, approve friend requests, and create shared
-goals where every participant has their own progress and target.
+with Google, add friends by email, approve friend requests, and create shared goals.
+
 
 ## Features
 
@@ -26,8 +26,8 @@ goals where every participant has their own progress and target.
 The project is in a dev container. Dependencies are installed via the
 `devcontainer.json` file. Python dependencies are listed in `requirements.txt`.
 
-Create `.streamlit/secrets.toml` with your local Google OIDC credentials and
-JSON persistence settings:
+Create `.streamlit/secrets.toml` with JSON persistence settings. Add Google OIDC
+credentials when you want to use the real login flow:
 
 ```toml
 [auth]
@@ -45,6 +45,10 @@ json_path = "data/users.json"
 view = true
 ```
 
+When `[debug].view = true`, the app shows a Debug page and a local debug login
+so you can create or select test users without Google sign-in. Set it to `false`
+or omit the section for normal Google-authenticated use.
+
 Then start the Streamlit development server:
 
 ```bash
@@ -59,16 +63,17 @@ To stop the server, press `Ctrl+C` in the terminal.
 
 ## App behavior
 
-Pending and declined friend invites are stored inside the JSON persistence file.
-Accepted invites are deleted after the friendship is created. No email is sent.
-When the invited Google email signs in, the pending invite appears in the
-Friends view.
+The app has four primary pages:
 
-Goals can be shared only with accepted friends. After a goal is created, the
-shared description and schedule class are immutable. Each participant can update
-only their own current progress and target, or leave the goal, which removes
-them from the stored participant list. Goals with no remaining participants are
-deleted.
+- **Goals**: shows recent activity and active shared goals. The current user can
+  mark a goal done, set the current progress, or increment/decrement progress.
+- **Friends**: sends friend invites, accepts or declines incoming requests,
+  shows outgoing pending invites, and removes existing friends.
+- **Manage Goals**: creates shared goals, adds accepted friends to existing
+  goals, and lets the current user leave a goal.
+- **Account**: shows profile details, goal/friend stats, completion rate, and a
+  year of activity.
+
 
 Supported schedule classes are:
 
@@ -122,9 +127,9 @@ MongoDB document for now so it matches the existing persistence contract.
 
 Set `[debug].view = true` in `.streamlit/secrets.toml` to show the Debug page
 and local debug login. The Debug page can add one hour or one day to the app's
-effective time. That offset is persisted in the JSON database and is applied to
-goal period rollover and completion calculations only while the debug view is
-enabled.
+effective time. That offset is persisted by the configured backend and is
+applied to goal period rollover and completion calculations only while the debug
+view is enabled.
 
 ## Deploy on Streamlit Community Cloud
 

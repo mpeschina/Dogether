@@ -39,7 +39,7 @@ def _empty_store() -> dict[str, Any]:
 
 
 def _normalise_store(data: dict[str, Any]) -> dict[str, Any]:
-    # Old demo files had only {"users": {id: {"count": ..., "text": ...}}}; ignore
+    # Earlier local data files could contain non-profile user records; ignore
     # entries that are not Dogether profiles and initialise missing collections.
     store = _empty_store()
     users = data.get("users", {}) if isinstance(data.get("users"), dict) else {}

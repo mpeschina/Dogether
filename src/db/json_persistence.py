@@ -12,7 +12,7 @@ from .persistence_helpers import _empty_store, _normalise_store
 
 
 class JsonPersistence(DocumentPersistence):
-    """Atomic JSON persistence for the Streamlit prototype."""
+    """Atomic JSON persistence for Dogether."""
 
     def __init__(self, path: str | Path = "data/users.json") -> None:
         self.path = Path(path)
