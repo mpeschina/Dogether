@@ -133,8 +133,17 @@
             throw new Error("Notification permission was not granted.");
           }
 
-          const serviceWorkerUrl = args.service_worker_url || "/app/static/sw.js";
-          const registration = await navigator.serviceWorker.register(serviceWorkerUrl);
+          const serviceWorkerUrl = args.service_worker_url || "/~/+/app/static/sw.js";
+          let registration;
+          try {
+            registration = await navigator.serviceWorker.register(serviceWorkerUrl);
+          } catch (firstError) {
+            if (serviceWorkerUrl !== "/app/static/sw.js") {
+              registration = await navigator.serviceWorker.register("/app/static/sw.js");
+            } else {
+              throw firstError;
+            }
+          }
           let subscription = await registration.pushManager.getSubscription();
 
           if (!subscription) {
@@ -164,7 +173,7 @@
         setBusy(true);
         try {
           const registration = await navigator.serviceWorker.getRegistration(
-            args.service_worker_url || "/app/static/sw.js"
+            args.service_worker_url || "/~/+/app/static/sw.js"
           );
           if (!registration) {
             setStatus("No service worker registration found.");

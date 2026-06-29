@@ -61,7 +61,7 @@ def render_notification_controls(
 
     value = push_subscribe(
         vapid_public_key=push_settings["vapid_public_key"],
-        service_worker_url="/app/static/sw.js",
+        service_worker_url="/~/+/app/static/sw.js",
         key=f"push-subscribe-{user_id}",
     )
 

@@ -19,7 +19,7 @@ if _BUILD_DIR.exists():
 def push_subscribe(
     *,
     vapid_public_key: str,
-    service_worker_url: str = "/app/static/sw.js",
+    service_worker_url: str = "/~/+/app/static/sw.js",
     key: str | None = None,
 ):
     if _component_func is None:
