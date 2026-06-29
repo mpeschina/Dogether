@@ -93,8 +93,9 @@ Run the pytest suite from the repository root:
 
 ## Persistence
 
-This prototype intentionally supports only JSON persistence. Local development
-defaults to `data/users.json`, configured through `.streamlit/secrets.toml`:
+The app supports JSON persistence for local development and a document-backed
+MongoDB persistence backend for Atlas deployments. Local development defaults to
+`data/users.json`, configured through `.streamlit/secrets.toml`:
 
 ```toml
 [persistence]
@@ -102,8 +103,20 @@ backend = "json"
 json_path = "data/users.json"
 ```
 
-The JSON document contains users, friend invites, friendships, goals, and compact
-user stats. The file is written atomically with a temporary file replacement.
+For MongoDB Atlas, use:
+
+```toml
+[persistence]
+backend = "mongodb"
+mongodb_uri = "mongodb+srv://..."
+mongodb_database = "dogether"
+mongodb_collection = "users"
+```
+
+Both backends persist the same app store shape: users, friend invites,
+friendships, goals, compact user stats, and debug settings. The JSON backend
+writes the file atomically; the MongoDB backend stores the app state in a single
+MongoDB document for now so it matches the existing persistence contract.
 
 ## Debug Time Travel
 
@@ -127,8 +140,10 @@ client_secret = "YOUR-GOOGLE-CLIENT-SECRET"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
 [persistence]
-backend = "json"
-json_path = "data/users.json"
+backend = "mongodb"
+mongodb_uri = "mongodb+srv://..."
+mongodb_database = "dogether"
+mongodb_collection = "users"
 ```
 
 Use the same production callback URL as an authorized redirect URI in the Google

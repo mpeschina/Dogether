@@ -2,9 +2,11 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import copy
 import json
 import pytest
 
+from src.db.mongodb_persistence import MongoPersistence
 from src.db.persistence import JsonPersistence, create_persistence, persistence_settings
 from src.pages.debug_page import DebugMechanics, debug_now, debug_view_enabled
 
@@ -13,6 +15,21 @@ BERLIN = ZoneInfo("Europe/Berlin")
 
 def at(value: str) -> datetime:
     return datetime.fromisoformat(value).replace(tzinfo=BERLIN)
+
+
+class FakeMongoCollection:
+    def __init__(self) -> None:
+        self.document = None
+
+    def find_one(self, query: dict) -> dict | None:
+        if self.document and query == {"_id": self.document["_id"]}:
+            return copy.deepcopy(self.document)
+        return None
+
+    def replace_one(self, query: dict, replacement: dict, upsert: bool = False) -> None:
+        assert query == {"_id": replacement["_id"]}
+        assert upsert is True
+        self.document = copy.deepcopy(replacement)
 
 
 def users_and_friendship(persistence: JsonPersistence) -> tuple[dict, dict]:
@@ -383,9 +400,33 @@ def test_account_stats_report_current_month_rate_and_days_using_app(tmp_path: Pa
     assert stats["activity_days"]["2026-06-02"]["percent"] == 0.0
 
 
-def test_factory_rejects_non_json_backend() -> None:
-    with pytest.raises(ValueError, match="Only the json"):
-        create_persistence("mongodb")
+def test_mongodb_document_backend_uses_same_store_contract() -> None:
+    collection = FakeMongoCollection()
+    persistence = MongoPersistence(mongo_collection=collection)
+
+    user = persistence.upsert_user("alice", "Alice@Example.com", "Alice", at("2026-06-01T09:00:00"))
+
+    assert user["email"] == "alice@example.com"
+    assert collection.document["_id"] == "app_store"
+    assert collection.document["data"]["users"]["alice"]["name"] == "Alice"
+    assert MongoPersistence(mongo_collection=collection).get_user("alice") == user
+
+
+def test_factory_creates_mongodb_backend() -> None:
+    persistence = create_persistence(
+        "mongodb",
+        mongodb_uri="mongodb://localhost:27017",
+        mongodb_database="dogether_test",
+        mongodb_collection="app_store",
+    )
+
+    assert isinstance(persistence, MongoPersistence)
+    persistence.close()
+
+
+def test_factory_rejects_unknown_backend() -> None:
+    with pytest.raises(ValueError, match="Unsupported persistence backend"):
+        create_persistence("sqlite")
 
 
 def test_persistence_settings_come_from_secrets() -> None:

@@ -20,7 +20,7 @@ def login_screen(persistence: Persistence | None = None, debug_enabled: bool = F
         return
 
     st.divider()
-    st.subheader("Debug login (only present in local dev mode)")
+    st.subheader("Debug login (only present when view = true is under [debug] in secrets.toml)")
 
     with st.form("debug_login_form"):
         email = st.text_input("Mail")

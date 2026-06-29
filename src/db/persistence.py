@@ -7,6 +7,7 @@ from typing import Any, Mapping, Protocol
 import streamlit as st
 
 from .json_persistence import JsonPersistence
+from .mongodb_persistence import MongoPersistence
 from .persistence_helpers import APP_ZONE, SCHEDULES, normalize_email
 
 
@@ -100,7 +101,13 @@ def create_persistence(
     backend = backend.strip().lower()
     if backend == "json":
         return JsonPersistence(json_path)
-    raise ValueError("Only the json persistence backend is supported in this prototype")
+    if backend == "mongodb":
+        return MongoPersistence(
+            mongodb_uri,
+            database=mongodb_database,
+            collection=mongodb_collection,
+        )
+    raise ValueError("Unsupported persistence backend. Use 'json' or 'mongodb'.")
 
 
 def persistence_settings(secrets: Mapping[str, Any] | None = None) -> dict[str, str]:
