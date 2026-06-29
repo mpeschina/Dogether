@@ -31,7 +31,7 @@ def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str
 
 def render_main(persistence, current_user: dict, user_id: str, now: datetime | None = None) -> None:
     stats = persistence.account_stats(user_id, now=now)
-    render_activity_diagram(stats.get("activity_days", {}), now=now, days=365)
+    render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)
 
     goals = persistence.list_goals_for_user(user_id, now=now)
     if not goals:
