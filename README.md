@@ -122,6 +122,90 @@ friendships, goals, compact user stats, and debug settings. The JSON backend
 writes the file atomically; the MongoDB backend stores the app state in a single
 MongoDB document for now so it matches the existing persistence contract.
 
+
+## Web Push Notifications
+
+Receive Web Push notifications, for example for friend request and fulfilled goals. 
+Push subscriptions are not stored in the main Dogether app document.
+They use separate push storage:
+
+- JSON/local: `data/push_subscriptions.json`
+- MongoDB: a separate collection, defaulting to `push_subscriptions`
+
+Static file serving must be enabled because the browser needs to load the PWA
+manifest, icons, and service worker from the `static/` directory. This is
+configured in the committed `.streamlit/config.toml` file:
+
+```toml
+[server]
+enableStaticServing = true
+```
+
+Generate VAPID keys with the helper script:
+
+```bash
+python generate_vapid_keys.py
+```
+
+Copy the printed block into `.streamlit/secrets.toml` locally or Streamlit
+Cloud **Settings > Secrets** in deployment, then replace the subject email:
+
+```toml
+[push]
+vapid_public_key = "..."
+vapid_private_key = "..."
+vapid_subject = "mailto:you@example.com"
+```
+
+For MongoDB deployments, use the same Mongo database as the app and a separate
+push collection:
+
+```toml
+[push]
+vapid_public_key = "..."
+vapid_private_key = "..."
+vapid_subject = "mailto:you@example.com"
+backend = "mongodb"
+mongodb_collection = "push_subscriptions"
+```
+
+If `backend` is omitted, push storage follows the configured persistence backend.
+For JSON mode it writes to `data/push_subscriptions.json`; for MongoDB mode it
+writes one document per push endpoint with `_id` set to the endpoint.
+
+On Streamlit Community Cloud, static files are served through Streamlit's
+rewritten static route, for example:
+
+```text
+https://YOUR-APP.streamlit.app/~/+/app/static/sw.js
+```
+
+The local route is usually:
+
+```text
+http://localhost:8501/app/static/sw.js
+```
+
+The app therefore registers the service worker with the Cloud-compatible
+`/~/+/app/static/sw.js` route and keeps a local `/app/static/sw.js` fallback in
+the push component. When debugging Cloud deployments, verify that the service
+worker returns JavaScript, not the Streamlit HTML shell:
+
+```js
+await fetch("/~/+/app/static/sw.js").then(r => ({
+  status: r.status,
+  url: r.url,
+  type: r.headers.get("content-type")
+}))
+```
+
+The expected content type is `application/javascript`. If it returns
+`text/html`, Streamlit is not serving the static file for that URL.
+
+For iPhone/iPad Web Push, users must open the deployed HTTPS app in Safari, add
+it to the Home Screen, launch Dogether from the Home Screen icon, and then enable
+notifications from the Account page.
+
 ## Debug Time Travel
 
 Set `[debug].view = true` in `.streamlit/secrets.toml` to show the Debug page
