@@ -105,7 +105,7 @@ def render_main(
                 if is_current_user:
                     with cols[1]:
                         action_cols = st.columns([1, 1])
-                        if action_cols[0].button("Done", key=f"done_{goal['id']}", use_container_width=True):
+                        if action_cols[0].button("Done", key=f"done_{goal['id']}", type="primary", use_container_width=True):
                             persistence.update_goal_progress(
                                 goal["id"],
                                 user_id,

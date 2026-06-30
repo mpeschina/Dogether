@@ -9,6 +9,7 @@ from src.pages.friends_page import render_friends
 from src.pages.goals_page import render_goals
 from src.pages.login_page import login_screen
 from src.pages.main_page import render_main
+from src.pages.push_notifications_page import render_push_notifications
 from src.push.sender import push_config
 from src.push.storage import get_push_storage, push_storage_settings
 
@@ -117,7 +118,12 @@ def goals_page() -> None:
 
 def account_page() -> None:
     mark_current_page("account")
-    render_account(persistence, current_user, user_id, push_storage, configured_push, now=app_now)
+    render_account(persistence, current_user, user_id, now=app_now)
+
+
+def push_notifications_page() -> None:
+    mark_current_page("push_notifications")
+    render_push_notifications(current_user, user_id, push_storage, configured_push, now=app_now)
 
 
 def debug_page() -> None:
@@ -129,11 +135,15 @@ goals_page_entry = st.Page(main_page, title="Goals", default=True, icon=":materi
 friends_page_entry = st.Page(friends_page, title="Friends", icon=":material/group:")
 manage_goals_page_entry = st.Page(goals_page, title="Manage Goals", icon=":material/flag:")
 account_page_entry = st.Page(account_page, title="Account", icon=":material/account_circle:")
+push_notifications_page_entry = st.Page(
+    push_notifications_page, title="Push Notifications", icon=":material/notifications:"
+)
 debug_page_entry = st.Page(debug_page, title="Debug", icon=":material/bug_report:")
 page_entries = [
     goals_page_entry,
     friends_page_entry,
     manage_goals_page_entry,
+    push_notifications_page_entry,
     account_page_entry,
 ]
 if debug.enabled:
@@ -150,12 +160,12 @@ def friend_request_alert(invite_count: int, signature: str) -> None:
     st.write(f"You have {invite_count} new friend {request_word}.")
 
     cols = st.columns(2)
-    if cols[0].button("Ok", key="friend_request_alert_ok", use_container_width=True):
-        st.session_state["friend_request_alert_signature"] = signature
-        st.rerun()
-    if cols[1].button("Show Friend Requests", key="friend_request_alert_show", use_container_width=True):
+    if cols[0].button("Show Friend Requests", key="friend_request_alert_show", type="primary", use_container_width=True):
         st.session_state["friend_request_alert_signature"] = signature
         st.switch_page(friends_page_entry)
+    if cols[1].button("Ok", key="friend_request_alert_ok", use_container_width=True):
+        st.session_state["friend_request_alert_signature"] = signature
+        st.rerun()
 
 
 incoming_friend_requests = persistence.incoming_friend_invites(current_user["email"])

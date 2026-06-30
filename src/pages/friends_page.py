@@ -15,31 +15,21 @@ def _friend_request_action_styles() -> None:
         """
         <style>
             div[data-testid="stElementContainer"]:has(.friend-request-actions)
-                + div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(1) button {
-                    background: #15803d;
-                    border-color: #15803d;
-                    color: #ffffff;
+                ~ div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-of-type(2) button,
+            div[data-testid="stElementContainer"]:has(.friend-request-actions)
+                ~ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) button {
+                    background: #dc2626 !important;
+                    border-color: #dc2626 !important;
+                    color: #ffffff !important;
             }
 
             div[data-testid="stElementContainer"]:has(.friend-request-actions)
-                + div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(1) button:hover {
-                    background: #166534;
-                    border-color: #166534;
-                    color: #ffffff;
-            }
-
+                ~ div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-of-type(2) button:hover,
             div[data-testid="stElementContainer"]:has(.friend-request-actions)
-                + div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) button {
-                    background: #dc2626;
-                    border-color: #dc2626;
-                    color: #ffffff;
-            }
-
-            div[data-testid="stElementContainer"]:has(.friend-request-actions)
-                + div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) button:hover {
-                    background: #b91c1c;
-                    border-color: #b91c1c;
-                    color: #ffffff;
+                ~ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) button:hover {
+                    background: #b91c1c !important;
+                    border-color: #b91c1c !important;
+                    color: #ffffff !important;
             }
         </style>
         """,
@@ -58,23 +48,66 @@ def render_friends(
     _friend_request_action_styles()
 
     st.title("Friends")
-    with st.form("add_friend"):
-        email = st.text_input("Add friend by email")
-        submitted = st.form_submit_button("Send invite")
-        if submitted:
-            try:
-                create_friend_invite_with_push(
-                    persistence,
-                    push_storage,
-                    push_settings or {},
-                    from_user_id=user_id,
-                    from_email=current_user["email"],
-                    to_email=email,
-                    now=now,
+
+    show_invite_form = st.session_state.get("show_invite_friend_form", False)
+    if show_invite_form:
+        with st.form("add_friend"):
+            email = st.text_input("Add friend by email")
+            submitted = st.form_submit_button("Send invite")
+            if submitted:
+                try:
+                    create_friend_invite_with_push(
+                        persistence,
+                        push_storage,
+                        push_settings or {},
+                        from_user_id=user_id,
+                        from_email=current_user["email"],
+                        to_email=email,
+                        now=now,
+                    )
+                    st.session_state["show_invite_friend_form"] = False
+                    st.success("Friend invite created.")
+                except ValueError as error:
+                    st.error(str(error))
+    elif st.button("Invite friend"):
+        st.session_state["show_invite_friend_form"] = True
+        st.rerun()
+
+    incoming = persistence.incoming_friend_invites(current_user["email"])
+    if incoming:
+        st.subheader("Pending invites")
+        for invite in incoming:
+            from_user = persistence.get_user(invite["from_user_id"])
+            from_name = from_user.get("name") if from_user else invite["from_email"]
+            from_email = from_user.get("email", invite["from_email"]) if from_user else invite["from_email"]
+
+            with st.container(border=True):
+                st.markdown(
+                    f"""
+                    <article>
+                        <p style="font-size: 0.8rem; letter-spacing: 0; margin: 0 0 0.35rem; text-transform: uppercase; color: #6b7280;">
+                            Friend request
+                        </p>
+                        <h3 style="font-size: 1.05rem; margin: 0 0 0.15rem;">
+                            {html.escape(from_name)}
+                        </h3>
+                        <p style="margin: 0 0 0.85rem; color: #4b5563;">
+                            {html.escape(from_email)} wants to add you as a friend.
+                        </p>
+                    </article>
+                    """,
+                    unsafe_allow_html=True,
                 )
-                st.success("Friend invite created.")
-            except ValueError as error:
-                st.error(str(error))
+                st.markdown('<div class="friend-request-actions"></div>', unsafe_allow_html=True)
+                cols = st.columns([1, 1, 5])
+                if cols[0].button("Yes", key=f"accept_{invite['id']}", type="primary"):
+                    persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=True, now=now)
+                    st.success("Friend request accepted.")
+                    st.rerun()
+                if cols[1].button("No", key=f"decline_{invite['id']}"):
+                    persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=False, now=now)
+                    st.info("Friend request declined.")
+                    st.rerun()
 
     friends = persistence.list_friends(user_id)
     pending_removals = set(st.session_state.get("friends_pending_removals", []))
@@ -102,46 +135,8 @@ def render_friends(
             st.session_state["friends_pending_removals"] = sorted(pending_removals)
             st.rerun()
 
-    st.subheader("Friend requests")
-    incoming = persistence.incoming_friend_invites(current_user["email"])
-    if not incoming:
-        st.caption("None")
-    for invite in incoming:
-        from_user = persistence.get_user(invite["from_user_id"])
-        from_name = from_user.get("name") if from_user else invite["from_email"]
-        from_email = from_user.get("email", invite["from_email"]) if from_user else invite["from_email"]
-
-        with st.container(border=True):
-            st.markdown(
-                f"""
-                <article>
-                    <p style="font-size: 0.8rem; letter-spacing: 0; margin: 0 0 0.35rem; text-transform: uppercase; color: #6b7280;">
-                        Friend request
-                    </p>
-                    <h3 style="font-size: 1.05rem; margin: 0 0 0.15rem;">
-                        {html.escape(from_name)}
-                    </h3>
-                    <p style="margin: 0 0 0.85rem; color: #4b5563;">
-                        {html.escape(from_email)} wants to add you as a friend.
-                    </p>
-                </article>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.markdown('<div class="friend-request-actions"></div>', unsafe_allow_html=True)
-            cols = st.columns([1, 1, 5])
-            if cols[0].button("Yes", key=f"accept_{invite['id']}"):
-                persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=True, now=now)
-                st.success("Friend request accepted.")
-                st.rerun()
-            if cols[1].button("No", key=f"decline_{invite['id']}"):
-                persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=False, now=now)
-                st.info("Friend request declined.")
-                st.rerun()
-
-    st.subheader("Outgoing pending invites")
     outgoing = persistence.outgoing_friend_invites(user_id)
-    if not outgoing:
-        st.caption("None")
-    for invite in outgoing:
-        st.write(f"To {invite['to_email']}")
+    if outgoing:
+        st.subheader("Outgoing pending invites")
+        for invite in outgoing:
+            st.write(f"To {invite['to_email']}")
