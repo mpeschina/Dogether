@@ -20,8 +20,11 @@ def render_push_notifications(
 ) -> None:
     st.title("Push Notifications")
     st.warning(
-        "iPhone/iPad setup: open Dogether in Safari, use Share > Add to Home Screen, "
-        "then open Dogether from the Home Screen before enabling notifications."
+        "iPhone/iPad setup:\n\n"
+        "1. Open Dogether in Safari.\n"
+        "2. Tap Share, then scroll down and Add to Home Screen.\n"
+        "3. Open Dogether from the Home Screen icon.\n"
+        "4. Enable notifications here."
     )
 
     push_settings = push_settings or {}
