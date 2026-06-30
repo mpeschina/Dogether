@@ -8,7 +8,7 @@ import streamlit as st
 from src.db.persistence import Persistence
 from src.pages.account_page import render_activity_diagram
 from src.pages.page_helpers import participant_name, progress_bar, schedule_label
-from src.push.notifications import create_friend_invite_with_push
+from src.push.notifications import create_friend_invite_with_push, update_goal_progress_with_push
 from src.push.storage import PushStorage
 
 
@@ -106,9 +106,12 @@ def render_main(
                     with cols[1]:
                         action_cols = st.columns([1, 1])
                         if action_cols[0].button("Done", key=f"done_{goal['id']}", type="primary", use_container_width=True):
-                            persistence.update_goal_progress(
-                                goal["id"],
-                                user_id,
+                            update_goal_progress_with_push(
+                                persistence,
+                                push_storage,
+                                push_settings or {},
+                                goal_id=goal["id"],
+                                user_id=user_id,
                                 current=int(participant.get("target", 1)),
                                 now=now,
                             )
@@ -123,11 +126,35 @@ def render_main(
                             )
                             detail_cols = st.columns(3)
                             if detail_cols[0].button("Save", key=f"save_{goal['id']}", use_container_width=True):
-                                persistence.update_goal_progress(goal["id"], user_id, current=current, now=now)
+                                update_goal_progress_with_push(
+                                    persistence,
+                                    push_storage,
+                                    push_settings or {},
+                                    goal_id=goal["id"],
+                                    user_id=user_id,
+                                    current=current,
+                                    now=now,
+                                )
                                 st.rerun()
                             if detail_cols[1].button("+1", key=f"plus_{goal['id']}", use_container_width=True):
-                                persistence.update_goal_progress(goal["id"], user_id, delta=1, now=now)
+                                update_goal_progress_with_push(
+                                    persistence,
+                                    push_storage,
+                                    push_settings or {},
+                                    goal_id=goal["id"],
+                                    user_id=user_id,
+                                    delta=1,
+                                    now=now,
+                                )
                                 st.rerun()
                             if detail_cols[2].button("-1", key=f"minus_{goal['id']}", use_container_width=True):
-                                persistence.update_goal_progress(goal["id"], user_id, delta=-1, now=now)
+                                update_goal_progress_with_push(
+                                    persistence,
+                                    push_storage,
+                                    push_settings or {},
+                                    goal_id=goal["id"],
+                                    user_id=user_id,
+                                    delta=-1,
+                                    now=now,
+                                )
                                 st.rerun()

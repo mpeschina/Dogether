@@ -46,3 +46,56 @@ def create_friend_invite_with_push(
         vapid_subject=push_settings["vapid_subject"],
     )
     return invite
+
+
+def update_goal_progress_with_push(
+    persistence: Persistence,
+    push_storage: PushStorage | None,
+    push_settings: Mapping[str, str],
+    *,
+    goal_id: str,
+    user_id: str,
+    current: int | None = None,
+    target: int | None = None,
+    delta: int = 0,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    goal = persistence.update_goal_progress(
+        goal_id,
+        user_id,
+        current=current,
+        target=target,
+        delta=delta,
+        now=now,
+    )
+    event = goal.get("_notification_event")
+    if not event or not push_storage or not push_configured(push_settings):
+        return goal
+
+    friend_ids = {friend["user_id"] for friend in persistence.list_friends(user_id)}
+    participant_ids = [
+        participant_id
+        for participant_id in goal.get("participant_user_ids", [])
+        if participant_id != user_id
+        and participant_id in friend_ids
+        and not goal.get("participants", {}).get(participant_id, {}).get("left_at")
+        and goal.get("participants", {}).get(participant_id, {}).get("completion_notifications_enabled", True)
+    ]
+    if not participant_ids:
+        return goal
+
+    users = persistence.users_by_ids([user_id, *participant_ids])
+    completed_by = users.get(user_id, {}).get("name") or users.get(user_id, {}).get("email") or "A friend"
+    description = str(goal.get("description") or "a shared goal")
+
+    for participant_id in participant_ids:
+        send_push_to_user(
+            push_storage,
+            participant_id,
+            title="Shared goal completed",
+            body=f"{completed_by} completed {description}.",
+            url="/",
+            vapid_private_key=push_settings["vapid_private_key"],
+            vapid_subject=push_settings["vapid_subject"],
+        )
+    return goal

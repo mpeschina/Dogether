@@ -1,6 +1,7 @@
 """Document-store persistence behavior for Dogether backends."""
 from __future__ import annotations
 
+import copy
 import threading
 from datetime import datetime
 from typing import Any
@@ -267,6 +268,7 @@ class DocumentPersistence:
                         "current": current if participant_id == created_by else 0,
                         "period_start": period_start,
                         "completion_streak": 0,
+                        "completion_notifications_enabled": True,
                         "left_at": None,
                     }
                     for participant_id in participant_ids
@@ -327,6 +329,7 @@ class DocumentPersistence:
                     "current": 0,
                     "period_start": period_start,
                     "completion_streak": 0,
+                    "completion_notifications_enabled": True,
                     "left_at": None,
                 }
 
@@ -353,19 +356,60 @@ class DocumentPersistence:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         self.rollover_periods(now)
+        now_dt = _now(now)
+        today_key = now_dt.date().isoformat()
         with self._lock:
             data = self._read()
             goal = data["goals"].get(goal_id)
             if not goal or not _goal_active_for_user(goal, user_id):
                 raise ValueError("Goal is not active for this user.")
             participant = goal["participants"][user_id]
+            before_current = max(0, int(participant.get("current", 0)))
+            before_target = max(1, int(participant.get("target", 1)))
+            was_complete = before_current >= before_target
             if target is not None:
                 participant["target"] = max(1, int(target))
             if current is not None:
                 participant["current"] = max(0, int(current))
             elif delta:
                 participant["current"] = max(0, int(participant.get("current", 0)) + int(delta))
-            _refresh_activity_day(data, user_id, _now(now).date())
+            after_current = max(0, int(participant.get("current", 0)))
+            after_target = max(1, int(participant.get("target", 1)))
+            is_complete = after_current >= after_target
+            notification_event = None
+            if (
+                is_complete
+                and not was_complete
+                and participant.get("last_completion_notification_day") != today_key
+            ):
+                participant["last_completion_notification_day"] = today_key
+                notification_event = {
+                    "type": "goal_completed",
+                    "goal_id": goal_id,
+                    "completed_by_user_id": user_id,
+                    "day": today_key,
+                }
+            _refresh_activity_day(data, user_id, now_dt.date())
+            self._write(data)
+            result = copy.deepcopy(goal)
+            if notification_event:
+                result["_notification_event"] = notification_event
+            return result
+
+    def set_goal_completion_notifications(
+        self,
+        goal_id: str,
+        user_id: str,
+        enabled: bool,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        self.rollover_periods(now)
+        with self._lock:
+            data = self._read()
+            goal = data["goals"].get(goal_id)
+            if not goal or not _goal_active_for_user(goal, user_id):
+                raise ValueError("Goal is not active for this user.")
+            goal["participants"][user_id]["completion_notifications_enabled"] = bool(enabled)
             self._write(data)
             return goal
 

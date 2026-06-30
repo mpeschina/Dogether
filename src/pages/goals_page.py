@@ -56,10 +56,24 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
         st.session_state.pop("goals_pending_leave_id", None)
     for goal in goals:
         participant = goal["participants"][user_id]
-        cols = st.columns([4, 2, 2, 3, 1])
+        cols = st.columns([4, 2, 2, 2, 3, 1])
         cols[0].write(goal["description"])
         cols[1].write(schedule_label(goal))
         cols[2].write(f"{participant.get('current', 0)} / {participant.get('target', 1)}")
+        notifications_enabled = bool(participant.get("completion_notifications_enabled", True))
+        selected_notifications_enabled = cols[3].toggle(
+            "Notify me",
+            value=notifications_enabled,
+            key=f"completion_notifications_{goal['id']}",
+        )
+        if selected_notifications_enabled != notifications_enabled:
+            persistence.set_goal_completion_notifications(
+                goal["id"],
+                user_id,
+                selected_notifications_enabled,
+                now=now,
+            )
+            st.rerun()
         existing_participant_ids = set(goal.get("participants", {}))
         addable_friend_options = {
             label: friend_id
@@ -67,7 +81,7 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
             if friend_id not in existing_participant_ids
         }
         if addable_friend_options:
-            with cols[3].popover("Add Friends", use_container_width=True):
+            with cols[4].popover("Add Friends", use_container_width=True):
                 with st.form(f"add_friends_{goal['id']}"):
                     selected_new_friends = st.multiselect("Friends", list(addable_friend_options))
                     add_submitted = st.form_submit_button("Add")
@@ -87,11 +101,11 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
                         except ValueError as error:
                             st.error(str(error))
         else:
-            cols[3].caption("All friends are already on this goal.")
+            cols[4].caption("All friends are already on this goal.")
         pending_leave = st.session_state.get("goals_pending_leave_id") == goal["id"]
         leave_label = "Really Leave" if pending_leave else "Leave"
         leave_type = "primary" if pending_leave else "secondary"
-        if cols[4].button(leave_label, key=f"leave_{goal['id']}", type=leave_type):
+        if cols[5].button(leave_label, key=f"leave_{goal['id']}", type=leave_type):
             if pending_leave:
                 persistence.leave_goal(goal["id"], user_id, now=now)
                 st.session_state.pop("goals_pending_leave_id", None)

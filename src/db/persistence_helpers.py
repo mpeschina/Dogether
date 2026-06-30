@@ -152,6 +152,9 @@ def _normalise_goal_participants(goals: dict[str, Any]) -> None:
         for participant in participants.values():
             if isinstance(participant, dict):
                 participant["completion_streak"] = max(0, int(participant.get("completion_streak", 0) or 0))
+                participant["completion_notifications_enabled"] = bool(
+                    participant.get("completion_notifications_enabled", True)
+                )
 
 
 def _normalise_user_stats(user_stats: dict[str, Any]) -> None:

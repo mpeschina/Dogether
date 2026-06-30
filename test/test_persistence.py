@@ -178,6 +178,54 @@ def test_goal_creation_requires_friends_and_creates_per_user_participants(tmp_pa
         persistence.create_goal("alice", "Stretch", "daily", 1, ["charlie"], 10)
 
 
+
+def test_goal_completion_notifications_default_enabled_and_once_per_day(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    users_and_friendship(persistence)
+    goal = persistence.create_goal(
+        "alice",
+        "Run",
+        "daily",
+        1,
+        ["bob"],
+        10,
+        current=0,
+        now=at("2026-06-01T09:00:00"),
+    )
+
+    assert goal["participants"]["alice"]["completion_notifications_enabled"] is True
+    assert goal["participants"]["bob"]["completion_notifications_enabled"] is True
+
+    completed = persistence.update_goal_progress(
+        goal["id"],
+        "alice",
+        current=10,
+        now=at("2026-06-01T10:00:00"),
+    )
+    repeated = persistence.update_goal_progress(
+        goal["id"],
+        "alice",
+        current=11,
+        now=at("2026-06-01T11:00:00"),
+    )
+
+    assert completed["_notification_event"]["type"] == "goal_completed"
+    assert completed["_notification_event"]["day"] == "2026-06-01"
+    assert "_notification_event" not in repeated
+
+
+def test_goal_completion_notification_preference_is_per_participant(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    users_and_friendship(persistence)
+    goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 10, current=0)
+
+    updated = persistence.set_goal_completion_notifications(goal["id"], "bob", False)
+    completed = persistence.update_goal_progress(goal["id"], "alice", current=10)
+
+    assert updated["participants"]["bob"]["completion_notifications_enabled"] is False
+    assert updated["participants"]["alice"]["completion_notifications_enabled"] is True
+    assert completed["_notification_event"]["type"] == "goal_completed"
+
 def test_goal_participant_can_add_more_accepted_friends(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice, _bob = users_and_friendship(persistence)

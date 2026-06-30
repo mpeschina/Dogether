@@ -79,6 +79,14 @@ class Persistence(Protocol):
         now: datetime | None = None,
     ) -> dict[str, Any]: ...
 
+    def set_goal_completion_notifications(
+        self,
+        goal_id: str,
+        user_id: str,
+        enabled: bool,
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
     def leave_goal(self, goal_id: str, user_id: str, now: datetime | None = None) -> None: ...
 
     def account_stats(self, user_id: str, now: datetime | None = None) -> dict[str, Any]: ...
