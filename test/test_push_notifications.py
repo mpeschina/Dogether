@@ -83,6 +83,7 @@ def test_duplicate_friend_invite_does_not_send_push(monkeypatch, tmp_path: Path)
 def test_missing_recipient_subscription_does_not_block_invite(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
 
     invite = create_friend_invite_with_push(
         persistence,
@@ -90,10 +91,10 @@ def test_missing_recipient_subscription_does_not_block_invite(tmp_path: Path) ->
         {},
         from_user_id=alice["user_id"],
         from_email=alice["email"],
-        to_email="future@example.com",
+        to_email=bob["email"],
     )
 
-    assert invite["to_email"] == "future@example.com"
+    assert invite["to_email"] == "bob@example.com"
 
 
 def test_goal_completion_pushes_to_friends_sharing_goal_once(monkeypatch, tmp_path: Path) -> None:

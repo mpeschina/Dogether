@@ -73,7 +73,7 @@ def render_friends(
         st.session_state["show_invite_friend_form"] = True
         st.rerun()
 
-    incoming = persistence.incoming_friend_invites(current_user["email"])
+    incoming = persistence.incoming_friend_invites(current_user["email"], user_id)
     if incoming:
         st.subheader("Pending invites")
         for invite in incoming:

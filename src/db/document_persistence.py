@@ -117,7 +117,9 @@ class DocumentPersistence:
         with self._lock:
             data = self._read()
             target_user = _find_user_by_email(data, to_email)
-            if target_user and _active_friendship(data, from_user_id, target_user["user_id"]):
+            if not target_user:
+                raise ValueError("No user found with that email address.")
+            if _active_friendship(data, from_user_id, target_user["user_id"]):
                 raise ValueError("You are already friends with that user.")
 
             for invite in data["friend_invites"].values():
@@ -126,6 +128,9 @@ class DocumentPersistence:
                     and invite.get("to_email") == to_email
                     and invite.get("status") == "pending"
                 ):
+                    if invite.get("to_user_id") != target_user["user_id"]:
+                        invite["to_user_id"] = target_user["user_id"]
+                        self._write(data)
                     return invite
 
             invite_id = _new_id("invite")
@@ -134,6 +139,7 @@ class DocumentPersistence:
                 "from_user_id": from_user_id,
                 "from_email": from_email,
                 "to_email": to_email,
+                "to_user_id": target_user["user_id"],
                 "status": "pending",
                 "created_at": now_iso,
                 "updated_at": now_iso,
@@ -142,22 +148,32 @@ class DocumentPersistence:
             self._write(data)
             return invite
 
-    def incoming_friend_invites(self, user_email: str) -> list[dict[str, Any]]:
+    def incoming_friend_invites(self, user_email: str, user_id: str | None = None) -> list[dict[str, Any]]:
         user_email = normalize_email(user_email)
         with self._lock:
             invites = [
                 invite
                 for invite in self._read()["friend_invites"].values()
-                if invite.get("to_email") == user_email and invite.get("status") == "pending"
+                if invite.get("status") == "pending"
+                and (
+                    (user_id is not None and invite.get("to_user_id") == user_id)
+                    or invite.get("to_email") == user_email
+                )
             ]
         return sorted(invites, key=lambda invite: invite["created_at"])
 
     def outgoing_friend_invites(self, user_id: str) -> list[dict[str, Any]]:
         with self._lock:
+            data = self._read()
             invites = [
                 invite
-                for invite in self._read()["friend_invites"].values()
-                if invite.get("from_user_id") == user_id and invite.get("status") == "pending"
+                for invite in data["friend_invites"].values()
+                if invite.get("from_user_id") == user_id
+                and invite.get("status") == "pending"
+                and (
+                    invite.get("to_user_id") in data["users"]
+                    or _find_user_by_email(data, invite.get("to_email", "")) is not None
+                )
             ]
         return sorted(invites, key=lambda invite: invite["created_at"])
 
@@ -176,7 +192,10 @@ class DocumentPersistence:
             invite = data["friend_invites"].get(invite_id)
             if not invite or invite.get("status") != "pending":
                 raise ValueError("This invite is no longer pending.")
-            if invite.get("to_email") != user_email:
+            invite_to_user_id = invite.get("to_user_id")
+            if invite_to_user_id and invite_to_user_id != user_id:
+                raise ValueError("This invite is not addressed to your account.")
+            if not invite_to_user_id and invite.get("to_email") != user_email:
                 raise ValueError("This invite is not addressed to your account.")
 
             invite["status"] = "accepted" if approve else "declined"

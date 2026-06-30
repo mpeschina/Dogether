@@ -98,6 +98,8 @@ def mark_current_page(page_key: str) -> None:
         st.session_state.pop("goals_pending_leave_id", None)
     if page_key != "friends" or previous_page_key != "friends":
         st.session_state.pop("friends_pending_removals", None)
+    if page_key == "friends" and previous_page_key != "friends":
+        st.session_state.pop("show_invite_friend_form", None)
     st.session_state["current_page_key"] = page_key
 
 
@@ -168,7 +170,7 @@ def friend_request_alert(invite_count: int, signature: str) -> None:
         st.rerun()
 
 
-incoming_friend_requests = persistence.incoming_friend_invites(current_user["email"])
+incoming_friend_requests = persistence.incoming_friend_invites(current_user["email"], user_id)
 if incoming_friend_requests:
     friend_request_signature = "|".join(invite["id"] for invite in incoming_friend_requests)
     if st.session_state.get("friend_request_alert_signature") != friend_request_signature:

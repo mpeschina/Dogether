@@ -83,7 +83,8 @@ def test_friend_invite_lifecycle_and_duplicate_prevention(tmp_path: Path) -> Non
     duplicate = persistence.create_friend_invite("alice", alice["email"], "bob@example.com", at("2026-06-01T09:03:00"))
 
     assert duplicate["id"] == invite["id"]
-    assert persistence.incoming_friend_invites("bob@example.com") == [invite]
+    assert invite["to_user_id"] == "bob"
+    assert persistence.incoming_friend_invites("bob@example.com", "bob") == [invite]
     persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True, now=at("2026-06-01T09:04:00"))
 
     assert invite["id"] not in persistence.raw_data()["friend_invites"]
@@ -108,14 +109,57 @@ def test_declined_friend_invite_does_not_create_friendship(tmp_path: Path) -> No
     assert persistence.list_friends("alice") == []
 
 
-def test_pending_invite_appears_when_email_owner_logs_in(tmp_path: Path) -> None:
+def test_outgoing_friend_invites_hide_stale_invites_without_existing_recipient(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    path.write_text(
+        json.dumps(
+            {
+                "users": {
+                    "alice": {
+                        "user_id": "alice",
+                        "email": "alice@example.com",
+                        "name": "Alice",
+                    }
+                },
+                "friend_invites": {
+                    "invite_old": {
+                        "id": "invite_old",
+                        "from_user_id": "alice",
+                        "from_email": "alice@example.com",
+                        "to_email": "future@example.com",
+                        "status": "pending",
+                        "created_at": "2026-06-01T07:00:00+00:00",
+                        "updated_at": "2026-06-01T07:00:00+00:00",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    persistence = JsonPersistence(path)
+
+    assert persistence.outgoing_friend_invites("alice") == []
+
+
+def test_incoming_friend_invite_matches_target_user_id(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
-    invite = persistence.create_friend_invite("alice", alice["email"], "future@example.com")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    invite = persistence.create_friend_invite("alice", alice["email"], bob["email"])
 
-    future = persistence.upsert_user("future-user", "future@example.com", "Future")
+    persistence.upsert_user("bob", "robert@example.com", "Bob")
 
-    assert persistence.incoming_friend_invites(future["email"])[0]["id"] == invite["id"]
+    assert persistence.incoming_friend_invites("robert@example.com", "bob") == [invite]
+
+
+def test_friend_invite_requires_existing_user(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+
+    with pytest.raises(ValueError, match="No user found"):
+        persistence.create_friend_invite("alice", alice["email"], "future@example.com")
+
+    assert persistence.raw_data()["friend_invites"] == {}
 
 
 def test_debug_time_offset_is_persisted_and_applied_only_when_enabled(tmp_path: Path) -> None:
