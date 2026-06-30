@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
 from typing import Mapping
 
 import streamlit as st
@@ -56,6 +57,8 @@ def render_push_notifications(
         elif not value.get("ok"):
             st.error(value.get("error", "Could not update push notification settings."))
 
+    render_subscribed_notifications(push_storage, user_id)
+
     if st.button("Send test notification", key="send_test_push"):
         result = send_push_to_user(
             push_storage,
@@ -74,3 +77,31 @@ def render_push_notifications(
             st.info("No active push subscriptions found for your account yet.")
         if result["errors"]:
             st.error("; ".join(result["errors"]))
+
+
+def render_subscribed_notifications(push_storage: PushStorage, user_id: str) -> None:
+    subscriptions = push_storage.subscriptions_for_user(user_id)
+
+    st.subheader("Subscribed notifications")
+    if not subscriptions:
+        st.caption("No subscribed notifications yet.")
+        return
+
+    for index, subscription in enumerate(subscriptions, start=1):
+        endpoint = str(subscription.get("endpoint", ""))
+        key_hash = hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:12]
+        user_agent = str(subscription.get("user_agent") or "Unknown device")
+        updated_at = str(subscription.get("updated_at") or subscription.get("created_at") or "")
+
+        with st.container(border=True):
+            cols = st.columns([4, 1])
+            cols[0].write(f"Notification {index}")
+            cols[0].caption(user_agent)
+            if updated_at:
+                cols[0].caption(f"Last updated: {updated_at}")
+            cols[0].caption(endpoint)
+
+            if cols[1].button("Remove", key=f"remove_push_subscription_{key_hash}", use_container_width=True):
+                push_storage.delete_subscription(endpoint)
+                st.success("Notification subscription removed.")
+                st.rerun()
