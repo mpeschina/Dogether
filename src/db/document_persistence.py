@@ -17,6 +17,7 @@ from .persistence_helpers import (
     _now,
     _parse_dt,
     _period_start,
+    _record_period_outcome,
     _refresh_activity_day,
     _schedule,
     _next_period_start,
@@ -288,6 +289,8 @@ class DocumentPersistence:
                         "period_start": period_start,
                         "completion_streak": 0,
                         "completion_notifications_enabled": True,
+                        "skipped": False,
+                        "period_outcomes": {},
                         "left_at": None,
                     }
                     for participant_id in participant_ids
@@ -349,6 +352,8 @@ class DocumentPersistence:
                     "period_start": period_start,
                     "completion_streak": 0,
                     "completion_notifications_enabled": True,
+                    "skipped": False,
+                    "period_outcomes": {},
                     "left_at": None,
                 }
 
@@ -372,6 +377,7 @@ class DocumentPersistence:
         current: int | None = None,
         target: int | None = None,
         delta: int = 0,
+        skipped: bool | None = None,
         now: datetime | None = None,
     ) -> dict[str, Any]:
         self.rollover_periods(now)
@@ -388,10 +394,16 @@ class DocumentPersistence:
             was_complete = before_current >= before_target
             if target is not None:
                 participant["target"] = max(1, int(target))
+            if skipped is not None:
+                participant["skipped"] = bool(skipped)
+                if skipped:
+                    participant["current"] = 0
             if current is not None:
                 participant["current"] = max(0, int(current))
+                participant["skipped"] = False
             elif delta:
                 participant["current"] = max(0, int(participant.get("current", 0)) + int(delta))
+                participant["skipped"] = False
             after_current = max(0, int(participant.get("current", 0)))
             after_target = max(1, int(participant.get("target", 1)))
             is_complete = after_current >= after_target
@@ -465,16 +477,15 @@ class DocumentPersistence:
                     stored_start = _period_start(stored_start, schedule["base"])
                     while stored_start < current_start:
                         period_end = _next_period_start(stored_start, schedule["base"])
-                        progress = max(0, int(participant.get("current", 0)))
-                        target = max(1, int(participant.get("target", 1)))
-                        completed = progress >= target
+                        fulfilled = _record_period_outcome(goal, participant, stored_start)
                         participant["completion_streak"] = (
                             max(0, int(participant.get("completion_streak", 0))) + 1
-                            if completed
+                            if fulfilled
                             else 0
                         )
                         _refresh_activity_day(data, user_id, stored_start.date())
                         participant["current"] = 0
+                        participant["skipped"] = False
                         participant["period_start"] = period_end.isoformat()
                         stored_start = period_end
                         changed = True

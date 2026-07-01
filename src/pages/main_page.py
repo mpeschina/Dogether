@@ -96,6 +96,7 @@ def render_main(
                 participant = goal["participants"][participant_id]
                 current = int(participant.get("current", 0))
                 target = int(participant.get("target", 1))
+                skipped = bool(participant.get("skipped", False))
                 is_current_user = participant_id == user_id
                 participant_user = users.get(participant_id, {})
                 participant_email = participant_user.get("email")
@@ -124,15 +125,16 @@ def render_main(
                                 st.rerun()
                             except ValueError as error:
                                 st.error(str(error))
-                        name_cols[2].caption(f"{current} / {max(1, target)}")
+                        name_cols[2].caption("skipped" if skipped else f"{current} / {max(1, target)}")
                     else:
-                        name_cols[1].caption(f"{current} / {max(1, target)}")
-                    progress_bar(current, target, show_caption=False)
+                        name_cols[1].caption("skipped" if skipped else f"{current} / {max(1, target)}")
+                    if not skipped:
+                        progress_bar(current, target, show_caption=False)
                 if is_current_user:
                     with cols[1]:
                         action_cols = st.columns([1, 1])
                         goal_is_done = current >= max(1, target)
-                        if goal_is_done:
+                        if goal_is_done or skipped:
                             if action_cols[0].button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
                                 update_goal_progress_with_push(
                                     persistence,
@@ -141,6 +143,7 @@ def render_main(
                                     goal_id=goal["id"],
                                     user_id=user_id,
                                     current=0,
+                                    skipped=False,
                                     now=now,
                                 )
                                 st.rerun()
@@ -199,6 +202,17 @@ def render_main(
                                     goal_id=goal["id"],
                                     user_id=user_id,
                                     delta=-1,
+                                    now=now,
+                                )
+                                st.rerun()
+                            if st.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
+                                update_goal_progress_with_push(
+                                    persistence,
+                                    push_storage,
+                                    push_settings or {},
+                                    goal_id=goal["id"],
+                                    user_id=user_id,
+                                    skipped=True,
                                     now=now,
                                 )
                                 st.rerun()

@@ -58,6 +58,7 @@ def update_goal_progress_with_push(
     current: int | None = None,
     target: int | None = None,
     delta: int = 0,
+    skipped: bool | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     goal = persistence.update_goal_progress(
@@ -66,6 +67,7 @@ def update_goal_progress_with_push(
         current=current,
         target=target,
         delta=delta,
+        skipped=skipped,
         now=now,
     )
     event = goal.get("_notification_event")

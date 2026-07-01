@@ -421,7 +421,69 @@ def test_daily_x_per_week_increments_streak_for_each_completed_daily_period(tmp_
     persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-04T08:00:00"))
 
     participant = persistence.raw_data()["goals"][goal["id"]]["participants"]["alice"]
-    assert participant["completion_streak"] == 2
+    assert participant["completion_streak"] == 3
+
+
+def test_skipped_goal_renders_as_zero_progress_state_until_reset(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Drink water",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=3,
+        current=2,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    skipped = persistence.update_goal_progress(
+        goal["id"],
+        alice["user_id"],
+        skipped=True,
+        now=at("2026-06-01T13:00:00"),
+    )
+
+    participant = skipped["participants"]["alice"]
+    assert participant["current"] == 0
+    assert participant["skipped"] is True
+
+    reset = persistence.update_goal_progress(
+        goal["id"],
+        alice["user_id"],
+        current=0,
+        now=at("2026-06-01T14:00:00"),
+    )
+
+    assert reset["participants"]["alice"]["skipped"] is False
+
+
+def test_daily_x_per_week_allows_only_surplus_skips_in_calendar_week(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Practice",
+        schedule_class="daily_x_per_week",
+        required_periods=5,
+        friend_user_ids=[],
+        target=10,
+        current=0,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    persistence.update_goal_progress(goal["id"], alice["user_id"], skipped=True, now=at("2026-06-01T13:00:00"))
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-02T08:00:00"))
+    persistence.update_goal_progress(goal["id"], alice["user_id"], skipped=True, now=at("2026-06-02T13:00:00"))
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-03T08:00:00"))
+    persistence.update_goal_progress(goal["id"], alice["user_id"], skipped=True, now=at("2026-06-03T13:00:00"))
+    stats = persistence.account_stats(alice["user_id"], now=at("2026-06-03T14:00:00"))
+
+    activity = stats["activity_days"]
+    assert activity["2026-06-01"] == {"active_goals": 1, "fulfilled_goals": 1, "percent": 100.0}
+    assert activity["2026-06-02"] == {"active_goals": 1, "fulfilled_goals": 1, "percent": 100.0}
+    assert activity["2026-06-03"] == {"active_goals": 1, "fulfilled_goals": 0, "percent": 0.0}
 
 
 def test_weekly_x_per_month_increments_streak_for_each_completed_weekly_period(tmp_path: Path) -> None:
@@ -443,7 +505,7 @@ def test_weekly_x_per_month_increments_streak_for_each_completed_weekly_period(t
     persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-15T08:00:00"))
 
     participant = persistence.raw_data()["goals"][goal["id"]]["participants"]["alice"]
-    assert participant["completion_streak"] == 1
+    assert participant["completion_streak"] == 2
 
 
 def test_activity_summaries_keep_last_365_days(tmp_path: Path) -> None:

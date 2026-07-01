@@ -76,6 +76,7 @@ class Persistence(Protocol):
         current: int | None = None,
         target: int | None = None,
         delta: int = 0,
+        skipped: bool | None = None,
         now: datetime | None = None,
     ) -> dict[str, Any]: ...
 

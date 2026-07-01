@@ -1,8 +1,9 @@
 """Shared persistence constants and domain helpers for Dogether."""
 from __future__ import annotations
 
+import calendar
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -141,6 +142,111 @@ def _next_period_start(period_start: datetime, base: str) -> datetime:
     raise ValueError(f"Unsupported period base: {base}")
 
 
+def _period_key(period_start: datetime) -> str:
+    return _now(period_start).date().isoformat()
+
+
+def _aggregate_start(period_start: datetime, aggregate: str) -> date:
+    local = _now(period_start)
+    if aggregate == "day":
+        return local.date()
+    if aggregate == "week":
+        return (local - timedelta(days=local.weekday())).date()
+    if aggregate == "month":
+        return date(local.year, local.month, 1)
+    raise ValueError(f"Unsupported aggregate: {aggregate}")
+
+
+def _base_periods_in_aggregate(period_start: datetime, schedule: dict[str, Any]) -> int:
+    if schedule["aggregate"] == "day":
+        return 1
+    if schedule["aggregate"] == "week" and schedule["base"] == "day":
+        return 7
+    if schedule["aggregate"] == "month" and schedule["base"] == "week":
+        month_start = _aggregate_start(period_start, "month")
+        _, month_days = calendar.monthrange(month_start.year, month_start.month)
+        return sum(
+            1
+            for day_number in range(1, month_days + 1)
+            if date(month_start.year, month_start.month, day_number).weekday() == 0
+        )
+    return int(schedule.get("required_periods", 1))
+
+
+def _period_outcomes(participant: dict[str, Any]) -> dict[str, Any]:
+    outcomes = participant.setdefault("period_outcomes", {})
+    if not isinstance(outcomes, dict):
+        outcomes = {}
+        participant["period_outcomes"] = outcomes
+    return outcomes
+
+
+def _period_fulfilled(
+    goal: dict[str, Any],
+    participant: dict[str, Any],
+    period_start: datetime,
+    *,
+    current: int | None = None,
+    target: int | None = None,
+    skipped: bool | None = None,
+) -> bool:
+    progress = max(0, int(participant.get("current", 0) if current is None else current))
+    max_target = max(1, int(participant.get("target", 1) if target is None else target))
+    if progress >= max_target:
+        return True
+
+    schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+    if schedule["base"] == schedule["aggregate"]:
+        return False
+
+    allowed_missed_periods = max(0, _base_periods_in_aggregate(period_start, schedule) - schedule["required_periods"])
+    if allowed_missed_periods <= 0:
+        return False
+
+    current_key = _period_key(period_start)
+    current_aggregate_start = _aggregate_start(period_start, schedule["aggregate"])
+    missed_periods = 1
+    for outcome_key, outcome in _period_outcomes(participant).items():
+        if outcome_key >= current_key or not isinstance(outcome, dict) or outcome.get("completed"):
+            continue
+        outcome_start = _now(datetime.fromisoformat(outcome_key))
+        if _aggregate_start(outcome_start, schedule["aggregate"]) == current_aggregate_start:
+            missed_periods += 1
+    return missed_periods <= allowed_missed_periods
+
+
+def _record_period_outcome(
+    goal: dict[str, Any],
+    participant: dict[str, Any],
+    period_start: datetime,
+    *,
+    current: int | None = None,
+    target: int | None = None,
+    skipped: bool | None = None,
+) -> bool:
+    progress = max(0, int(participant.get("current", 0) if current is None else current))
+    max_target = max(1, int(participant.get("target", 1) if target is None else target))
+    is_skipped = bool(participant.get("skipped", False) if skipped is None else skipped)
+    completed = progress >= max_target
+    fulfilled = _period_fulfilled(
+        goal,
+        participant,
+        period_start,
+        current=progress,
+        target=max_target,
+        skipped=is_skipped,
+    )
+    outcomes = _period_outcomes(participant)
+    outcomes[_period_key(period_start)] = {
+        "completed": completed,
+        "skipped": is_skipped or progress == 0,
+        "fulfilled": fulfilled,
+    }
+    for outcome_key in sorted(outcomes)[:-370]:
+        del outcomes[outcome_key]
+    return fulfilled
+
+
 def _normalise_goal_participants(goals: dict[str, Any]) -> None:
     for goal in goals.values():
         if not isinstance(goal, dict):
@@ -155,6 +261,9 @@ def _normalise_goal_participants(goals: dict[str, Any]) -> None:
                 participant["completion_notifications_enabled"] = bool(
                     participant.get("completion_notifications_enabled", True)
                 )
+                participant["skipped"] = bool(participant.get("skipped", False))
+                if not isinstance(participant.get("period_outcomes"), dict):
+                    participant["period_outcomes"] = {}
 
 
 def _normalise_user_stats(user_stats: dict[str, Any]) -> None:
@@ -193,9 +302,14 @@ def _refresh_activity_day(data: dict[str, Any], user_id: str, day: Any) -> None:
             if not (period_start.date() <= day_start.date() < period_end.date()):
                 continue
         active_goals += 1
-        current = max(0, int(participant.get("current", 0)))
-        target = max(1, int(participant.get("target", 1)))
-        if current >= target:
+        period_key = period_start.date().isoformat() if period_start else date_key
+        outcome = _period_outcomes(participant).get(period_key)
+        if isinstance(outcome, dict):
+            fulfilled = bool(outcome.get("fulfilled", outcome.get("completed", False)))
+        else:
+            effective_period_start = period_start or _now(datetime.fromisoformat(date_key))
+            fulfilled = _period_fulfilled(goal, participant, effective_period_start)
+        if fulfilled:
             fulfilled_goals += 1
 
     percent = round((fulfilled_goals / active_goals) * 100, 1) if active_goals else 0.0
