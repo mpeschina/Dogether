@@ -31,6 +31,19 @@ def _friend_request_action_styles() -> None:
                     border-color: #b91c1c !important;
                     color: #ffffff !important;
             }
+
+            .friends-mobile-separator {
+                display: none;
+            }
+
+            @media (max-width: 640px) {
+                .friends-mobile-separator {
+                    display: block;
+                    border: 0;
+                    border-top: 1px solid #e5e7eb;
+                    margin: 1rem 0;
+                }
+            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -117,7 +130,7 @@ def render_friends(
     st.subheader("Current friends")
     if not friends:
         st.info("No friends yet.")
-    for friend in friends:
+    for friend_index, friend in enumerate(friends):
         friend_id = friend["user_id"]
         confirm_remove = friend_id in pending_removals
         remove_label = "Confirm Remove" if confirm_remove else "Remove"
@@ -134,6 +147,8 @@ def render_friends(
                 pending_removals.add(friend_id)
             st.session_state["friends_pending_removals"] = sorted(pending_removals)
             st.rerun()
+        if friend_index < len(friends) - 1:
+            st.markdown('<hr class="friends-mobile-separator">', unsafe_allow_html=True)
 
     outgoing = persistence.outgoing_friend_invites(user_id)
     if outgoing:
