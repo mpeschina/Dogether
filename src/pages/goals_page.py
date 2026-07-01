@@ -9,6 +9,24 @@ from src.pages.page_helpers import schedule_label
 
 
 def render_goals(persistence: Persistence, user_id: str, now: datetime | None = None) -> None:
+    st.markdown(
+        """
+        <style>
+        .goals-mobile-separator {
+            display: none;
+        }
+        @media (max-width: 640px) {
+            .goals-mobile-separator {
+                display: block;
+                border: 0;
+                border-top: 1px solid #e5e7eb;
+                margin: 1rem 0;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.title("Create / Manage Shared Goals")
     friends = persistence.list_friends(user_id)
     friend_options = {f"{friend.get('name', friend['email'])} <{friend['email']}>": friend["user_id"] for friend in friends}
@@ -54,7 +72,7 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
     active_goal_ids = {goal["id"] for goal in goals}
     if st.session_state.get("goals_pending_leave_id") not in active_goal_ids:
         st.session_state.pop("goals_pending_leave_id", None)
-    for goal in goals:
+    for goal_index, goal in enumerate(goals):
         participant = goal["participants"][user_id]
         cols = st.columns([4, 2, 2, 2, 2, 3, 1])
         cols[0].write(goal["description"])
@@ -128,3 +146,5 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
             else:
                 st.session_state["goals_pending_leave_id"] = goal["id"]
             st.rerun()
+        if goal_index < len(goals) - 1:
+            st.markdown('<hr class="goals-mobile-separator">', unsafe_allow_html=True)
