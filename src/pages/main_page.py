@@ -13,6 +13,7 @@ from src.push.storage import PushStorage
 
 
 DONE_BUTTON_GREEN = "#289650"
+PARTICIPANT_PROGRESS_COLOR = "rgba(49, 51, 63, 0.6)"
 
 
 def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str]:
@@ -33,6 +34,23 @@ def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str
     if current_user_id not in ordered_ids:
         return ordered_ids
     return [current_user_id, *[uid for uid in ordered_ids if uid != current_user_id]]
+
+
+def participant_progress_label(current: int, target: int, skipped: bool) -> str:
+    if skipped:
+        return "skipped"
+    return f"{current}/{max(1, target)}"
+
+
+def participant_name_with_progress_html(name: str, progress_label: str) -> str:
+    return (
+        "<div style='display:flex;align-items:baseline;gap:0.4rem;"
+        "flex-wrap:wrap;margin:0.15rem 0;'>"
+        f"<span>{escape(name)}</span>"
+        f"<span style='color:{PARTICIPANT_PROGRESS_COLOR};font-size:0.875rem;"
+        f"white-space:nowrap;'>{escape(progress_label)}</span>"
+        "</div>"
+    )
 
 
 def render_main(
@@ -107,8 +125,13 @@ def render_main(
                 )
                 cols = st.columns([6, 2])
                 with cols[0]:
-                    name_cols = st.columns([2.4, 1.4, 6.2]) if can_invite_participant else st.columns([3.8, 6.2])
-                    name_cols[0].write(participant_name(users, participant_id))
+                    name = participant_name(users, participant_id)
+                    progress_label = participant_progress_label(current, target, skipped)
+                    name_cols = st.columns([2.4, 1.4]) if can_invite_participant else st.columns([1])
+                    name_cols[0].markdown(
+                        participant_name_with_progress_html(name, progress_label),
+                        unsafe_allow_html=True,
+                    )
                     if can_invite_participant:
                         if name_cols[1].button("Add Friend", key=f"add_friend_{goal['id']}_{participant_id}"):
                             try:
@@ -125,9 +148,6 @@ def render_main(
                                 st.rerun()
                             except ValueError as error:
                                 st.error(str(error))
-                        name_cols[2].caption("skipped" if skipped else f"{current} / {max(1, target)}")
-                    else:
-                        name_cols[1].caption("skipped" if skipped else f"{current} / {max(1, target)}")
                     if not skipped:
                         progress_bar(current, target, show_caption=False)
                 if is_current_user:

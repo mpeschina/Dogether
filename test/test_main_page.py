@@ -1,4 +1,8 @@
-from src.pages.main_page import ordered_active_participant_ids
+from src.pages.main_page import (
+    participant_name_with_progress_html,
+    participant_progress_label,
+    ordered_active_participant_ids,
+)
 
 
 def test_ordered_active_participant_ids_pins_current_user_first() -> None:
@@ -38,3 +42,15 @@ def test_ordered_active_participant_ids_includes_active_participants_missing_fro
     }
 
     assert ordered_active_participant_ids(goal, "charlie") == ["charlie", "alice", "bob"]
+
+
+def test_participant_progress_label_uses_compact_current_target() -> None:
+    assert participant_progress_label(0, 10, False) == "0/10"
+
+
+def test_participant_name_with_progress_keeps_progress_inline_and_escaped() -> None:
+    html = participant_name_with_progress_html("Ada <L>", "0/10")
+
+    assert "Ada &lt;L&gt;" in html
+    assert "0/10" in html
+    assert "white-space:nowrap" in html
