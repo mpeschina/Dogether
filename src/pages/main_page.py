@@ -160,7 +160,7 @@ def render_main(
                                 now=now,
                             )
                             st.rerun()
-                        with action_cols[1].popover("...", use_container_width=True):
+                        with action_cols[1].popover("Set", use_container_width=True):
                             current_key = f"current_{goal['id']}"
                             current = st.number_input(
                                 "Current",

@@ -5,6 +5,13 @@ secondaryBackgroundColor = "#EEF7F0"
 textColor = "#17251C"
 font = "sans serif"
 
+Darker green[theme]
+primaryColor = "#289650"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#EEF7F0"
+textColor = "#1F2937"
+font = "sans serif"
+
 
 Black
 primaryColor = "#1F2937"

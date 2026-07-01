@@ -56,7 +56,7 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
         st.session_state.pop("goals_pending_leave_id", None)
     for goal in goals:
         participant = goal["participants"][user_id]
-        cols = st.columns([4, 2, 2, 2, 3, 1])
+        cols = st.columns([4, 2, 2, 2, 2, 3, 1])
         cols[0].write(goal["description"])
         cols[1].write(schedule_label(goal))
         cols[2].write(f"{participant.get('current', 0)} / {participant.get('target', 1)}")
@@ -74,6 +74,22 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
                 now=now,
             )
             st.rerun()
+        with cols[4].popover("Configure Max Value", use_container_width=True):
+            with st.form(f"configure_max_value_{goal['id']}"):
+                target = st.number_input(
+                    "Max value",
+                    min_value=1,
+                    value=max(1, int(participant.get("target", 1))),
+                )
+                if st.form_submit_button("Save"):
+                    persistence.update_goal_progress(
+                        goal["id"],
+                        user_id,
+                        target=int(target),
+                        now=now,
+                    )
+                    st.success("Max value updated.")
+                    st.rerun()
         existing_participant_ids = set(goal.get("participants", {}))
         addable_friend_options = {
             label: friend_id
@@ -81,7 +97,7 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
             if friend_id not in existing_participant_ids
         }
         if addable_friend_options:
-            with cols[4].popover("Add Friends", use_container_width=True):
+            with cols[5].popover("Add Friends", use_container_width=True):
                 with st.form(f"add_friends_{goal['id']}"):
                     selected_new_friends = st.multiselect("Friends", list(addable_friend_options))
                     add_submitted = st.form_submit_button("Add")
@@ -101,11 +117,11 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
                         except ValueError as error:
                             st.error(str(error))
         else:
-            cols[4].caption("All friends are already on this goal.")
+            cols[5].caption("All friends are already on this goal.")
         pending_leave = st.session_state.get("goals_pending_leave_id") == goal["id"]
         leave_label = "Really Leave" if pending_leave else "Leave"
         leave_type = "primary" if pending_leave else "secondary"
-        if cols[5].button(leave_label, key=f"leave_{goal['id']}", type=leave_type):
+        if cols[6].button(leave_label, key=f"leave_{goal['id']}", type=leave_type):
             if pending_leave:
                 persistence.leave_goal(goal["id"], user_id, now=now)
                 st.session_state.pop("goals_pending_leave_id", None)
