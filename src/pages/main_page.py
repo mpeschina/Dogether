@@ -12,6 +12,9 @@ from src.push.notifications import create_friend_invite_with_push, update_goal_p
 from src.push.storage import PushStorage
 
 
+DONE_BUTTON_GREEN = "#289650"
+
+
 def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str]:
     participants = goal.get("participants", {})
     ordered_ids = [
@@ -40,6 +43,29 @@ def render_main(
     push_settings: dict[str, str] | None = None,
     now: datetime | None = None,
 ) -> None:
+    st.markdown(
+        f"""
+        <style>
+        div[class*="st-key-done_"] button {{
+            background-color: {DONE_BUTTON_GREEN};
+            border-color: {DONE_BUTTON_GREEN};
+            color: #ffffff;
+        }}
+        div[class*="st-key-done_"] button:hover {{
+            background-color: #218243;
+            border-color: #218243;
+            color: #ffffff;
+        }}
+        div[class*="st-key-done_"] button:active {{
+            background-color: #1b6d38;
+            border-color: #1b6d38;
+            color: #ffffff;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)
 
@@ -105,14 +131,32 @@ def render_main(
                 if is_current_user:
                     with cols[1]:
                         action_cols = st.columns([1, 1])
-                        if action_cols[0].button("Done", key=f"done_{goal['id']}", type="primary", use_container_width=True):
+                        goal_is_done = current >= max(1, target)
+                        if goal_is_done:
+                            if action_cols[0].button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
+                                update_goal_progress_with_push(
+                                    persistence,
+                                    push_storage,
+                                    push_settings or {},
+                                    goal_id=goal["id"],
+                                    user_id=user_id,
+                                    current=0,
+                                    now=now,
+                                )
+                                st.rerun()
+                        elif action_cols[0].button(
+                            "Done",
+                            key=f"done_{goal['id']}",
+                            type="primary",
+                            use_container_width=True,
+                        ):
                             update_goal_progress_with_push(
                                 persistence,
                                 push_storage,
                                 push_settings or {},
                                 goal_id=goal["id"],
                                 user_id=user_id,
-                                current=int(participant.get("target", 1)),
+                                current=max(1, target),
                                 now=now,
                             )
                             st.rerun()
