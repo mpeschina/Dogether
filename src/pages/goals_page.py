@@ -13,7 +13,7 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
     friends = persistence.list_friends(user_id)
     friend_options = {f"{friend.get('name', friend['email'])} <{friend['email']}>": friend["user_id"] for friend in friends}
 
-    with st.form("create_goal"):
+    with st.container(border=True):
         description = st.text_input("Task description")
         schedule_options = {
             "Daily": "daily",
@@ -24,12 +24,12 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
         schedule_label_value = st.selectbox("Class", list(schedule_options))
         required_periods = 1
         if schedule_options[schedule_label_value] == "daily_x_per_week":
-            required_periods = st.number_input("X times per week", min_value=1, max_value=7, value=5)
+            required_periods = st.number_input("X times per week", min_value=1, max_value=6, value=5)
         elif schedule_options[schedule_label_value] == "weekly_x_per_month":
-            required_periods = st.number_input("X times per month", min_value=1, max_value=5, value=3)
+            required_periods = st.number_input("X times per month", min_value=1, max_value=6, value=3)
         selected_friends = st.multiselect("Shared with friends", list(friend_options))
         target = st.number_input("Progress max", min_value=1, value=1)
-        submitted = st.form_submit_button("Create goal", type="primary")
+        submitted = st.button("Create goal", type="primary")
         if submitted:
             try:
                 persistence.create_goal(

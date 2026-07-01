@@ -11,7 +11,7 @@ def schedule_label(goal: dict) -> str:
         goal.get("schedule_class", "Goal"),
     )
     if goal.get("schedule_class") in {"daily_x_per_week", "weekly_x_per_month"}:
-        return f"{label} ({goal.get('required_periods', 1)})"
+        return label.replace("X", str(goal.get("required_periods", 1)), 1)
     return label
 
 
