@@ -1,0 +1,14 @@
+Todo green 
+primaryColor = "#22C55E"
+backgroundColor = "#F8FAF7"
+secondaryBackgroundColor = "#EEF7F0"
+textColor = "#17251C"
+font = "sans serif"
+
+
+Black
+primaryColor = "#1F2937"
+backgroundColor = "#F9FAF7"
+secondaryBackgroundColor = "#F3F4F0"
+textColor = "#1F2937"
+font = "sans serif"

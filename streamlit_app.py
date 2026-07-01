@@ -18,7 +18,7 @@ st.set_page_config(page_title="Dogether", page_icon=":white_check_mark:", layout
 st.markdown(
     """
     <link rel="manifest" href="./app/static/manifest.json">
-    <meta name="theme-color" content="#ffffff">
+    <meta name="theme-color" content="#1F2937">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Dogether">
     <link rel="apple-touch-icon" href="./app/static/icon-192.png">
