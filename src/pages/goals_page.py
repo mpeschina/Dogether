@@ -29,7 +29,7 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
             required_periods = st.number_input("X times per month", min_value=1, max_value=5, value=3)
         selected_friends = st.multiselect("Shared with friends", list(friend_options))
         target = st.number_input("Progress max", min_value=1, value=1)
-        submitted = st.form_submit_button("Create goal")
+        submitted = st.form_submit_button("Create goal", type="primary")
         if submitted:
             try:
                 persistence.create_goal(

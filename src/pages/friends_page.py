@@ -69,7 +69,7 @@ def render_friends(
                     st.success("Friend invite created.")
                 except ValueError as error:
                     st.error(str(error))
-    elif st.button("Invite friend"):
+    elif st.button("Invite friend", type="primary"):
         st.session_state["show_invite_friend_form"] = True
         st.rerun()
 

@@ -3,7 +3,11 @@ enableStaticServing = true
 
 [theme]
 primaryColor = "#1F2937"
-backgroundColor = "#F9FAF7"
-secondaryBackgroundColor = "#F3F4F0"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#EEF7F0"
 textColor = "#1F2937"
 font = "sans serif"
+
+[theme.sidebar]
+primaryColor = "#1F2937"
+
