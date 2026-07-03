@@ -12,7 +12,9 @@ from src.push.notifications import create_friend_invite_with_push, update_goal_p
 from src.push.storage import PushStorage
 
 
-DONE_BUTTON_GREEN = "#289650"
+DONE_BUTTON_GREEN = "#2E9E57"
+DONE_BUTTON_GREEN_HOVER = "#218243"
+DONE_BUTTON_GREEN_ACTIVE = "#1b6d38"
 PARTICIPANT_PROGRESS_COLOR = "rgba(49, 51, 63, 0.6)"
 
 
@@ -70,13 +72,13 @@ def render_main(
             color: #ffffff;
         }}
         div[class*="st-key-done_"] button:hover {{
-            background-color: #218243;
-            border-color: #218243;
+            background-color: {DONE_BUTTON_GREEN_HOVER};
+            border-color: {DONE_BUTTON_GREEN_HOVER};
             color: #ffffff;
         }}
         div[class*="st-key-done_"] button:active {{
-            background-color: #1b6d38;
-            border-color: #1b6d38;
+            background-color: {DONE_BUTTON_GREEN_ACTIVE};
+            border-color: {DONE_BUTTON_GREEN_ACTIVE};
             color: #ffffff;
         }}
         </style>
