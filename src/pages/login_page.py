@@ -10,8 +10,40 @@ from src.db.persistence import Persistence, normalize_email
 
 
 def login_screen(persistence: Persistence | None = None, debug_enabled: bool = False, now: datetime | None = None) -> None:
+    if not debug_enabled:
+        st.markdown(
+            """
+            <style>
+            [data-testid="stSidebar"],
+            [data-testid="collapsedControl"] {
+                display: none;
+            }
+
+            .block-container {
+                min-height: calc(100vh - 6rem);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+            }
+
+            .block-container > div {
+                width: min(100%, 28rem);
+            }
+
+            .block-container h1,
+            .block-container h2,
+            .block-container h3,
+            .block-container [data-testid="stButton"] {
+                text-align: center;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
     st.header("Dogether")
-    st.button("Log in with Google", on_click=st.login)
+    st.button("Log in with Google", on_click=st.login, use_container_width=not debug_enabled)
 
     if not debug_enabled:
         return
