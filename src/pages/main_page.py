@@ -343,56 +343,57 @@ def render_main(
                                 now=now,
                             )
                             st.rerun()
-                        with action_cols[1].popover("Set", use_container_width=True):
-                            current_key = f"current_{goal['id']}"
-                            current = st.number_input(
-                                "Current",
-                                min_value=0,
-                                value=int(participant.get("current", 0)),
-                                key=current_key,
-                            )
-                            detail_cols = st.columns(3)
-                            if detail_cols[0].button("Save", key=f"save_{goal['id']}", use_container_width=True):
-                                update_goal_progress_with_push(
-                                    persistence,
-                                    push_storage,
-                                    push_settings or {},
-                                    goal_id=goal["id"],
-                                    user_id=user_id,
-                                    current=current,
-                                    now=now,
+                        if not (goal_is_done or skipped):
+                            with action_cols[1].popover("Set", use_container_width=True):
+                                current_key = f"current_{goal['id']}"
+                                current = st.number_input(
+                                    "Current",
+                                    min_value=0,
+                                    value=int(participant.get("current", 0)),
+                                    key=current_key,
                                 )
-                                st.rerun()
-                            if detail_cols[1].button("+1", key=f"plus_{goal['id']}", use_container_width=True):
-                                update_goal_progress_with_push(
-                                    persistence,
-                                    push_storage,
-                                    push_settings or {},
-                                    goal_id=goal["id"],
-                                    user_id=user_id,
-                                    delta=1,
-                                    now=now,
-                                )
-                                st.rerun()
-                            if detail_cols[2].button("-1", key=f"minus_{goal['id']}", use_container_width=True):
-                                update_goal_progress_with_push(
-                                    persistence,
-                                    push_storage,
-                                    push_settings or {},
-                                    goal_id=goal["id"],
-                                    user_id=user_id,
-                                    delta=-1,
-                                    now=now,
-                                )
-                                st.rerun()
-                            if st.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
-                                update_goal_progress_with_push(
-                                    persistence,
-                                    push_storage,
-                                    push_settings or {},
-                                    goal_id=goal["id"],
-                                    user_id=user_id,
-                                    skipped=True,
-                                    now=now,
-                                )
-                                st.rerun()
+                                detail_cols = st.columns(3)
+                                if detail_cols[0].button("Save", key=f"save_{goal['id']}", use_container_width=True):
+                                    update_goal_progress_with_push(
+                                        persistence,
+                                        push_storage,
+                                        push_settings or {},
+                                        goal_id=goal["id"],
+                                        user_id=user_id,
+                                        current=current,
+                                        now=now,
+                                    )
+                                    st.rerun()
+                                if detail_cols[1].button("+1", key=f"plus_{goal['id']}", use_container_width=True):
+                                    update_goal_progress_with_push(
+                                        persistence,
+                                        push_storage,
+                                        push_settings or {},
+                                        goal_id=goal["id"],
+                                        user_id=user_id,
+                                        delta=1,
+                                        now=now,
+                                    )
+                                    st.rerun()
+                                if detail_cols[2].button("-1", key=f"minus_{goal['id']}", use_container_width=True):
+                                    update_goal_progress_with_push(
+                                        persistence,
+                                        push_storage,
+                                        push_settings or {},
+                                        goal_id=goal["id"],
+                                        user_id=user_id,
+                                        delta=-1,
+                                        now=now,
+                                    )
+                                    st.rerun()
+                                if st.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
+                                    update_goal_progress_with_push(
+                                        persistence,
+                                        push_storage,
+                                        push_settings or {},
+                                        goal_id=goal["id"],
+                                        user_id=user_id,
+                                        skipped=True,
+                                        now=now,
+                                    )
+                                    st.rerun()
