@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+import calendar
+from datetime import datetime, timedelta
 from html import escape
 
 import streamlit as st
 
 from src.db.persistence import Persistence
+from src.db.persistence_helpers import _now, _period_fulfilled, _period_start, _schedule
 from src.pages.account_page import render_activity_diagram
 from src.pages.page_helpers import participant_name, progress_bar, schedule_label
 from src.push.notifications import create_friend_invite_with_push, update_goal_progress_with_push
@@ -16,6 +18,8 @@ DONE_BUTTON_GREEN = "#2E9E57"
 DONE_BUTTON_GREEN_HOVER = "#218243"
 DONE_BUTTON_GREEN_ACTIVE = "#1b6d38"
 PARTICIPANT_PROGRESS_COLOR = "rgba(49, 51, 63, 0.6)"
+MINI_ACTIVITY_COLORS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
+MINI_ACTIVITY_NAME_MAX_LENGTH = 25
 
 
 def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str]:
@@ -44,15 +48,96 @@ def participant_progress_label(current: int, target: int, skipped: bool) -> str:
     return f"{current}/{max(1, target)}"
 
 
-def participant_name_with_progress_html(name: str, progress_label: str) -> str:
+def truncate_participant_name(name: str, max_length: int = MINI_ACTIVITY_NAME_MAX_LENGTH) -> str:
+    if len(name) <= max_length:
+        return name
+    return f"{name[: max(0, max_length - 3)]}..."
+
+
+def participant_name_with_progress_html(
+    name: str,
+    progress_label: str,
+    goal: dict | None = None,
+    participant: dict | None = None,
+    now: datetime | None = None,
+) -> str:
+    dots_html = (
+        compact_goal_activity_html(goal, participant, now=now)
+        if goal is not None and participant is not None
+        else ""
+    )
     return (
-        "<div style='display:flex;align-items:baseline;gap:0.4rem;"
-        "flex-wrap:wrap;margin:0.15rem 0;'>"
-        f"<span>{escape(name)}</span>"
-        f"<span style='color:{PARTICIPANT_PROGRESS_COLOR};font-size:0.875rem;"
-        f"white-space:nowrap;'>{escape(progress_label)}</span>"
+        "<div class='participant-progress-row'>"
+        f"<span class='participant-progress-name' title='{escape(name, quote=True)}'>"
+        f"{escape(truncate_participant_name(name))}</span>"
+        f"<span class='participant-progress-count'>{escape(progress_label)}</span>"
+        f"{dots_html}"
         "</div>"
     )
+
+
+def compact_goal_activity_html(goal: dict, participant: dict, now: datetime | None = None) -> str:
+    now_dt = _now(now)
+    schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+    period_starts = _mini_activity_period_starts(now_dt, schedule)
+    dots = [
+        (
+            "<span class='mini-activity-dot' "
+            f"title='{escape(period_start.isoformat(), quote=True)}' "
+            f"style='background:{_mini_activity_color(goal, participant, period_start, now_dt)};'></span>"
+        )
+        for period_start in period_starts
+    ]
+    return f"<span class='mini-activity-dots'>{''.join(dots)}</span>"
+
+
+def _mini_activity_period_starts(now_dt: datetime, schedule: dict) -> list[datetime]:
+    if schedule["base"] == "day":
+        week_start = _period_start(now_dt, "week")
+        return [week_start + timedelta(days=offset) for offset in range(7)]
+
+    month_start = now_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    _, month_days = calendar.monthrange(month_start.year, month_start.month)
+    return [
+        month_start + timedelta(days=day_offset)
+        for day_offset in range(month_days)
+        if (month_start + timedelta(days=day_offset)).weekday() == 0
+    ]
+
+
+def _mini_activity_color(goal: dict, participant: dict, period_start: datetime, now_dt: datetime) -> str:
+    schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+    current_period_start = _period_start(now_dt, schedule["base"])
+    if period_start > current_period_start:
+        return MINI_ACTIVITY_COLORS[0]
+
+    outcome = participant.get("period_outcomes", {}).get(period_start.date().isoformat())
+    if isinstance(outcome, dict):
+        fulfilled = bool(outcome.get("fulfilled", outcome.get("completed", False)))
+        return MINI_ACTIVITY_COLORS[4] if fulfilled else MINI_ACTIVITY_COLORS[0]
+
+    if period_start == current_period_start:
+        if bool(participant.get("skipped", False)) and not _period_fulfilled(goal, participant, period_start):
+            return MINI_ACTIVITY_COLORS[0]
+        if _period_fulfilled(goal, participant, period_start):
+            return MINI_ACTIVITY_COLORS[4]
+        target = max(1, int(participant.get("target", 1) or 1))
+        current = max(0, int(participant.get("current", 0) or 0))
+        return _mini_activity_progress_color((current / target) * 100)
+
+    return MINI_ACTIVITY_COLORS[0]
+
+
+def _mini_activity_progress_color(percent: float) -> str:
+    if percent >= 100:
+        return MINI_ACTIVITY_COLORS[4]
+    if percent >= 75:
+        return MINI_ACTIVITY_COLORS[3]
+    if percent >= 50:
+        return MINI_ACTIVITY_COLORS[2]
+    if percent > 0:
+        return MINI_ACTIVITY_COLORS[1]
+    return MINI_ACTIVITY_COLORS[0]
 
 
 def render_main(
@@ -80,6 +165,37 @@ def render_main(
             background-color: {DONE_BUTTON_GREEN_ACTIVE};
             border-color: {DONE_BUTTON_GREEN_ACTIVE};
             color: #ffffff;
+        }}
+        .participant-progress-row {{
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            align-items: baseline;
+            column-gap: 0.4rem;
+            margin: 0.15rem 0;
+            min-width: 0;
+            white-space: nowrap;
+        }}
+        .participant-progress-name {{
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        .participant-progress-count {{
+            color: {PARTICIPANT_PROGRESS_COLOR};
+            font-size: 0.875rem;
+        }}
+        .mini-activity-dots {{
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            white-space: nowrap;
+        }}
+        .mini-activity-dot {{
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            box-shadow: inset 0 0 0 1px rgba(27,31,36,0.06);
+            flex: 0 0 auto;
         }}
         </style>
         """,
@@ -131,7 +247,7 @@ def render_main(
                     progress_label = participant_progress_label(current, target, skipped)
                     name_cols = st.columns([2.4, 1.4]) if can_invite_participant else st.columns([1])
                     name_cols[0].markdown(
-                        participant_name_with_progress_html(name, progress_label),
+                        participant_name_with_progress_html(name, progress_label, goal, participant, now=now),
                         unsafe_allow_html=True,
                     )
                     if can_invite_participant:
