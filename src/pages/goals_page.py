@@ -74,7 +74,7 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
         st.session_state.pop("goals_pending_leave_id", None)
     for goal_index, goal in enumerate(goals):
         participant = goal["participants"][user_id]
-        cols = st.columns([4, 2, 2, 2, 2, 3, 1])
+        cols = st.columns([2.8, 1.8, 1.4, 2, 2.8, 3.4, 1.8])
         cols[0].write(goal["description"])
         cols[1].write(schedule_label(goal))
         cols[2].write(f"{participant.get('current', 0)} / {participant.get('target', 1)}")
