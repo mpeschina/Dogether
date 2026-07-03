@@ -19,6 +19,8 @@ DONE_BUTTON_GREEN_HOVER = "#218243"
 DONE_BUTTON_GREEN_ACTIVE = "#1b6d38"
 PARTICIPANT_PROGRESS_COLOR = "rgba(49, 51, 63, 0.6)"
 MINI_ACTIVITY_COLORS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
+STREAMLIT_PRIMARY_COLOR = "#1F2937"
+X_PER_SCHEDULE_CLASSES = {"daily_x_per_week", "weekly_x_per_month"}
 MINI_ACTIVITY_NAME_MAX_LENGTH = 25
 
 
@@ -80,15 +82,23 @@ def compact_goal_activity_html(goal: dict, participant: dict, now: datetime | No
     now_dt = _now(now)
     schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
     period_starts = _mini_activity_period_starts(now_dt, schedule)
+    current_period_start = _period_start(now_dt, schedule["base"])
     dots = [
         (
-            "<span class='mini-activity-dot' "
+            f"<span class='{_mini_activity_dot_class(period_start, current_period_start)}' "
             f"title='{escape(period_start.isoformat(), quote=True)}' "
             f"style='background:{_mini_activity_color(goal, participant, period_start, now_dt)};'></span>"
         )
         for period_start in period_starts
     ]
     return f"<span class='mini-activity-dots'>{''.join(dots)}</span>"
+
+
+def _mini_activity_dot_class(period_start: datetime, current_period_start: datetime) -> str:
+    class_name = "mini-activity-dot"
+    if period_start == current_period_start:
+        class_name += " mini-activity-dot-current"
+    return class_name
 
 
 def _mini_activity_period_starts(now_dt: datetime, schedule: dict) -> list[datetime]:
@@ -113,19 +123,48 @@ def _mini_activity_color(goal: dict, participant: dict, period_start: datetime, 
 
     outcome = participant.get("period_outcomes", {}).get(period_start.date().isoformat())
     if isinstance(outcome, dict):
-        fulfilled = bool(outcome.get("fulfilled", outcome.get("completed", False)))
-        return MINI_ACTIVITY_COLORS[4] if fulfilled else MINI_ACTIVITY_COLORS[0]
+        completed = bool(outcome.get("completed", False))
+        fulfilled = bool(outcome.get("fulfilled", completed))
+        if completed:
+            return MINI_ACTIVITY_COLORS[4]
+        if _uses_required_period_allowance(goal):
+            if fulfilled and outcome.get("skipped"):
+                return STREAMLIT_PRIMARY_COLOR
+            if not fulfilled:
+                return MINI_ACTIVITY_COLORS[0]
+        if fulfilled:
+            return MINI_ACTIVITY_COLORS[4]
+        return _mini_activity_progress_color(_outcome_percent(outcome))
 
     if period_start == current_period_start:
-        if bool(participant.get("skipped", False)) and not _period_fulfilled(goal, participant, period_start):
+        fulfilled = _period_fulfilled(goal, participant, period_start)
+        skipped = bool(participant.get("skipped", False))
+        if _uses_required_period_allowance(goal):
+            if fulfilled and skipped:
+                return STREAMLIT_PRIMARY_COLOR
+            if not fulfilled:
+                return MINI_ACTIVITY_COLORS[0]
+        if skipped and not fulfilled:
             return MINI_ACTIVITY_COLORS[0]
-        if _period_fulfilled(goal, participant, period_start):
+        if fulfilled:
             return MINI_ACTIVITY_COLORS[4]
         target = max(1, int(participant.get("target", 1) or 1))
         current = max(0, int(participant.get("current", 0) or 0))
         return _mini_activity_progress_color((current / target) * 100)
 
     return MINI_ACTIVITY_COLORS[0]
+
+
+def _uses_required_period_allowance(goal: dict) -> bool:
+    return goal.get("schedule_class") in X_PER_SCHEDULE_CLASSES
+
+
+def _outcome_percent(outcome: dict) -> float:
+    if "percent" in outcome:
+        return max(0.0, float(outcome.get("percent") or 0.0))
+    target = max(1, int(outcome.get("target", 1) or 1))
+    current = max(0, int(outcome.get("current", 0) or 0))
+    return (current / target) * 100
 
 
 def _mini_activity_progress_color(percent: float) -> str:
@@ -193,9 +232,12 @@ def render_main(
         .mini-activity-dot {{
             width: 8px;
             height: 8px;
-            border-radius: 999px;
+            border-radius: 2px;
             box-shadow: inset 0 0 0 1px rgba(27,31,36,0.06);
             flex: 0 0 auto;
+        }}
+        .mini-activity-dot-current {{
+            box-shadow: 0 0 0 1.5px rgba(31,41,55,0.42);
         }}
         </style>
         """,

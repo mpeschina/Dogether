@@ -2,6 +2,7 @@ from datetime import datetime
 
 from src.pages.main_page import (
     MINI_ACTIVITY_COLORS,
+    STREAMLIT_PRIMARY_COLOR,
     compact_goal_activity_html,
     participant_name_with_progress_html,
     participant_progress_label,
@@ -103,9 +104,11 @@ def test_compact_goal_activity_renders_daily_current_week_seven_dots() -> None:
         now=_at("2026-06-03T12:00:00"),
     )
 
-    assert html.count("class='mini-activity-dot'") == 7
+    assert html.count("title='") == 7
     assert "2026-06-01" in html
     assert "2026-06-07" in html
+    assert html.count("mini-activity-dot-current") == 1
+    assert "2026-06-03T00:00:00" in html
 
 
 def test_compact_goal_activity_renders_daily_skipped_unfulfilled_as_grey() -> None:
@@ -125,26 +128,83 @@ def test_compact_goal_activity_renders_daily_skipped_unfulfilled_as_grey() -> No
     assert f"background:{MINI_ACTIVITY_COLORS[4]}" not in html
 
 
-def test_compact_goal_activity_daily_x_per_week_surplus_miss_stays_green_until_allowance_exceeded() -> None:
+def test_compact_goal_activity_renders_stored_partial_progress_as_light_green() -> None:
+    participant = {
+        "current": 0,
+        "target": 5000,
+        "skipped": False,
+        "period_outcomes": {
+            "2026-06-02": {
+                "completed": False,
+                "skipped": False,
+                "fulfilled": False,
+                "current": 3800,
+                "target": 5000,
+                "percent": 76.0,
+            }
+        },
+    }
+    html = compact_goal_activity_html(
+        _goal("daily", participant=participant),
+        participant,
+        now=_at("2026-06-03T12:00:00"),
+    )
+
+    assert f"background:{MINI_ACTIVITY_COLORS[3]}" in html
+    assert f"background:{MINI_ACTIVITY_COLORS[4]}" not in html
+
+
+def test_compact_goal_activity_daily_x_per_week_completion_stays_green() -> None:
+    participant = {
+        "current": 0,
+        "target": 10,
+        "skipped": False,
+        "period_outcomes": {"2026-06-01": {"completed": True, "skipped": False, "fulfilled": True}},
+    }
+    html = compact_goal_activity_html(
+        _goal("daily_x_per_week", required_periods=5, participant=participant),
+        participant,
+        now=_at("2026-06-03T12:00:00"),
+    )
+
+    assert f"background:{MINI_ACTIVITY_COLORS[4]}" in html
+
+
+def test_compact_goal_activity_daily_x_per_week_valid_skip_uses_primary_color() -> None:
     participant = {
         "current": 0,
         "target": 10,
         "skipped": True,
-        "period_outcomes": {
-            "2026-06-01": {"completed": False, "skipped": True, "fulfilled": True},
-            "2026-06-02": {"completed": False, "skipped": True, "fulfilled": True},
-        },
+        "period_outcomes": {"2026-06-01": {"completed": False, "skipped": True, "fulfilled": True}},
     }
     goal = _goal("daily_x_per_week", required_periods=5, participant=participant)
     html = compact_goal_activity_html(goal, participant, now=_at("2026-06-03T12:00:00"))
 
-    assert html.count(f"background:{MINI_ACTIVITY_COLORS[4]}") == 2
-    assert html.count(f"background:{MINI_ACTIVITY_COLORS[0]}") == 5
+    assert html.count(f"background:{STREAMLIT_PRIMARY_COLOR}") == 2
+    assert f"background:{MINI_ACTIVITY_COLORS[4]}" not in html
 
-    goal["required_periods"] = 4
+    goal["required_periods"] = 6
     html = compact_goal_activity_html(goal, participant, now=_at("2026-06-03T12:00:00"))
 
-    assert html.count(f"background:{MINI_ACTIVITY_COLORS[4]}") == 3
+    assert html.count(f"background:{STREAMLIT_PRIMARY_COLOR}") == 1
+    assert html.count(f"background:{MINI_ACTIVITY_COLORS[0]}") == 6
+
+
+def test_compact_goal_activity_daily_x_per_week_unfulfilled_skip_uses_grey() -> None:
+    participant = {
+        "current": 0,
+        "target": 10,
+        "skipped": False,
+        "period_outcomes": {"2026-06-01": {"completed": False, "skipped": True, "fulfilled": False}},
+    }
+    html = compact_goal_activity_html(
+        _goal("daily_x_per_week", required_periods=5, participant=participant),
+        participant,
+        now=_at("2026-06-03T12:00:00"),
+    )
+
+    assert f"background:{STREAMLIT_PRIMARY_COLOR}" not in html
+    assert f"background:{MINI_ACTIVITY_COLORS[0]}" in html
 
 
 def test_compact_goal_activity_renders_weekly_current_month_dots() -> None:
@@ -155,7 +215,7 @@ def test_compact_goal_activity_renders_weekly_current_month_dots() -> None:
         now=_at("2026-06-15T12:00:00"),
     )
 
-    assert html.count("class='mini-activity-dot'") == 5
+    assert html.count("title='") == 5
     assert "2026-06-01" in html
     assert "2026-06-29" in html
 

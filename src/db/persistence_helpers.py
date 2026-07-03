@@ -241,6 +241,9 @@ def _record_period_outcome(
         "completed": completed,
         "skipped": is_skipped or progress == 0,
         "fulfilled": fulfilled,
+        "current": progress,
+        "target": max_target,
+        "percent": round((progress / max_target) * 100, 1),
     }
     for outcome_key in sorted(outcomes)[:-370]:
         del outcomes[outcome_key]

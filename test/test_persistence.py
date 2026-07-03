@@ -379,6 +379,33 @@ def test_period_rollover_updates_streak_activity_and_resets_progress(tmp_path: P
     assert activity == {"active_goals": 1, "fulfilled_goals": 1, "percent": 100.0}
 
 
+def test_period_rollover_records_partial_progress_ratio(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Daily Steps",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=5000,
+        current=3800,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-02T08:00:00"))
+
+    outcome = persistence.raw_data()["goals"][goal["id"]]["participants"]["alice"]["period_outcomes"]["2026-06-01"]
+    assert outcome == {
+        "completed": False,
+        "skipped": False,
+        "fulfilled": False,
+        "current": 3800,
+        "target": 5000,
+        "percent": 76.0,
+    }
+
+
 def test_missed_daily_period_resets_streak(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
