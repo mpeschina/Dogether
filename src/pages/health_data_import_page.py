@@ -63,84 +63,84 @@ def render_health_data_import(
 
     goals = persistence.list_goals_for_user(user_id, now=now)
     current_target = active_health_data_import_goal(goals, user_id) if goals else None
+    shortcut_col, health_col = st.columns([2, 3], gap="large")
 
-    with st.container(border=True):
-        st.subheader("Shortcut")
-        install_url = settings.get("apple_steps_shortcut_install_url", "").strip()
-        shortcut_name = (
-            settings.get("apple_steps_shortcut_name", DEFAULT_SHORTCUT_NAME).strip()
-            or DEFAULT_SHORTCUT_NAME
-        )
-        if install_url:
+    with shortcut_col:
+        with st.container(border=True):
+            st.subheader("Shortcut")
+            install_url = settings.get("apple_steps_shortcut_install_url", "").strip()
+            shortcut_name = (
+                settings.get("apple_steps_shortcut_name", DEFAULT_SHORTCUT_NAME).strip()
+                or DEFAULT_SHORTCUT_NAME
+            )
+            if install_url:
+                st.link_button(
+                    "Install Shortcut",
+                    install_url,
+                    type="primary" if current_target is None else "secondary",
+                    use_container_width=True,
+                )
+            else:
+                st.warning(
+                    "Add health_data.apple_steps_shortcut_install_url to Streamlit secrets "
+                    "to show the install button."
+                )
             st.link_button(
-                "Install Shortcut",
-                install_url,
-                type="primary" if current_target is None else "secondary",
+                "Input Data",
+                apple_steps_shortcut_run_url(shortcut_name),
                 use_container_width=True,
             )
-        else:
-            st.warning(
-                "Add health_data.apple_steps_shortcut_install_url to Streamlit secrets "
-                "to show the install button."
-            )
-        st.link_button(
-            "Input Data",
-            apple_steps_shortcut_run_url(shortcut_name),
-            use_container_width=True,
-        )
-        st.caption(
-            f"Shortcut return URL: "
-            f"{settings.get('return_url', DEFAULT_RETURN_URL)}?action=import_steps&steps=[steps]"
-        )
 
-    if not goals:
-        st.info("Create a goal before connecting Apple Health import.")
-        return
-    goal_options = {
-        f"{goal['description']} ({schedule_label(goal)})": goal["id"]
-        for goal in goals
-    }
-    goal_labels = list(goal_options)
-    current_index = 0
-    if current_target:
-        current_index = next(
-            (
-                index
-                for index, label in enumerate(goal_labels)
-                if goal_options[label] == current_target["id"]
-            ),
-            0,
-        )
+    with health_col:
+        with st.container(border=True):
+            st.subheader("Apple Health Steps")
+            if not goals:
+                st.info("Create a goal before connecting Apple Health import.")
+                return
 
-    with st.container(border=True):
-        st.subheader("Apple Health Steps")
-        if current_target:
-            participant = current_target["participants"][user_id]
-            st.success(f"Active target: {current_target['description']}")
-            st.caption(
-                f"Current progress: "
-                f"{participant.get('current', 0)} / {participant.get('target', 1)}"
-            )
-        else:
-            st.info("No goal is currently connected to Apple Health import.")
+            goal_options = {
+                f"{goal['description']} ({schedule_label(goal)})": goal["id"]
+                for goal in goals
+            }
+            goal_labels = list(goal_options)
+            current_index = 0
+            if current_target:
+                current_index = next(
+                    (
+                        index
+                        for index, label in enumerate(goal_labels)
+                        if goal_options[label] == current_target["id"]
+                    ),
+                    0,
+                )
 
-        selected_label = st.selectbox("Target goal", goal_labels, index=current_index)
-        selected_goal_id = goal_options[selected_label]
-        action_cols = st.columns(2)
-        if action_cols[0].button(
-            "Activate for goal",
-            type="primary" if current_target is None else "secondary",
-            use_container_width=True,
-        ):
-            persistence.set_health_data_workflow_target(selected_goal_id, user_id, True, now=now)
-            st.success("Apple Health import is active for this goal.")
-            st.rerun()
-        if action_cols[1].button(
-            "Deactivate",
-            disabled=current_target is None,
-            type="primary" if current_target is not None else "secondary",
-            use_container_width=True,
-        ):
-            persistence.set_health_data_workflow_target(None, user_id, False, now=now)
-            st.success("Apple Health import is deactivated.")
-            st.rerun()
+            if current_target:
+                participant = current_target["participants"][user_id]
+                st.success(f"Active target: {current_target['description']}")
+                st.caption(
+                    f"Current progress: "
+                    f"{participant.get('current', 0)} / {participant.get('target', 1)}"
+                )
+            else:
+                st.info("No goal is currently connected to Apple Health import.")
+
+            selected_label = st.selectbox("Target goal", goal_labels, index=current_index)
+            selected_goal_id = goal_options[selected_label]
+            action_cols = st.columns(2)
+            if action_cols[0].button(
+                "Activate for goal",
+                type="primary" if current_target is None else "secondary",
+                use_container_width=True,
+            ):
+                persistence.set_health_data_workflow_target(selected_goal_id, user_id, True, now=now)
+                st.success("Apple Health import is active for this goal.")
+                st.rerun()
+            if action_cols[1].button(
+                "Deactivate",
+                disabled=current_target is None,
+                type="primary" if current_target is not None else "secondary",
+                use_container_width=True,
+            ):
+                persistence.set_health_data_workflow_target(None, user_id, False, now=now)
+                st.success("Apple Health import is deactivated.")
+                st.rerun()
