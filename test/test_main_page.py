@@ -1,11 +1,11 @@
 from datetime import datetime
 
-from src.pages.health_data_input_page import (
+from src.pages.health_data_import_page import (
     DEFAULT_SHORTCUT_INSTALL_URL,
-    active_health_data_goal,
+    active_health_data_import_goal,
     apple_steps_shortcut_run_url,
-    health_data_settings,
-    health_data_workflow_enabled,
+    health_data_import_settings,
+    health_data_import_enabled,
 )
 from src.pages.main_page import (
     MINI_ACTIVITY_COLORS,
@@ -251,7 +251,7 @@ def test_compact_goal_activity_uses_period_outcomes_from_current_goal_only() -> 
     assert f"background:{MINI_ACTIVITY_COLORS[4]}" not in second_html
 
 
-def test_health_data_workflow_helpers_find_active_goal() -> None:
+def test_health_data_import_helpers_find_active_goal() -> None:
     inactive = {"id": "goal_1", "participants": {"alice": {}}}
     active = {
         "id": "goal_2",
@@ -260,13 +260,13 @@ def test_health_data_workflow_helpers_find_active_goal() -> None:
         },
     }
 
-    assert health_data_workflow_enabled(inactive, "alice") is False
-    assert health_data_workflow_enabled(active, "alice") is True
-    assert active_health_data_goal([inactive, active], "alice") == active
+    assert health_data_import_enabled(inactive, "alice") is False
+    assert health_data_import_enabled(active, "alice") is True
+    assert active_health_data_import_goal([inactive, active], "alice") == active
 
 
 def test_apple_steps_shortcut_settings_have_install_default_and_encoded_run_url() -> None:
-    settings = health_data_settings({"health_data": {}})
+    settings = health_data_import_settings({"health_data": {}})
 
     assert settings["apple_steps_shortcut_install_url"] == DEFAULT_SHORTCUT_INSTALL_URL
     assert apple_steps_shortcut_run_url("Dogether Steps") == "shortcuts://run-shortcut?name=Dogether%20Steps"

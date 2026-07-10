@@ -458,7 +458,7 @@ class DocumentPersistence:
             selected_goal = None
             if enabled:
                 if not goal_id:
-                    raise ValueError("Choose a goal for Apple Health input.")
+                    raise ValueError("Choose a goal for Apple Health import.")
                 selected_goal = data["goals"].get(goal_id)
                 if not selected_goal or not _goal_active_for_user(selected_goal, user_id):
                     raise ValueError("Goal is not active for this user.")

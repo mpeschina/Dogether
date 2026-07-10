@@ -9,10 +9,10 @@ import streamlit as st
 from src.db.persistence import Persistence
 from src.db.persistence_helpers import _now, _period_fulfilled, _period_start, _schedule
 from src.pages.account_page import render_activity_diagram
-from src.pages.health_data_input_page import (
+from src.pages.health_data_import_page import (
     apple_steps_shortcut_run_url,
-    health_data_settings,
-    health_data_workflow_enabled,
+    health_data_import_settings,
+    health_data_import_enabled,
 )
 from src.pages.page_helpers import participant_name, progress_bar, schedule_label
 from src.push.notifications import create_friend_invite_with_push, update_goal_progress_with_push
@@ -319,7 +319,7 @@ def render_main(
                     with cols[1]:
                         action_cols = st.columns([1, 1])
                         goal_is_done = current >= max(1, target)
-                        uses_health_data = health_data_workflow_enabled(goal, user_id)
+                        uses_health_data = health_data_import_enabled(goal, user_id)
                         if goal_is_done or skipped:
                             if action_cols[0].button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
                                 update_goal_progress_with_push(
@@ -334,7 +334,9 @@ def render_main(
                                 )
                                 st.rerun()
                         elif uses_health_data:
-                            shortcut_name = health_data_settings().get("apple_steps_shortcut_name", "Dogether Steps")
+                            shortcut_name = health_data_import_settings().get(
+                                "apple_steps_shortcut_name", "Dogether Steps"
+                            )
                             action_cols[0].link_button(
                                 "Input Data",
                                 apple_steps_shortcut_run_url(shortcut_name),
