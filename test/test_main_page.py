@@ -7,10 +7,13 @@ from src.pages.health_data_import_page import (
     health_data_import_settings,
     health_data_import_enabled,
 )
-from src.pages.common_helpers import ACTIVITY_COLORS
-from src.pages.main_page import (
+from src.pages.common_helpers import (
+    ACTIVITY_COLORS,
+    FUTURE_ACTIVITY_COLOR,
     STREAMLIT_PRIMARY_COLOR,
     compact_goal_activity_html,
+)
+from src.pages.main_page import (
     participant_name_with_progress_html,
     participant_progress_label,
     ordered_active_participant_ids,
@@ -118,6 +121,20 @@ def test_compact_goal_activity_renders_daily_current_week_seven_dots() -> None:
     assert "2026-06-03T00:00:00" in html
 
 
+def test_compact_goal_activity_renders_unreached_days_as_white() -> None:
+    participant = {"current": 0, "target": 10, "skipped": False, "period_outcomes": {}}
+    html = compact_goal_activity_html(
+        _goal("daily", participant=participant),
+        participant,
+        now=_at("2026-06-03T12:00:00"),
+    )
+
+    reached_dot = "title='2026-06-02T00:00:00+02:00'"
+    future_dot = "title='2026-06-04T00:00:00+02:00'"
+    assert f"{reached_dot} style='background:{ACTIVITY_COLORS[0]};'" in html
+    assert f"{future_dot} style='background:{FUTURE_ACTIVITY_COLOR};'" in html
+
+
 def test_compact_goal_activity_renders_daily_skipped_unfulfilled_as_grey() -> None:
     participant = {
         "current": 0,
@@ -221,7 +238,8 @@ def test_compact_goal_activity_daily_x_per_week_valid_skip_uses_primary_color() 
     html = compact_goal_activity_html(goal, participant, now=_at("2026-06-03T12:00:00"))
 
     assert html.count(f"background:{STREAMLIT_PRIMARY_COLOR}") == 1
-    assert html.count(f"background:{ACTIVITY_COLORS[0]}") == 6
+    assert html.count(f"background:{ACTIVITY_COLORS[0]}") == 2
+    assert html.count(f"background:{FUTURE_ACTIVITY_COLOR}") == 4
 
 
 def test_compact_goal_activity_daily_x_per_week_unfulfilled_skip_uses_grey() -> None:

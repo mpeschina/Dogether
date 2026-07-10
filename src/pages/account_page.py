@@ -16,7 +16,13 @@ def render_account(
 ) -> None:
     st.title("Account")
     st.write("Name")
-    st.subheader(current_user["name"])
+    picture_url = st.user.get("picture")
+    if picture_url:
+        image_col, name_col = st.columns([0.15, 0.85], vertical_alignment="center", gap="xsmall")
+        image_col.image(picture_url, width=80)
+        name_col.subheader(current_user["name"])
+    else:
+        st.subheader(current_user["name"])
     st.write("Email")
     st.subheader(current_user["email"])
 
