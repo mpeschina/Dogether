@@ -89,13 +89,16 @@ def update_goal_progress_with_push(
     users = persistence.users_by_ids([user_id, *participant_ids])
     completed_by = users.get(user_id, {}).get("name") or users.get(user_id, {}).get("email") or "A friend"
     description = str(goal.get("description") or "a shared goal")
+    completed_participant = goal.get("participants", {}).get(user_id, {})
+    current_value = max(0, int(completed_participant.get("current", 0)))
+    target_value = max(1, int(completed_participant.get("target", 1)))
 
     for participant_id in participant_ids:
         send_push_to_user(
             push_storage,
             participant_id,
             title="Shared goal completed",
-            body=f"{completed_by} completed {description}.",
+            body=f"{completed_by} completed {description}: {current_value} / {target_value}.",
             url="/",
             vapid_private_key=push_settings["vapid_private_key"],
             vapid_subject=push_settings["vapid_subject"],

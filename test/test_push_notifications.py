@@ -142,7 +142,7 @@ def test_goal_completion_pushes_to_friends_sharing_goal_once(monkeypatch, tmp_pa
     assert len(calls) == 1
     assert calls[0][0][1] == "bob"
     assert calls[0][1]["title"] == "Shared goal completed"
-    assert "Alice completed Daily Steps." == calls[0][1]["body"]
+    assert "Alice completed Daily Steps: 10 / 10." == calls[0][1]["body"]
 
 
 def test_skipped_goal_does_not_send_completion_push(monkeypatch, tmp_path: Path) -> None:
