@@ -32,6 +32,7 @@ def _empty_store() -> dict[str, Any]:
     return {
         "users": {},
         "friend_invites": {},
+        "friend_suggestions": {},
         "friendships": {},
         "goals": {},
         "user_stats": {},
@@ -49,7 +50,7 @@ def _normalise_store(data: dict[str, Any]) -> dict[str, Any]:
         for user_id, user in users.items()
         if isinstance(user, dict) and "email" in user and "user_id" in user
     }
-    for key in ["friend_invites", "friendships", "goals", "user_stats"]:
+    for key in ["friend_invites", "friend_suggestions", "friendships", "goals", "user_stats"]:
         value = data.get(key, {})
         store[key] = value if isinstance(value, dict) else {}
     _normalise_goal_participants(store["goals"])

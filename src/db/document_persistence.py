@@ -222,6 +222,135 @@ class DocumentPersistence:
             self._write(data)
             return invite
 
+    def create_friend_suggestion(
+        self,
+        suggested_by_user_id: str,
+        suggested_user_ids: list[str],
+        source_goal_id: str | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        suggested_user_ids = sorted(set(suggested_user_ids))
+        if len(suggested_user_ids) != 2:
+            raise ValueError("Select exactly two users to suggest.")
+        if suggested_by_user_id in suggested_user_ids:
+            raise ValueError("You cannot suggest yourself.")
+
+        now_iso = _iso(now)
+        with self._lock:
+            data = self._read()
+            if suggested_by_user_id not in data["users"]:
+                raise ValueError("Suggestion creator was not found.")
+            missing_user_ids = [user_id for user_id in suggested_user_ids if user_id not in data["users"]]
+            if missing_user_ids:
+                raise ValueError("Suggested users must exist.")
+            if _active_friendship(data, suggested_user_ids[0], suggested_user_ids[1]):
+                raise ValueError("Those users are already friends.")
+
+            for suggestion in data["friend_suggestions"].values():
+                if suggestion.get("suggested_user_ids") != suggested_user_ids:
+                    continue
+                if suggestion.get("status") == "pending":
+                    return suggestion
+                if (
+                    suggestion.get("status") == "declined"
+                    and suggestion.get("suggested_by_user_id") == suggested_by_user_id
+                    and suggestion.get("source_goal_id") == source_goal_id
+                ):
+                    raise ValueError("This suggestion was already declined.")
+
+            suggestion_id = _new_id("suggestion")
+            suggestion = {
+                "id": suggestion_id,
+                "suggested_by_user_id": suggested_by_user_id,
+                "suggested_user_ids": suggested_user_ids,
+                "source_goal_id": source_goal_id,
+                "responses": {user_id: "pending" for user_id in suggested_user_ids},
+                "status": "pending",
+                "created_at": now_iso,
+                "updated_at": now_iso,
+            }
+            data["friend_suggestions"][suggestion_id] = suggestion
+            self._write(data)
+            return suggestion
+
+    def incoming_friend_suggestions(self, user_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            suggestions = [
+                suggestion
+                for suggestion in self._read()["friend_suggestions"].values()
+                if suggestion.get("status") == "pending"
+                and suggestion.get("responses", {}).get(user_id) == "pending"
+            ]
+        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+    def outgoing_friend_suggestions(
+        self,
+        user_id: str,
+        include_resolved: bool = False,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            suggestions = [
+                suggestion
+                for suggestion in self._read()["friend_suggestions"].values()
+                if suggestion.get("suggested_by_user_id") == user_id
+                and (include_resolved or suggestion.get("status") == "pending")
+            ]
+        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+    def list_friend_suggestions_for_pair(self, first_user_id: str, second_user_id: str) -> list[dict[str, Any]]:
+        suggested_user_ids = sorted([first_user_id, second_user_id])
+        with self._lock:
+            suggestions = [
+                suggestion
+                for suggestion in self._read()["friend_suggestions"].values()
+                if suggestion.get("suggested_user_ids") == suggested_user_ids
+            ]
+        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+    def respond_friend_suggestion(
+        self,
+        suggestion_id: str,
+        user_id: str,
+        approve: bool,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        now_iso = _iso(now)
+        with self._lock:
+            data = self._read()
+            suggestion = data["friend_suggestions"].get(suggestion_id)
+            if not suggestion or suggestion.get("status") != "pending":
+                raise ValueError("This suggestion is no longer pending.")
+            if user_id not in suggestion.get("suggested_user_ids", []):
+                raise ValueError("This suggestion is not addressed to your account.")
+            if suggestion.get("responses", {}).get(user_id) != "pending":
+                raise ValueError("You have already responded to this suggestion.")
+
+            suggestion["responses"][user_id] = "accepted" if approve else "declined"
+            suggestion["updated_at"] = now_iso
+            if not approve:
+                suggestion["status"] = "declined"
+            elif all(response == "accepted" for response in suggestion["responses"].values()):
+                first_user_id, second_user_id = suggestion["suggested_user_ids"]
+                friendship_id = _friendship_id(first_user_id, second_user_id)
+                first_user = data["users"].get(first_user_id, {})
+                second_user = data["users"].get(second_user_id, {})
+                data["friendships"][friendship_id] = {
+                    "id": friendship_id,
+                    "user_ids": sorted([first_user_id, second_user_id]),
+                    "emails": sorted(
+                        [
+                            normalize_email(first_user.get("email", "")),
+                            normalize_email(second_user.get("email", "")),
+                        ]
+                    ),
+                    "active": True,
+                    "created_at": data["friendships"].get(friendship_id, {}).get("created_at", now_iso),
+                    "updated_at": now_iso,
+                }
+                suggestion["status"] = "accepted"
+            self._write(data)
+            return suggestion
+
     def list_friends(self, user_id: str) -> list[dict[str, Any]]:
         with self._lock:
             data = self._read()

@@ -48,6 +48,59 @@ def create_friend_invite_with_push(
     return invite
 
 
+def create_friend_suggestion_with_push(
+    persistence: Persistence,
+    push_storage: PushStorage | None,
+    push_settings: Mapping[str, str],
+    *,
+    suggested_by_user_id: str,
+    suggested_user_ids: list[str],
+    source_goal_id: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    suggested_pair = sorted(set(suggested_user_ids))
+    pending_before = set()
+    if len(suggested_pair) == 2:
+        pending_before = {
+            suggestion["id"]
+            for suggestion in persistence.list_friend_suggestions_for_pair(*suggested_pair)
+            if suggestion.get("status") == "pending"
+        }
+
+    suggestion = persistence.create_friend_suggestion(
+        suggested_by_user_id,
+        suggested_pair,
+        source_goal_id=source_goal_id,
+        now=now,
+    )
+    if suggestion["id"] in pending_before:
+        return suggestion
+    if not push_storage or not push_configured(push_settings):
+        return suggestion
+
+    users = persistence.users_by_ids([suggested_by_user_id, *suggestion["suggested_user_ids"]])
+    suggester = users.get(suggested_by_user_id, {})
+    suggester_name = suggester.get("name") or suggester.get("email") or "A friend"
+    for recipient_id in suggestion["suggested_user_ids"]:
+        other_id = next(
+            user_id
+            for user_id in suggestion["suggested_user_ids"]
+            if user_id != recipient_id
+        )
+        other = users.get(other_id, {})
+        other_name = other.get("name") or other.get("email") or "another friend"
+        send_push_to_user(
+            push_storage,
+            recipient_id,
+            title="New friend suggestion",
+            body=f"{suggester_name} suggested you and {other_name} become friends in Dogether.",
+            url="/",
+            vapid_private_key=push_settings["vapid_private_key"],
+            vapid_subject=push_settings["vapid_subject"],
+        )
+    return suggestion
+
+
 def update_goal_progress_with_push(
     persistence: Persistence,
     push_storage: PushStorage | None,

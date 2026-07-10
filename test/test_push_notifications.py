@@ -1,7 +1,11 @@
 from pathlib import Path
 
 from src.db.json_persistence import JsonPersistence
-from src.push.notifications import create_friend_invite_with_push, update_goal_progress_with_push
+from src.push.notifications import (
+    create_friend_invite_with_push,
+    create_friend_suggestion_with_push,
+    update_goal_progress_with_push,
+)
 
 
 class MemoryPushStorage:
@@ -95,6 +99,92 @@ def test_missing_recipient_subscription_does_not_block_invite(tmp_path: Path) ->
     )
 
     assert invite["to_email"] == "bob@example.com"
+
+def test_new_friend_suggestion_sends_push_to_both_users(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    calls = []
+
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1, "removed": 0, "errors": []},
+    )
+
+    suggestion = create_friend_suggestion_with_push(
+        persistence,
+        MemoryPushStorage(),
+        {
+            "vapid_public_key": "public",
+            "vapid_private_key": "private",
+            "vapid_subject": "mailto:test@example.com",
+        },
+        suggested_by_user_id=alice["user_id"],
+        suggested_user_ids=[bob["user_id"], charlie["user_id"]],
+        source_goal_id="goal_1",
+    )
+
+    assert suggestion["suggested_user_ids"] == ["bob", "charlie"]
+    assert [call[0][1] for call in calls] == ["bob", "charlie"]
+    assert calls[0][1]["title"] == "New friend suggestion"
+    assert "Alice suggested you and Charlie" in calls[0][1]["body"]
+    assert "Alice suggested you and Bob" in calls[1][1]["body"]
+
+
+def test_duplicate_friend_suggestion_does_not_send_push(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    calls = []
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1, "removed": 0, "errors": []},
+    )
+
+    first = create_friend_suggestion_with_push(
+        persistence,
+        MemoryPushStorage(),
+        {
+            "vapid_public_key": "public",
+            "vapid_private_key": "private",
+            "vapid_subject": "mailto:test@example.com",
+        },
+        suggested_by_user_id=alice["user_id"],
+        suggested_user_ids=[bob["user_id"], charlie["user_id"]],
+    )
+    second = create_friend_suggestion_with_push(
+        persistence,
+        MemoryPushStorage(),
+        {
+            "vapid_public_key": "public",
+            "vapid_private_key": "private",
+            "vapid_subject": "mailto:test@example.com",
+        },
+        suggested_by_user_id=alice["user_id"],
+        suggested_user_ids=[charlie["user_id"], bob["user_id"]],
+    )
+
+    assert second["id"] == first["id"]
+    assert len(calls) == 2
+
+
+def test_missing_push_configuration_does_not_block_friend_suggestion(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+
+    suggestion = create_friend_suggestion_with_push(
+        persistence,
+        None,
+        {},
+        suggested_by_user_id=alice["user_id"],
+        suggested_user_ids=[bob["user_id"], charlie["user_id"]],
+    )
+
+    assert suggestion["status"] == "pending"
 
 
 def test_goal_completion_pushes_to_friends_sharing_goal_once(monkeypatch, tmp_path: Path) -> None:

@@ -46,6 +46,7 @@ def test_missing_file_gets_new_app_schema(tmp_path: Path) -> None:
     assert persistence.raw_data() == {
         "users": {},
         "friend_invites": {},
+        "friend_suggestions": {},
         "friendships": {},
         "goals": {},
         "user_stats": {},
@@ -160,6 +161,79 @@ def test_friend_invite_requires_existing_user(tmp_path: Path) -> None:
         persistence.create_friend_invite("alice", alice["email"], "future@example.com")
 
     assert persistence.raw_data()["friend_invites"] == {}
+
+def test_friend_suggestion_requires_both_users_to_accept(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+
+    suggestion = persistence.create_friend_suggestion(
+        alice["user_id"],
+        [bob["user_id"], charlie["user_id"]],
+        source_goal_id="goal_1",
+        now=at("2026-06-01T10:00:00"),
+    )
+    duplicate = persistence.create_friend_suggestion(
+        alice["user_id"],
+        [charlie["user_id"], bob["user_id"]],
+        source_goal_id="goal_1",
+        now=at("2026-06-01T10:01:00"),
+    )
+
+    assert duplicate["id"] == suggestion["id"]
+    assert persistence.incoming_friend_suggestions("bob") == [suggestion]
+
+    first_response = persistence.respond_friend_suggestion(
+        suggestion["id"],
+        "bob",
+        approve=True,
+        now=at("2026-06-01T10:02:00"),
+    )
+
+    assert first_response["status"] == "pending"
+    assert persistence.list_friends("bob") == []
+    assert persistence.incoming_friend_suggestions("bob") == []
+    assert persistence.incoming_friend_suggestions("charlie") == [first_response]
+
+    second_response = persistence.respond_friend_suggestion(
+        suggestion["id"],
+        "charlie",
+        approve=True,
+        now=at("2026-06-01T10:03:00"),
+    )
+
+    assert second_response["status"] == "accepted"
+    assert [friend["user_id"] for friend in persistence.list_friends("bob")] == ["charlie"]
+    assert [friend["user_id"] for friend in persistence.list_friends("charlie")] == ["bob"]
+    assert persistence.list_friends("alice") == []
+
+
+def test_friend_suggestion_decline_cancels_for_both_users(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    suggestion = persistence.create_friend_suggestion(alice["user_id"], [bob["user_id"], charlie["user_id"]])
+
+    declined = persistence.respond_friend_suggestion(suggestion["id"], "bob", approve=False)
+
+    assert declined["status"] == "declined"
+    assert persistence.incoming_friend_suggestions("bob") == []
+    assert persistence.incoming_friend_suggestions("charlie") == []
+    assert persistence.list_friends("bob") == []
+
+
+def test_friend_suggestion_rejects_already_friends(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    invite = persistence.create_friend_invite("bob", bob["email"], charlie["email"])
+    persistence.respond_friend_invite(invite["id"], "charlie", charlie["email"], approve=True)
+
+    with pytest.raises(ValueError, match="already friends"):
+        persistence.create_friend_suggestion(alice["user_id"], [bob["user_id"], charlie["user_id"]])
 
 
 def test_debug_time_offset_is_persisted_and_applied_only_when_enabled(tmp_path: Path) -> None:

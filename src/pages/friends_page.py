@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from itertools import combinations
 import html
+from typing import Any
 
 import streamlit as st
 
 from src.db.persistence import Persistence
-from src.push.notifications import create_friend_invite_with_push
+from src.push.notifications import create_friend_invite_with_push, create_friend_suggestion_with_push
 from src.push.storage import PushStorage
 
 
@@ -50,6 +52,66 @@ def _friend_request_action_styles() -> None:
     )
 
 
+def friend_suggestion_candidates(
+    persistence: Persistence,
+    user_id: str,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    friends = persistence.list_friends(user_id)
+    friend_ids = {friend["user_id"] for friend in friends}
+    if len(friend_ids) < 2:
+        return []
+
+    friend_by_id = {friend["user_id"]: friend for friend in friends}
+    friend_friend_ids: dict[str, set[str]] = {}
+    candidates = []
+    seen_goal_pairs: set[tuple[str, str, str]] = set()
+
+    for goal in persistence.list_goals_for_user(user_id, now=now):
+        goal_id = goal["id"]
+        active_friend_participants = sorted(
+            participant_id
+            for participant_id, participant in goal.get("participants", {}).items()
+            if participant_id in friend_ids and not participant.get("left_at")
+        )
+        for first_user_id, second_user_id in combinations(active_friend_participants, 2):
+            pair = tuple(sorted([first_user_id, second_user_id]))
+            goal_pair = (goal_id, *pair)
+            if goal_pair in seen_goal_pairs:
+                continue
+            seen_goal_pairs.add(goal_pair)
+
+            if first_user_id not in friend_friend_ids:
+                friend_friend_ids[first_user_id] = {
+                    friend["user_id"]
+                    for friend in persistence.list_friends(first_user_id)
+                }
+            if second_user_id in friend_friend_ids[first_user_id]:
+                continue
+
+            pair_suggestions = persistence.list_friend_suggestions_for_pair(first_user_id, second_user_id)
+            if any(suggestion.get("status") == "pending" for suggestion in pair_suggestions):
+                continue
+            if any(
+                suggestion.get("status") == "declined"
+                and suggestion.get("suggested_by_user_id") == user_id
+                and suggestion.get("source_goal_id") == goal_id
+                for suggestion in pair_suggestions
+            ):
+                continue
+
+            candidates.append(
+                {
+                    "goal_id": goal_id,
+                    "goal_description": str(goal.get("description") or "a shared goal"),
+                    "first_user": friend_by_id[first_user_id],
+                    "second_user": friend_by_id[second_user_id],
+                }
+            )
+
+    return candidates
+
+
 def render_friends(
     persistence: Persistence,
     current_user: dict,
@@ -62,6 +124,9 @@ def render_friends(
 
     st.title("Friends")
 
+    #
+    # Incoming Invites Section
+    #
     show_invite_form = st.session_state.get("show_invite_friend_form", False)
     if show_invite_form:
         with st.form("add_friend"):
@@ -87,7 +152,8 @@ def render_friends(
         st.rerun()
 
     incoming = persistence.incoming_friend_invites(current_user["email"], user_id)
-    if incoming:
+    incoming_suggestions = persistence.incoming_friend_suggestions(user_id)
+    if incoming or incoming_suggestions:
         st.subheader("Pending invites")
         for invite in incoming:
             from_user = persistence.get_user(invite["from_user_id"])
@@ -122,6 +188,123 @@ def render_friends(
                     st.info("Friend request declined.")
                     st.rerun()
 
+        for suggestion in incoming_suggestions:
+            users = persistence.users_by_ids([suggestion["suggested_by_user_id"], *suggestion["suggested_user_ids"]])
+            suggester = users.get(suggestion["suggested_by_user_id"], {})
+            suggester_name = str(suggester.get("name") or suggester.get("email") or "A friend")
+            other_user_id = next(
+                candidate_id
+                for candidate_id in suggestion["suggested_user_ids"]
+                if candidate_id != user_id
+            )
+            other_user = users.get(other_user_id, {})
+            other_name = str(other_user.get("name") or other_user.get("email") or "another friend")
+
+            with st.container(border=True):
+                st.markdown(
+                    f"""
+                    <article>
+                        <p style="font-size: 0.8rem; letter-spacing: 0; margin: 0 0 0.35rem; text-transform: uppercase; color: #6b7280;">
+                            Friend suggestion
+                        </p>
+                        <h3 style="font-size: 1.05rem; margin: 0 0 0.15rem;">
+                            {html.escape(other_name)}
+                        </h3>
+                        <p style="margin: 0 0 0.85rem; color: #4b5563;">
+                            {html.escape(suggester_name)} suggested you and {html.escape(other_name)} become friends.
+                        </p>
+                    </article>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                st.markdown('<div class="friend-request-actions"></div>', unsafe_allow_html=True)
+                cols = st.columns([1, 1, 5])
+                if cols[0].button(
+                    "Yes",
+                    key=f"accept_suggestion_{suggestion['id']}",
+                    type="primary",
+                ):
+                    updated = persistence.respond_friend_suggestion(suggestion["id"], user_id, approve=True, now=now)
+                    if updated.get("status") == "accepted":
+                        st.success("Friend suggestion accepted. You are now friends.")
+                    else:
+                        st.success("Friend suggestion accepted.")
+                    st.rerun()
+                if cols[1].button("No", key=f"decline_suggestion_{suggestion['id']}"):
+                    persistence.respond_friend_suggestion(suggestion["id"], user_id, approve=False, now=now)
+                    st.info("Friend suggestion declined.")
+                    st.rerun()
+
+    #
+    # Friend Suggestion Section
+    #
+    suggestion_candidates = friend_suggestion_candidates(persistence, user_id, now=now)
+    if suggestion_candidates:
+        st.subheader("Help your Friends to stay connected!")
+        for candidate in suggestion_candidates:
+            first_user = candidate["first_user"]
+            second_user = candidate["second_user"]
+            first_name = str(first_user.get("name") or first_user.get("email") or first_user["user_id"])
+            second_name = str(
+                second_user.get("name")
+                or second_user.get("email")
+                or second_user["user_id"]
+            )
+            with st.container(border=True):
+                st.markdown(
+                    f"""
+                    <article>
+                        <h3 style="font-size: 1.05rem; margin: 0 0 0.15rem;">
+                            {html.escape(first_name)} and {html.escape(second_name)} could be friends.
+                        </h3>
+                        <p style="margin: 0 0 0.85rem; color: #4b5563;">
+                            Shared goal: {html.escape(candidate["goal_description"])}
+                        </p>
+                    </article>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                if st.button(
+                    "Suggest friendship",
+                    key=(
+                        f"suggest_friendship_{candidate['goal_id']}"
+                        f"_{first_user['user_id']}_{second_user['user_id']}"
+                    ),
+                ):
+                    try:
+                        create_friend_suggestion_with_push(
+                            persistence,
+                            push_storage,
+                            push_settings or {},
+                            suggested_by_user_id=user_id,
+                            suggested_user_ids=[first_user["user_id"], second_user["user_id"]],
+                            source_goal_id=candidate["goal_id"],
+                            now=now,
+                        )
+                        st.success("Friend suggestion sent.")
+                        st.rerun()
+                    except ValueError as error:
+                        st.error(str(error))
+
+    outgoing = persistence.outgoing_friend_invites(user_id)
+    outgoing_suggestions = persistence.outgoing_friend_suggestions(user_id)
+    if outgoing or outgoing_suggestions:
+        st.subheader("Outgoing pending invites")
+        for invite in outgoing:
+            st.write(f"To {invite['to_email']}")
+        for suggestion in outgoing_suggestions:
+            suggested_users = persistence.users_by_ids(suggestion["suggested_user_ids"])
+            names = [
+                suggested_users.get(suggested_user_id, {}).get("name")
+                or suggested_users.get(suggested_user_id, {}).get("email")
+                or suggested_user_id
+                for suggested_user_id in suggestion["suggested_user_ids"]
+            ]
+            st.write(f"Suggested {names[0]} and {names[1]}")
+
+    #
+    # Expandable Friendlist Section
+    #
     friends = persistence.list_friends(user_id)
     pending_removals = set(st.session_state.get("friends_pending_removals", []))
     pending_removals &= {friend["user_id"] for friend in friends}
@@ -149,9 +332,3 @@ def render_friends(
                 st.rerun()
             if friend_index < len(friends) - 1:
                 st.markdown('<hr class="friends-mobile-separator">', unsafe_allow_html=True)
-
-    outgoing = persistence.outgoing_friend_invites(user_id)
-    if outgoing:
-        st.subheader("Outgoing pending invites")
-        for invite in outgoing:
-            st.write(f"To {invite['to_email']}")
