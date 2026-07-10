@@ -10,15 +10,22 @@ from src.db.persistence import Persistence, normalize_email
 
 
 def login_screen(persistence: Persistence | None = None, debug_enabled: bool = False, now: datetime | None = None) -> None:
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"],
+        [data-testid="collapsedControl"] {
+            display: none;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     if not debug_enabled:
         st.markdown(
             """
             <style>
-            [data-testid="stSidebar"],
-            [data-testid="collapsedControl"] {
-                display: none;
-            }
-
             .block-container {
                 min-height: calc(100vh - 6rem);
                 display: flex;
