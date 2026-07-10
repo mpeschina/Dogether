@@ -444,6 +444,45 @@ class DocumentPersistence:
             self._write(data)
             return goal
 
+    def set_health_data_workflow_target(
+        self,
+        goal_id: str | None,
+        user_id: str,
+        enabled: bool,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        self.rollover_periods(now)
+        now_iso = _iso(now)
+        with self._lock:
+            data = self._read()
+            selected_goal = None
+            if enabled:
+                if not goal_id:
+                    raise ValueError("Choose a goal for Apple Health input.")
+                selected_goal = data["goals"].get(goal_id)
+                if not selected_goal or not _goal_active_for_user(selected_goal, user_id):
+                    raise ValueError("Goal is not active for this user.")
+
+            for goal in data["goals"].values():
+                participant = goal.get("participants", {}).get(user_id)
+                if not isinstance(participant, dict):
+                    continue
+                workflow = participant.get("health_data_workflow")
+                if isinstance(workflow, dict) and workflow.get("enabled"):
+                    workflow["enabled"] = False
+                    workflow["disabled_at"] = now_iso
+
+            if enabled and selected_goal is not None:
+                participant = selected_goal["participants"][user_id]
+                participant["health_data_workflow"] = {
+                    "enabled": True,
+                    "provider": "apple_health_steps",
+                    "configured_at": now_iso,
+                }
+
+            self._write(data)
+            return copy.deepcopy(selected_goal) if selected_goal is not None else None
+
     def leave_goal(self, goal_id: str, user_id: str, now: datetime | None = None) -> None:
         with self._lock:
             data = self._read()

@@ -270,6 +270,31 @@ def test_goal_completion_notification_preference_is_per_participant(tmp_path: Pa
     assert updated["participants"]["alice"]["completion_notifications_enabled"] is True
     assert completed["_notification_event"]["type"] == "goal_completed"
 
+
+def test_health_data_workflow_target_is_unique_per_user(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    users_and_friendship(persistence)
+    first = persistence.create_goal("alice", "Steps", "daily", 1, ["bob"], 8000, current=0)
+    second = persistence.create_goal("alice", "Walk", "daily", 1, ["bob"], 30, current=0)
+
+    activated_first = persistence.set_health_data_workflow_target(first["id"], "alice", True)
+    activated_second = persistence.set_health_data_workflow_target(second["id"], "alice", True)
+    goals = {goal["id"]: goal for goal in persistence.list_goals_for_user("alice")}
+
+    assert activated_first["participants"]["alice"]["health_data_workflow"]["enabled"] is True
+    assert activated_second["participants"]["alice"]["health_data_workflow"]["enabled"] is True
+    assert goals[first["id"]]["participants"]["alice"]["health_data_workflow"]["enabled"] is False
+    assert goals[second["id"]]["participants"]["alice"]["health_data_workflow"]["enabled"] is True
+    assert "health_data_workflow" not in goals[second["id"]]["participants"]["bob"]
+
+    persistence.set_health_data_workflow_target(None, "alice", False)
+    disabled_goals = persistence.list_goals_for_user("alice")
+
+    assert all(
+        not goal["participants"]["alice"].get("health_data_workflow", {}).get("enabled", False)
+        for goal in disabled_goals
+    )
+
 def test_goal_participant_can_add_more_accepted_friends(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice, _bob = users_and_friendship(persistence)

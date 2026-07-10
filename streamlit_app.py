@@ -7,9 +7,11 @@ from src.pages.account_page import render_account
 from src.pages.debug_page import DebugMechanics, render_debug
 from src.pages.friends_page import render_friends
 from src.pages.goals_page import render_goals
+from src.pages.health_data_input_page import active_health_data_goal, render_health_data_input
 from src.pages.login_page import login_screen
 from src.pages.main_page import render_main
 from src.pages.push_notifications_page import render_push_notifications
+from src.push.notifications import update_goal_progress_with_push
 from src.push.sender import push_config
 from src.push.storage import get_push_storage, push_storage_settings
 
@@ -80,6 +82,45 @@ except Exception as error:
     st.stop()
 
 
+def handle_health_data_import() -> None:
+    action = st.query_params.get("action")
+    steps_param = st.query_params.get("steps")
+    if action != "import_steps" or not steps_param:
+        return
+
+    try:
+        steps = max(0, int(float(str(steps_param))))
+    except (TypeError, ValueError):
+        st.error("Invalid Apple Health step count.")
+        st.query_params.clear()
+        return
+
+    goals = persistence.list_goals_for_user(user_id, now=app_now)
+    target_goal = active_health_data_goal(goals, user_id)
+    if not target_goal:
+        st.warning("Apple Health input is not active for any goal.")
+        st.query_params.clear()
+        return
+
+    try:
+        update_goal_progress_with_push(
+            persistence,
+            push_storage,
+            configured_push,
+            goal_id=target_goal["id"],
+            user_id=user_id,
+            current=steps,
+            now=app_now,
+        )
+        st.success(f"Received {steps:,} steps for {target_goal['description']}.")
+    except Exception as error:
+        st.error(f"Could not import Apple Health data: {error}")
+    finally:
+        st.query_params.clear()
+
+
+handle_health_data_import()
+
 st.sidebar.title("Dogether")
 st.sidebar.caption(current_user["email"])
 if st.sidebar.button("Log out", use_container_width=True):
@@ -123,6 +164,11 @@ def account_page() -> None:
     render_account(persistence, current_user, user_id, now=app_now)
 
 
+def health_data_input_page() -> None:
+    mark_current_page("health_data_input")
+    render_health_data_input(persistence, user_id, now=app_now)
+
+
 def push_notifications_page() -> None:
     mark_current_page("push_notifications")
     render_push_notifications(current_user, user_id, push_storage, configured_push, now=app_now)
@@ -136,6 +182,9 @@ def debug_page() -> None:
 goals_page_entry = st.Page(main_page, title="Goals", default=True, icon=":material/dashboard:")
 friends_page_entry = st.Page(friends_page, title="Friends", icon=":material/group:")
 manage_goals_page_entry = st.Page(goals_page, title="Manage Goals", icon=":material/flag:")
+health_data_input_page_entry = st.Page(
+    health_data_input_page, title="Health Data Input", icon=":material/health_and_safety:"
+)
 account_page_entry = st.Page(account_page, title="Account", icon=":material/account_circle:")
 push_notifications_page_entry = st.Page(
     push_notifications_page, title="Push Notifications", icon=":material/notifications:"
@@ -145,6 +194,7 @@ page_entries = [
     goals_page_entry,
     friends_page_entry,
     manage_goals_page_entry,
+    health_data_input_page_entry,
     push_notifications_page_entry,
     account_page_entry,
 ]

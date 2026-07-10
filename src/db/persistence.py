@@ -88,6 +88,14 @@ class Persistence(Protocol):
         now: datetime | None = None,
     ) -> dict[str, Any]: ...
 
+    def set_health_data_workflow_target(
+        self,
+        goal_id: str | None,
+        user_id: str,
+        enabled: bool,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None: ...
+
     def leave_goal(self, goal_id: str, user_id: str, now: datetime | None = None) -> None: ...
 
     def account_stats(self, user_id: str, now: datetime | None = None) -> dict[str, Any]: ...
