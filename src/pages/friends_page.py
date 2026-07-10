@@ -255,8 +255,8 @@ def render_friends(
                     f"""
                     <article>
                         <h3 style="font-size: 1.05rem; margin: 0 0 0.85rem;">
-                            {html.escape(first_name)} and {html.escape(second_name)} could be friends
-                            <span style="color: #4b5563; font-weight: 400;">
+                            {html.escape(first_name)} and {html.escape(second_name)} could be friends.
+                            <span style="color: #4b5563; font-weight: 400; font-size: 0.8rem;">
                                 (shared goal: {html.escape(candidate["goal_description"])})
                             </span>
                         </h3>
