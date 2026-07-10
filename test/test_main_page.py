@@ -7,8 +7,8 @@ from src.pages.health_data_import_page import (
     health_data_import_settings,
     health_data_import_enabled,
 )
+from src.pages.common_helpers import ACTIVITY_COLORS
 from src.pages.main_page import (
-    MINI_ACTIVITY_COLORS,
     STREAMLIT_PRIMARY_COLOR,
     compact_goal_activity_html,
     participant_name_with_progress_html,
@@ -131,8 +131,8 @@ def test_compact_goal_activity_renders_daily_skipped_unfulfilled_as_grey() -> No
         now=_at("2026-06-03T12:00:00"),
     )
 
-    assert f"background:{MINI_ACTIVITY_COLORS[0]}" in html
-    assert f"background:{MINI_ACTIVITY_COLORS[4]}" not in html
+    assert f"background:{ACTIVITY_COLORS[0]}" in html
+    assert f"background:{ACTIVITY_COLORS[4]}" not in html
 
 
 def test_compact_goal_activity_renders_stored_partial_progress_as_light_green() -> None:
@@ -157,8 +157,35 @@ def test_compact_goal_activity_renders_stored_partial_progress_as_light_green() 
         now=_at("2026-06-03T12:00:00"),
     )
 
-    assert f"background:{MINI_ACTIVITY_COLORS[3]}" in html
-    assert f"background:{MINI_ACTIVITY_COLORS[4]}" not in html
+    assert f"background:{ACTIVITY_COLORS[3]}" in html
+    assert f"background:{ACTIVITY_COLORS[4]}" not in html
+
+
+def test_compact_goal_activity_daily_x_per_week_partial_progress_uses_light_green() -> None:
+    participant = {
+        "current": 0,
+        "target": 5000,
+        "skipped": False,
+        "period_outcomes": {
+            "2026-06-01": {
+                "completed": False,
+                "skipped": False,
+                "fulfilled": False,
+                "current": 3800,
+                "target": 5000,
+                "percent": 76.0,
+            }
+        },
+    }
+    html = compact_goal_activity_html(
+        _goal("daily_x_per_week", required_periods=5, participant=participant),
+        participant,
+        now=_at("2026-06-03T12:00:00"),
+    )
+
+    partial_dot = "title='2026-06-01T00:00:00+02:00'"
+    assert f"{partial_dot} style='background:{ACTIVITY_COLORS[3]};'" in html
+    assert f"{partial_dot} style='background:{ACTIVITY_COLORS[4]};'" not in html
 
 
 def test_compact_goal_activity_daily_x_per_week_completion_stays_green() -> None:
@@ -174,7 +201,7 @@ def test_compact_goal_activity_daily_x_per_week_completion_stays_green() -> None
         now=_at("2026-06-03T12:00:00"),
     )
 
-    assert f"background:{MINI_ACTIVITY_COLORS[4]}" in html
+    assert f"background:{ACTIVITY_COLORS[4]}" in html
 
 
 def test_compact_goal_activity_daily_x_per_week_valid_skip_uses_primary_color() -> None:
@@ -188,13 +215,13 @@ def test_compact_goal_activity_daily_x_per_week_valid_skip_uses_primary_color() 
     html = compact_goal_activity_html(goal, participant, now=_at("2026-06-03T12:00:00"))
 
     assert html.count(f"background:{STREAMLIT_PRIMARY_COLOR}") == 2
-    assert f"background:{MINI_ACTIVITY_COLORS[4]}" not in html
+    assert f"background:{ACTIVITY_COLORS[4]}" not in html
 
     goal["required_periods"] = 6
     html = compact_goal_activity_html(goal, participant, now=_at("2026-06-03T12:00:00"))
 
     assert html.count(f"background:{STREAMLIT_PRIMARY_COLOR}") == 1
-    assert html.count(f"background:{MINI_ACTIVITY_COLORS[0]}") == 6
+    assert html.count(f"background:{ACTIVITY_COLORS[0]}") == 6
 
 
 def test_compact_goal_activity_daily_x_per_week_unfulfilled_skip_uses_grey() -> None:
@@ -211,7 +238,7 @@ def test_compact_goal_activity_daily_x_per_week_unfulfilled_skip_uses_grey() -> 
     )
 
     assert f"background:{STREAMLIT_PRIMARY_COLOR}" not in html
-    assert f"background:{MINI_ACTIVITY_COLORS[0]}" in html
+    assert f"background:{ACTIVITY_COLORS[0]}" in html
 
 
 def test_compact_goal_activity_renders_weekly_current_month_dots() -> None:
@@ -247,8 +274,8 @@ def test_compact_goal_activity_uses_period_outcomes_from_current_goal_only() -> 
         now=_at("2026-06-03T12:00:00"),
     )
 
-    assert f"background:{MINI_ACTIVITY_COLORS[4]}" in first_html
-    assert f"background:{MINI_ACTIVITY_COLORS[4]}" not in second_html
+    assert f"background:{ACTIVITY_COLORS[4]}" in first_html
+    assert f"background:{ACTIVITY_COLORS[4]}" not in second_html
 
 
 def test_health_data_import_helpers_find_active_goal() -> None:

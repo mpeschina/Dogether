@@ -5,6 +5,7 @@ from html import escape
 import streamlit as st
 
 from src.db.persistence import Persistence
+from src.pages.common_helpers import ACTIVITY_COLORS, activity_color_for_percent
 
 
 def render_account(
@@ -93,7 +94,7 @@ def activity_diagram_html(
         active_goals = int(stats.get("active_goals", 0) or 0)
         fulfilled_goals = int(stats.get("fulfilled_goals", 0) or 0)
         percent = float(stats.get("percent", 0.0) or 0.0)
-        color = _activity_color(percent, active_goals) if is_visible_day else "transparent"
+        color = activity_color_for_percent(percent, active=active_goals > 0) if is_visible_day else "transparent"
         title = escape(
             f"{current_day.isoformat()}: {fulfilled_goals} / {active_goals} goals fulfilled ({percent}%)",
             quote=True,
@@ -106,7 +107,7 @@ def activity_diagram_html(
         )
         current_day += timedelta(days=1)
 
-    legend_nodes = "".join(f"<span style='background:{color}'></span>" for color in _ACTIVITY_COLORS)
+    legend_nodes = "".join(f"<span style='background:{color}'></span>" for color in ACTIVITY_COLORS)
     return (
         "<style>"
         ".activity-shell{--cell:11px;--gap:3px;color:#57606a;max-width:100%;overflow-x:auto;"
@@ -127,23 +128,6 @@ def activity_diagram_html(
         f"<div class='activity-legend'>Less{legend_nodes}More</div>"
         "</div>"
     )
-
-
-_ACTIVITY_COLORS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
-
-
-def _activity_color(percent: float, active_goals: int) -> str:
-    if active_goals <= 0:
-        return _ACTIVITY_COLORS[0]
-    if percent >= 100:
-        return _ACTIVITY_COLORS[4]
-    if percent >= 75:
-        return _ACTIVITY_COLORS[3]
-    if percent >= 50:
-        return _ACTIVITY_COLORS[2]
-    if percent > 0:
-        return _ACTIVITY_COLORS[1]
-    return _ACTIVITY_COLORS[0]
 
 
 def _local_date(now: datetime | None = None) -> date:

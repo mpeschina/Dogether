@@ -9,6 +9,7 @@ import streamlit as st
 from src.db.persistence import Persistence
 from src.db.persistence_helpers import _now, _period_fulfilled, _period_start, _schedule
 from src.pages.account_page import render_activity_diagram
+from src.pages.common_helpers import ACTIVITY_COLORS, activity_color_for_percent
 from src.pages.health_data_import_page import (
     apple_steps_shortcut_run_url,
     health_data_import_settings,
@@ -23,7 +24,6 @@ DONE_BUTTON_GREEN = "#2E9E57"
 DONE_BUTTON_GREEN_HOVER = "#218243"
 DONE_BUTTON_GREEN_ACTIVE = "#1b6d38"
 PARTICIPANT_PROGRESS_COLOR = "rgba(49, 51, 63, 0.6)"
-MINI_ACTIVITY_COLORS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
 STREAMLIT_PRIMARY_COLOR = "#1F2937"
 X_PER_SCHEDULE_CLASSES = {"daily_x_per_week", "weekly_x_per_month"}
 MINI_ACTIVITY_NAME_MAX_LENGTH = 25
@@ -124,22 +124,23 @@ def _mini_activity_color(goal: dict, participant: dict, period_start: datetime, 
     schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
     current_period_start = _period_start(now_dt, schedule["base"])
     if period_start > current_period_start:
-        return MINI_ACTIVITY_COLORS[0]
+        return ACTIVITY_COLORS[0]
 
     outcome = participant.get("period_outcomes", {}).get(period_start.date().isoformat())
     if isinstance(outcome, dict):
         completed = bool(outcome.get("completed", False))
         fulfilled = bool(outcome.get("fulfilled", completed))
+        percent = _outcome_percent(outcome)
         if completed:
-            return MINI_ACTIVITY_COLORS[4]
+            return ACTIVITY_COLORS[4]
         if _uses_required_period_allowance(goal):
             if fulfilled and outcome.get("skipped"):
                 return STREAMLIT_PRIMARY_COLOR
-            if not fulfilled:
-                return MINI_ACTIVITY_COLORS[0]
+            if not fulfilled and percent <= 0:
+                return ACTIVITY_COLORS[0]
         if fulfilled:
-            return MINI_ACTIVITY_COLORS[4]
-        return _mini_activity_progress_color(_outcome_percent(outcome))
+            return ACTIVITY_COLORS[4]
+        return activity_color_for_percent(percent)
 
     if period_start == current_period_start:
         fulfilled = _period_fulfilled(goal, participant, period_start)
@@ -147,17 +148,15 @@ def _mini_activity_color(goal: dict, participant: dict, period_start: datetime, 
         if _uses_required_period_allowance(goal):
             if fulfilled and skipped:
                 return STREAMLIT_PRIMARY_COLOR
-            if not fulfilled:
-                return MINI_ACTIVITY_COLORS[0]
         if skipped and not fulfilled:
-            return MINI_ACTIVITY_COLORS[0]
+            return ACTIVITY_COLORS[0]
         if fulfilled:
-            return MINI_ACTIVITY_COLORS[4]
+            return ACTIVITY_COLORS[4]
         target = max(1, int(participant.get("target", 1) or 1))
         current = max(0, int(participant.get("current", 0) or 0))
-        return _mini_activity_progress_color((current / target) * 100)
+        return activity_color_for_percent((current / target) * 100)
 
-    return MINI_ACTIVITY_COLORS[0]
+    return ACTIVITY_COLORS[0]
 
 
 def _uses_required_period_allowance(goal: dict) -> bool:
@@ -170,18 +169,6 @@ def _outcome_percent(outcome: dict) -> float:
     target = max(1, int(outcome.get("target", 1) or 1))
     current = max(0, int(outcome.get("current", 0) or 0))
     return (current / target) * 100
-
-
-def _mini_activity_progress_color(percent: float) -> str:
-    if percent >= 100:
-        return MINI_ACTIVITY_COLORS[4]
-    if percent >= 75:
-        return MINI_ACTIVITY_COLORS[3]
-    if percent >= 50:
-        return MINI_ACTIVITY_COLORS[2]
-    if percent > 0:
-        return MINI_ACTIVITY_COLORS[1]
-    return MINI_ACTIVITY_COLORS[0]
 
 
 def render_main(
