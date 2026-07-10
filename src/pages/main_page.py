@@ -14,7 +14,7 @@ from src.pages.health_data_import_page import (
     health_data_import_enabled,
 )
 from src.pages.page_helpers import participant_name, progress_bar, schedule_label
-from src.push.notifications import create_friend_invite_with_push, update_goal_progress_with_push
+from src.push.notifications import update_goal_progress_with_push
 from src.push.storage import PushStorage
 
 
@@ -43,6 +43,14 @@ def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str
     if current_user_id not in ordered_ids:
         return ordered_ids
     return [current_user_id, *[uid for uid in ordered_ids if uid != current_user_id]]
+
+
+def visible_participant_ids(goal: dict, current_user_id: str, friend_ids: set[str]) -> list[str]:
+    return [
+        participant_id
+        for participant_id in ordered_active_participant_ids(goal, current_user_id)
+        if participant_id == current_user_id or participant_id in friend_ids
+    ]
 
 
 def participant_progress_label(current: int, target: int, skipped: bool) -> str:
@@ -155,45 +163,21 @@ def render_main(
                 ),
                 unsafe_allow_html=True,
             )
-            participant_ids = ordered_active_participant_ids(goal, user_id)
+            participant_ids = visible_participant_ids(goal, user_id, friend_ids)
             for participant_id in participant_ids:
                 participant = goal["participants"][participant_id]
                 current = int(participant.get("current", 0))
                 target = int(participant.get("target", 1))
                 skipped = bool(participant.get("skipped", False))
                 is_current_user = participant_id == user_id
-                participant_user = users.get(participant_id, {})
-                participant_email = participant_user.get("email")
-                can_invite_participant = (
-                    participant_id != user_id
-                    and participant_id not in friend_ids
-                    and bool(participant_email)
-                )
                 cols = st.columns([6, 2])
                 with cols[0]:
                     name = participant_name(users, participant_id)
                     progress_label = participant_progress_label(current, target, skipped)
-                    name_cols = st.columns([2.4, 1.4]) if can_invite_participant else st.columns([1])
-                    name_cols[0].markdown(
+                    st.markdown(
                         participant_name_with_progress_html(name, progress_label, goal, participant, now=now),
                         unsafe_allow_html=True,
                     )
-                    if can_invite_participant:
-                        if name_cols[1].button("Add Friend", key=f"add_friend_{goal['id']}_{participant_id}"):
-                            try:
-                                create_friend_invite_with_push(
-                                    persistence,
-                                    push_storage,
-                                    push_settings or {},
-                                    from_user_id=user_id,
-                                    from_email=current_user["email"],
-                                    to_email=participant_email,
-                                    now=now,
-                                )
-                                st.success("Friend invite sent.")
-                                st.rerun()
-                            except ValueError as error:
-                                st.error(str(error))
                     if not skipped:
                         progress_bar(current, target, show_caption=False)
                 if is_current_user:

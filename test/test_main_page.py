@@ -17,6 +17,7 @@ from src.pages.main_page import (
     participant_name_with_progress_html,
     participant_progress_label,
     ordered_active_participant_ids,
+    visible_participant_ids,
     truncate_participant_name,
 )
 
@@ -58,6 +59,33 @@ def test_ordered_active_participant_ids_includes_active_participants_missing_fro
     }
 
     assert ordered_active_participant_ids(goal, "charlie") == ["charlie", "alice", "bob"]
+
+
+def test_visible_participant_ids_include_self_and_friends_only() -> None:
+    goal = {
+        "participant_user_ids": ["alice", "bob", "charlie", "dana"],
+        "participants": {
+            "alice": {"left_at": None},
+            "bob": {"left_at": None},
+            "charlie": {"left_at": None},
+            "dana": {"left_at": "2026-06-01T10:00:00+00:00"},
+        },
+    }
+
+    assert visible_participant_ids(goal, "alice", {"bob", "dana"}) == ["alice", "bob"]
+
+
+def test_visible_participant_ids_preserve_order_with_missing_participants() -> None:
+    goal = {
+        "participant_user_ids": ["alice"],
+        "participants": {
+            "alice": {"left_at": None},
+            "bob": {"left_at": None},
+            "charlie": {"left_at": None},
+        },
+    }
+
+    assert visible_participant_ids(goal, "charlie", {"alice", "bob"}) == ["charlie", "alice", "bob"]
 
 
 def test_participant_progress_label_uses_compact_current_target() -> None:
