@@ -102,7 +102,6 @@ def render_subscribed_notifications(push_storage: PushStorage, user_id: str) -> 
             cols[0].caption(user_agent)
             if updated_at:
                 cols[0].caption(f"Last updated: {updated_at}")
-            cols[0].caption(endpoint)
 
             if cols[1].button("Remove", key=f"remove_push_subscription_{key_hash}", use_container_width=True):
                 push_storage.delete_subscription(endpoint)
