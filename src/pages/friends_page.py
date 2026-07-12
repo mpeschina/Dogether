@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from itertools import combinations
 import html
 from typing import Any
 
 import streamlit as st
 
 from src.db.persistence import Persistence
+from src.friends.suggestions import friend_suggestion_candidates, manual_friend_suggestion_options
 from src.push.notifications import create_friend_invite_with_push, create_friend_suggestion_with_push
 from src.push.storage import PushStorage
 
@@ -52,64 +52,57 @@ def _friend_request_action_styles() -> None:
     )
 
 
-def friend_suggestion_candidates(
+def _friend_display_name(friend: dict[str, Any]) -> str:
+    return str(friend.get("name") or friend.get("email") or friend["user_id"])
+
+
+def _render_friend_suggestion_candidate(
+    candidate: dict[str, Any],
     persistence: Persistence,
+    push_storage: PushStorage | None,
+    push_settings: dict[str, str] | None,
     user_id: str,
-    now: datetime | None = None,
-) -> list[dict[str, Any]]:
-    friends = persistence.list_friends(user_id)
-    friend_ids = {friend["user_id"] for friend in friends}
-    if len(friend_ids) < 2:
-        return []
-
-    friend_by_id = {friend["user_id"]: friend for friend in friends}
-    friend_friend_ids: dict[str, set[str]] = {}
-    candidates = []
-    seen_goal_pairs: set[tuple[str, str, str]] = set()
-
-    for goal in persistence.list_goals_for_user(user_id, now=now):
-        goal_id = goal["id"]
-        active_friend_participants = sorted(
-            participant_id
-            for participant_id, participant in goal.get("participants", {}).items()
-            if participant_id in friend_ids and not participant.get("left_at")
+    now: datetime | None,
+) -> None:
+    first_user = candidate["first_user"]
+    second_user = candidate["second_user"]
+    first_name = _friend_display_name(first_user)
+    second_name = _friend_display_name(second_user)
+    with st.container(border=True):
+        st.markdown(
+            f"""
+            <article>
+                <h3 style="font-size: 1.05rem; margin: 0 0 0.85rem;">
+                    {html.escape(first_name)} and {html.escape(second_name)} could be friends.
+                    <span style="color: #4b5563; font-weight: 400; font-size: 0.8rem;">
+                        (shared goal: {html.escape(candidate["goal_description"])})
+                    </span>
+                </h3>
+            </article>
+            """,
+            unsafe_allow_html=True,
         )
-        for first_user_id, second_user_id in combinations(active_friend_participants, 2):
-            pair = tuple(sorted([first_user_id, second_user_id]))
-            goal_pair = (goal_id, *pair)
-            if goal_pair in seen_goal_pairs:
-                continue
-            seen_goal_pairs.add(goal_pair)
-
-            if first_user_id not in friend_friend_ids:
-                friend_friend_ids[first_user_id] = {
-                    friend["user_id"]
-                    for friend in persistence.list_friends(first_user_id)
-                }
-            if second_user_id in friend_friend_ids[first_user_id]:
-                continue
-
-            pair_suggestions = persistence.list_friend_suggestions_for_pair(first_user_id, second_user_id)
-            if any(suggestion.get("status") == "pending" for suggestion in pair_suggestions):
-                continue
-            if any(
-                suggestion.get("status") == "declined"
-                and suggestion.get("suggested_by_user_id") == user_id
-                and suggestion.get("source_goal_id") == goal_id
-                for suggestion in pair_suggestions
-            ):
-                continue
-
-            candidates.append(
-                {
-                    "goal_id": goal_id,
-                    "goal_description": str(goal.get("description") or "a shared goal"),
-                    "first_user": friend_by_id[first_user_id],
-                    "second_user": friend_by_id[second_user_id],
-                }
-            )
-
-    return candidates
+        if st.button(
+            "Suggest friendship",
+            key=(
+                f"suggest_friendship_{candidate['goal_id']}"
+                f"_{first_user['user_id']}_{second_user['user_id']}"
+            ),
+        ):
+            try:
+                create_friend_suggestion_with_push(
+                    persistence,
+                    push_storage,
+                    push_settings or {},
+                    suggested_by_user_id=user_id,
+                    suggested_user_ids=[first_user["user_id"], second_user["user_id"]],
+                    source_goal_id=candidate["goal_id"],
+                    now=now,
+                )
+                st.success("Friend suggestion sent.")
+                st.rerun()
+            except ValueError as error:
+                st.error(str(error))
 
 
 def render_friends(
@@ -238,47 +231,76 @@ def render_friends(
     #
     # Friend Suggestion Section
     #
+    friends_for_manual_suggestions, manual_options = manual_friend_suggestion_options(persistence, user_id)
     suggestion_candidates = friend_suggestion_candidates(persistence, user_id, now=now)
+    st.subheader("Help your Friends to stay connected!")
     if suggestion_candidates:
-        st.subheader("Help your Friends to stay connected!")
-        for candidate in suggestion_candidates:
-            first_user = candidate["first_user"]
-            second_user = candidate["second_user"]
-            first_name = str(first_user.get("name") or first_user.get("email") or first_user["user_id"])
-            second_name = str(
-                second_user.get("name")
-                or second_user.get("email")
-                or second_user["user_id"]
-            )
-            with st.container(border=True):
-                st.markdown(
-                    f"""
-                    <article>
-                        <h3 style="font-size: 1.05rem; margin: 0 0 0.85rem;">
-                            {html.escape(first_name)} and {html.escape(second_name)} could be friends.
-                            <span style="color: #4b5563; font-weight: 400; font-size: 0.8rem;">
-                                (shared goal: {html.escape(candidate["goal_description"])})
-                            </span>
-                        </h3>
-                    </article>
-                    """,
-                    unsafe_allow_html=True,
+        if len(suggestion_candidates) > 3:
+            with st.container(height=390):
+                for candidate in suggestion_candidates:
+                    _render_friend_suggestion_candidate(
+                        candidate,
+                        persistence,
+                        push_storage,
+                        push_settings,
+                        user_id,
+                        now,
+                    )
+        else:
+            for candidate in suggestion_candidates:
+                _render_friend_suggestion_candidate(
+                    candidate,
+                    persistence,
+                    push_storage,
+                    push_settings,
+                    user_id,
+                    now,
                 )
-                if st.button(
-                    "Suggest friendship",
-                    key=(
-                        f"suggest_friendship_{candidate['goal_id']}"
-                        f"_{first_user['user_id']}_{second_user['user_id']}"
-                    ),
-                ):
+
+    with st.expander("Manually choose two friends connect", expanded=False):
+        if len(friends_for_manual_suggestions) < 2:
+            st.info("Add at least two friends before suggesting a friendship.")
+        else:
+            friend_by_id = {
+                friend["user_id"]: friend
+                for friend in friends_for_manual_suggestions
+            }
+            first_options = [friend["user_id"] for friend in friends_for_manual_suggestions]
+            if st.session_state.get("manual_suggest_first_friend") not in first_options:
+                st.session_state.pop("manual_suggest_first_friend", None)
+
+            first_user_id = st.selectbox(
+                "First friend",
+                first_options,
+                format_func=lambda candidate_id: _friend_display_name(friend_by_id[candidate_id]),
+                key="manual_suggest_first_friend",
+            )
+            second_options = [
+                friend["user_id"]
+                for friend in manual_options.get(first_user_id, [])
+            ]
+            if not second_options:
+                first_name = _friend_display_name(friend_by_id[first_user_id])
+                st.info(f"{first_name} has no available friends to connect right now.")
+            else:
+                if st.session_state.get("manual_suggest_second_friend") not in second_options:
+                    st.session_state.pop("manual_suggest_second_friend", None)
+
+                second_user_id = st.selectbox(
+                    "Second friend",
+                    second_options,
+                    format_func=lambda candidate_id: _friend_display_name(friend_by_id[candidate_id]),
+                    key="manual_suggest_second_friend",
+                )
+                if st.button("Suggest friendship", key="manual_suggest_friendship_submit", type="primary"):
                     try:
                         create_friend_suggestion_with_push(
                             persistence,
                             push_storage,
                             push_settings or {},
                             suggested_by_user_id=user_id,
-                            suggested_user_ids=[first_user["user_id"], second_user["user_id"]],
-                            source_goal_id=candidate["goal_id"],
+                            suggested_user_ids=[first_user_id, second_user_id],
+                            source_goal_id=None,
                             now=now,
                         )
                         st.success("Friend suggestion sent.")

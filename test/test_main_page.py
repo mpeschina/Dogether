@@ -1,8 +1,6 @@
 from datetime import datetime
 from pathlib import Path
 
-from src.db.json_persistence import JsonPersistence
-from src.pages.friends_page import friend_suggestion_candidates
 from src.pages.health_data_import_page import (
     DEFAULT_SHORTCUT_INSTALL_URL,
     active_health_data_import_goal,
@@ -378,61 +376,6 @@ def test_data_import_availability_matches_viewport_platforms() -> None:
     assert data_import_available_for_viewport("pc", {"devicePlatform": "ios"}) is False
     assert data_import_available_for_viewport("pc", {"devicePlatform": "all"}) is True
 
-
-def _friend(persistence: JsonPersistence, first: dict, second: dict) -> None:
-    invite = persistence.create_friend_invite(first["user_id"], first["email"], second["email"])
-    persistence.respond_friend_invite(invite["id"], second["user_id"], second["email"], approve=True)
-
-
-def test_friend_suggestion_candidates_find_non_friend_goal_participants(tmp_path) -> None:
-    persistence = JsonPersistence(tmp_path / "users.json")
-    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
-    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
-    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
-    _friend(persistence, alice, bob)
-    _friend(persistence, alice, charlie)
-    goal = persistence.create_goal("alice", "Read", "daily", 1, ["bob", "charlie"], 10)
-
-    candidates = friend_suggestion_candidates(persistence, "alice")
-
-    assert candidates == [
-        {
-            "goal_id": goal["id"],
-            "goal_description": "Read",
-            "first_user": bob,
-            "second_user": charlie,
-        }
-    ]
-
-
-def test_friend_suggestion_candidates_exclude_existing_friendship(tmp_path) -> None:
-    persistence = JsonPersistence(tmp_path / "users.json")
-    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
-    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
-    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
-    _friend(persistence, alice, bob)
-    _friend(persistence, alice, charlie)
-    _friend(persistence, bob, charlie)
-    persistence.create_goal("alice", "Read", "daily", 1, ["bob", "charlie"], 10)
-
-    assert friend_suggestion_candidates(persistence, "alice") == []
-
-
-def test_friend_suggestion_candidates_exclude_pending_and_declined_suggestions(tmp_path) -> None:
-    persistence = JsonPersistence(tmp_path / "users.json")
-    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
-    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
-    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
-    _friend(persistence, alice, bob)
-    _friend(persistence, alice, charlie)
-    goal = persistence.create_goal("alice", "Read", "daily", 1, ["bob", "charlie"], 10)
-    suggestion = persistence.create_friend_suggestion("alice", ["bob", "charlie"], source_goal_id=goal["id"])
-
-    assert friend_suggestion_candidates(persistence, "alice") == []
-
-    persistence.respond_friend_suggestion(suggestion["id"], "bob", approve=False)
-
-    assert friend_suggestion_candidates(persistence, "alice") == []
 
 
 def test_main_page_uses_viewport_render_paths() -> None:
