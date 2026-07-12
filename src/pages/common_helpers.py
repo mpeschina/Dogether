@@ -35,7 +35,7 @@ def compact_goal_activity_html(goal: dict, participant: dict, now: datetime | No
     dots = [
         (
             f"<span class='{_mini_activity_dot_class(period_start, current_period_start)}' "
-            f"title='{escape(period_start.isoformat(), quote=True)}' "
+            f"title='{escape(period_start.strftime('%A'), quote=True)}' "
             f"style='background:{_mini_activity_color(goal, participant, period_start, now_dt)};'></span>"
         )
         for period_start in period_starts

@@ -20,6 +20,7 @@ from .persistence_helpers import (
     _period_start,
     _record_period_outcome,
     _refresh_activity_day,
+    _repair_activity_days,
     _schedule,
     _next_period_start,
     _user_stats,
@@ -703,6 +704,7 @@ class DocumentPersistence:
         now_dt = _now(now)
         with self._lock:
             data = self._read()
+            _repair_activity_days(data, user_id, now_dt)
             _refresh_activity_day(data, user_id, now_dt.date())
             self._write(data)
             active_goals = sum(1 for goal in data["goals"].values() if _goal_active_for_user(goal, user_id))

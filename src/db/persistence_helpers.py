@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 APP_ZONE = ZoneInfo("Europe/Berlin")
 UTC = timezone.utc
+ACTIVITY_DAYS_REPAIR_VERSION = 1
 SCHEDULES = {
     "daily": {"label": "Daily", "base": "day", "required_periods": 1, "aggregate": "day"},
     "weekly": {"label": "Weekly", "base": "week", "required_periods": 1, "aggregate": "week"},
@@ -317,29 +318,28 @@ def _user_stats(data: dict[str, Any], user_id: str) -> dict[str, Any]:
 
 def _refresh_activity_day(data: dict[str, Any], user_id: str, day: Any) -> None:
     date_key = day.isoformat() if hasattr(day, "isoformat") else str(day)
+    day_start = _now(datetime.fromisoformat(date_key))
     active_goals = 0
     fulfilled_goals = 0
     for goal in data.get("goals", {}).values():
         if not isinstance(goal, dict) or not _goal_active_for_user(goal, user_id):
             continue
         participant = goal["participants"][user_id]
-        period_start = _parse_dt(participant.get("period_start"))
-        if period_start and period_start.date().isoformat() != date_key:
-            schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
-            if schedule["base"] == "day":
-                continue
-            period_end = _next_period_start(_period_start(period_start, schedule["base"]), schedule["base"])
-            day_start = _now(datetime.fromisoformat(date_key))
-            if not (period_start.date() <= day_start.date() < period_end.date()):
-                continue
-        active_goals += 1
-        period_key = period_start.date().isoformat() if period_start else date_key
+        schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+        day_period_start = _period_start(day_start, schedule["base"])
+        period_key = day_period_start.date().isoformat()
         outcome = _period_outcomes(participant).get(period_key)
+        current_period_start = _parse_dt(participant.get("period_start"))
+        current_period_start = _period_start(current_period_start, schedule["base"]) if current_period_start else None
+        is_current_period = current_period_start == day_period_start
+        if not isinstance(outcome, dict) and not is_current_period:
+            continue
+
+        active_goals += 1
         if isinstance(outcome, dict):
             fulfilled = bool(outcome.get("fulfilled", outcome.get("completed", False)))
         else:
-            effective_period_start = period_start or _now(datetime.fromisoformat(date_key))
-            fulfilled = _period_fulfilled(goal, participant, effective_period_start)
+            fulfilled = _period_fulfilled(goal, participant, day_period_start)
         if fulfilled:
             fulfilled_goals += 1
 
@@ -352,6 +352,17 @@ def _refresh_activity_day(data: dict[str, Any], user_id: str, day: Any) -> None:
         "percent": percent,
     }
     _trim_activity_days(activity_days)
+
+
+def _repair_activity_days(data: dict[str, Any], user_id: str, now: datetime | None = None) -> None:
+    stats = _user_stats(data, user_id)
+    if stats.get("activity_days_repair_version") == ACTIVITY_DAYS_REPAIR_VERSION:
+        return
+
+    today = _now(now).date()
+    for offset in range(364, -1, -1):
+        _refresh_activity_day(data, user_id, today - timedelta(days=offset))
+    stats["activity_days_repair_version"] = ACTIVITY_DAYS_REPAIR_VERSION
 
 
 def _trim_activity_days(activity_days: dict[str, Any]) -> None:

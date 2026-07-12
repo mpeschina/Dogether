@@ -679,6 +679,74 @@ def test_activity_summaries_keep_last_365_days(tmp_path: Path) -> None:
     assert "2026-02-01" in activity_days
 
 
+def test_activity_days_repair_runs_once_and_restores_stale_historical_cache(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    persistence = JsonPersistence(path)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-07-03T09:00:00"))
+    goals = [
+        persistence.create_goal(
+            created_by="alice",
+            description=f"Goal {index}",
+            schedule_class="daily",
+            required_periods=1,
+            friend_user_ids=[],
+            target=1,
+            current=1,
+            now=at("2026-07-03T10:00:00"),
+        )
+        for index in range(4)
+    ]
+
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-07-04T08:00:00"))
+    for goal in goals:
+        persistence.update_goal_progress(goal["id"], alice["user_id"], current=1, now=at("2026-07-04T10:00:00"))
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-07-05T08:00:00"))
+
+    data = persistence.raw_data()
+    data["user_stats"]["alice"]["activity_days"]["2026-07-03"] = {
+        "active_goals": 1,
+        "fulfilled_goals": 0,
+        "percent": 0.0,
+    }
+    data["user_stats"]["alice"]["activity_days"]["2026-07-04"] = {
+        "active_goals": 1,
+        "fulfilled_goals": 0,
+        "percent": 0.0,
+    }
+    data["user_stats"]["alice"].pop("activity_days_repair_version", None)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    stats = persistence.account_stats(alice["user_id"], now=at("2026-07-05T09:00:00"))
+
+    assert stats["activity_days"]["2026-07-03"] == {
+        "active_goals": 4,
+        "fulfilled_goals": 4,
+        "percent": 100.0,
+    }
+    assert stats["activity_days"]["2026-07-04"] == {
+        "active_goals": 4,
+        "fulfilled_goals": 4,
+        "percent": 100.0,
+    }
+    assert persistence.raw_data()["user_stats"]["alice"]["activity_days_repair_version"] == 1
+
+    data = persistence.raw_data()
+    data["user_stats"]["alice"]["activity_days"]["2026-07-03"] = {
+        "active_goals": 1,
+        "fulfilled_goals": 0,
+        "percent": 0.0,
+    }
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    stats = persistence.account_stats(alice["user_id"], now=at("2026-07-05T10:00:00"))
+
+    assert stats["activity_days"]["2026-07-03"] == {
+        "active_goals": 1,
+        "fulfilled_goals": 0,
+        "percent": 0.0,
+    }
+
+
 def test_account_stats_report_current_month_rate_and_days_using_app(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))

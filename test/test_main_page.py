@@ -146,10 +146,10 @@ def test_compact_goal_activity_renders_daily_current_week_seven_dots() -> None:
     )
 
     assert html.count("title='") == 7
-    assert "2026-06-01" in html
-    assert "2026-06-07" in html
+    assert "title='Monday'" in html
+    assert "title='Sunday'" in html
     assert html.count("mini-activity-dot-current") == 1
-    assert "2026-06-03T00:00:00" in html
+    assert "title='Wednesday'" in html
 
 
 def test_compact_goal_activity_renders_unreached_days_as_white() -> None:
@@ -160,8 +160,8 @@ def test_compact_goal_activity_renders_unreached_days_as_white() -> None:
         now=_at("2026-06-03T12:00:00"),
     )
 
-    reached_dot = "title='2026-06-02T00:00:00+02:00'"
-    future_dot = "title='2026-06-04T00:00:00+02:00'"
+    reached_dot = "title='Tuesday'"
+    future_dot = "title='Thursday'"
     assert f"{reached_dot} style='background:{ACTIVITY_COLORS[0]};'" in html
     assert f"{future_dot} style='background:{FUTURE_ACTIVITY_COLOR};'" in html
 
@@ -231,7 +231,7 @@ def test_compact_goal_activity_daily_x_per_week_partial_progress_uses_light_gree
         now=_at("2026-06-03T12:00:00"),
     )
 
-    partial_dot = "title='2026-06-01T00:00:00+02:00'"
+    partial_dot = "title='Monday'"
     assert f"{partial_dot} style='background:{ACTIVITY_COLORS[3]};'" in html
     assert f"{partial_dot} style='background:{ACTIVITY_COLORS[4]};'" not in html
 
@@ -299,8 +299,7 @@ def test_compact_goal_activity_renders_weekly_current_month_dots() -> None:
     )
 
     assert html.count("title='") == 5
-    assert "2026-06-01" in html
-    assert "2026-06-29" in html
+    assert "title='Monday'" in html
 
 
 def test_compact_goal_activity_uses_period_outcomes_from_current_goal_only() -> None:
