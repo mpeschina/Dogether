@@ -119,6 +119,33 @@ def test_friend_suggestion_candidates_show_pair_once_across_multiple_goals(tmp_p
     ]
 
 
+def test_friend_suggestion_candidates_exclude_dismissed_pairs(tmp_path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    _friend(persistence, alice, bob)
+    _friend(persistence, alice, charlie)
+    persistence.create_goal("alice", "Read", "daily", 1, ["bob", "charlie"], 10)
+    persistence.dismiss_friend_suggestion_pair("alice", "charlie", "bob")
+
+    assert friend_suggestion_candidates(persistence, "alice") == []
+
+
+def test_dismissed_pairs_do_not_hide_manual_friend_suggestion_options(tmp_path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    _friend(persistence, alice, bob)
+    _friend(persistence, alice, charlie)
+    persistence.dismiss_friend_suggestion_pair("alice", "charlie", "bob")
+
+    _friends, options = manual_friend_suggestion_options(persistence, "alice")
+
+    assert options == {"bob": [charlie], "charlie": [bob]}
+
+
 def test_friend_suggestion_candidates_exclude_existing_friendship(tmp_path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")

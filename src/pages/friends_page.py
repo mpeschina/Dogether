@@ -82,7 +82,8 @@ def _render_friend_suggestion_candidate(
             """,
             unsafe_allow_html=True,
         )
-        if st.button(
+        cols = st.columns([1, 1, 4])
+        if cols[0].button(
             "Suggest friendship",
             key=(
                 f"suggest_friendship_{candidate['goal_id']}"
@@ -100,6 +101,24 @@ def _render_friend_suggestion_candidate(
                     now=now,
                 )
                 st.success("Friend suggestion sent.")
+                st.rerun()
+            except ValueError as error:
+                st.error(str(error))
+        if cols[1].button(
+            "Dismiss",
+            key=(
+                f"dismiss_friendship_{candidate['goal_id']}"
+                f"_{first_user['user_id']}_{second_user['user_id']}"
+            ),
+        ):
+            try:
+                persistence.dismiss_friend_suggestion_pair(
+                    user_id,
+                    first_user["user_id"],
+                    second_user["user_id"],
+                    now=now,
+                )
+                st.info("Suggestion dismissed.")
                 st.rerun()
             except ValueError as error:
                 st.error(str(error))

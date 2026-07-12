@@ -46,7 +46,7 @@ def _normalise_store(data: dict[str, Any]) -> dict[str, Any]:
     store = _empty_store()
     users = data.get("users", {}) if isinstance(data.get("users"), dict) else {}
     store["users"] = {
-        user_id: user
+        user_id: _normalise_user_profile(user)
         for user_id, user in users.items()
         if isinstance(user, dict) and "email" in user and "user_id" in user
     }
@@ -66,6 +66,33 @@ def _normalise_store(data: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_email(email: str) -> str:
     return str(email or "").strip().lower()
+
+
+def _normalise_friend_pair(value: Any) -> list[str] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    first_user_id = str(value[0] or "").strip()
+    second_user_id = str(value[1] or "").strip()
+    if not first_user_id or not second_user_id or first_user_id == second_user_id:
+        return None
+    return sorted([first_user_id, second_user_id])
+
+
+def _normalise_user_profile(user: dict[str, Any]) -> dict[str, Any]:
+    normalised = dict(user)
+    dismissed_pairs = []
+    seen_pairs = set()
+    for value in user.get("dismissed_friend_suggestion_pairs", []):
+        pair = _normalise_friend_pair(value)
+        if pair is None:
+            continue
+        pair_key = tuple(pair)
+        if pair_key in seen_pairs:
+            continue
+        seen_pairs.add(pair_key)
+        dismissed_pairs.append(pair)
+    normalised["dismissed_friend_suggestion_pairs"] = dismissed_pairs
+    return normalised
 
 
 def _now(now: datetime | None = None) -> datetime:

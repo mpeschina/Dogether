@@ -162,6 +162,29 @@ def test_friend_invite_requires_existing_user(tmp_path: Path) -> None:
 
     assert persistence.raw_data()["friend_invites"] == {}
 
+def test_dismiss_friend_suggestion_pair_saves_sorted_pairs_once(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    persistence.upsert_user("alice", "alice@example.com", "Alice")
+
+    user = persistence.dismiss_friend_suggestion_pair("alice", "charlie", "bob", now=at("2026-06-01T10:00:00"))
+    duplicate = persistence.dismiss_friend_suggestion_pair("alice", "bob", "charlie", now=at("2026-06-01T10:01:00"))
+
+    assert user["dismissed_friend_suggestion_pairs"] == [["bob", "charlie"]]
+    assert duplicate["dismissed_friend_suggestion_pairs"] == [["bob", "charlie"]]
+    assert persistence.dismissed_friend_suggestion_pairs("alice") == [["bob", "charlie"]]
+
+
+def test_upsert_user_preserves_dismissed_friend_suggestion_pairs(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    persistence.dismiss_friend_suggestion_pair("alice", "charlie", "bob", now=at("2026-06-01T10:00:00"))
+
+    updated = persistence.upsert_user("alice", "ALICE@example.com", "Alice A.", at("2026-06-02T09:00:00"))
+
+    assert updated["name"] == "Alice A."
+    assert updated["dismissed_friend_suggestion_pairs"] == [["bob", "charlie"]]
+
+
 def test_friend_suggestion_requires_both_users_to_accept(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")

@@ -11,6 +11,7 @@ from .persistence_helpers import (
     _days_using_app,
     _find_user_by_email,
     _friendship_id,
+    _normalise_friend_pair,
     _goal_active_for_user,
     _iso,
     _new_id,
@@ -49,13 +50,17 @@ class DocumentPersistence:
         with self._lock:
             data = self._read()
             existing = data["users"].get(user_id, {})
-            user = {
-                "user_id": user_id,
-                "email": normalized_email,
-                "name": name.strip() or normalized_email,
-                "created_at": existing.get("created_at", now_iso),
-                "last_seen_at": now_iso,
-            }
+            user = dict(existing)
+            user.update(
+                {
+                    "user_id": user_id,
+                    "email": normalized_email,
+                    "name": name.strip() or normalized_email,
+                    "created_at": existing.get("created_at", now_iso),
+                    "last_seen_at": now_iso,
+                }
+            )
+            user.setdefault("dismissed_friend_suggestion_pairs", [])
             data["users"][user_id] = user
             self._write(data)
             return user
@@ -221,6 +226,37 @@ class DocumentPersistence:
                 del data["friend_invites"][invite_id]
             self._write(data)
             return invite
+
+    def dismissed_friend_suggestion_pairs(self, user_id: str) -> list[list[str]]:
+        with self._lock:
+            user = self._read()["users"].get(user_id, {})
+            pairs = user.get("dismissed_friend_suggestion_pairs", [])
+        return [list(pair) for pair in pairs]
+
+    def dismiss_friend_suggestion_pair(
+        self,
+        user_id: str,
+        first_friend_id: str,
+        second_friend_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        pair = _normalise_friend_pair([first_friend_id, second_friend_id])
+        if pair is None:
+            raise ValueError("Select two different friends to dismiss.")
+
+        with self._lock:
+            data = self._read()
+            user = data["users"].get(user_id)
+            if not user:
+                raise ValueError("User was not found.")
+            dismissed_pairs = user.setdefault("dismissed_friend_suggestion_pairs", [])
+            pair_key = tuple(pair)
+            existing_pair_keys = {tuple(existing_pair) for existing_pair in dismissed_pairs}
+            if pair_key not in existing_pair_keys:
+                dismissed_pairs.append(pair)
+            user["updated_at"] = _iso(now)
+            self._write(data)
+            return user
 
     def create_friend_suggestion(
         self,

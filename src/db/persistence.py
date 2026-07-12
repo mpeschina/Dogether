@@ -43,6 +43,16 @@ class Persistence(Protocol):
         now: datetime | None = None,
     ) -> dict[str, Any]: ...
 
+    def dismissed_friend_suggestion_pairs(self, user_id: str) -> list[list[str]]: ...
+
+    def dismiss_friend_suggestion_pair(
+        self,
+        user_id: str,
+        first_friend_id: str,
+        second_friend_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
     def create_friend_suggestion(
         self,
         suggested_by_user_id: str,

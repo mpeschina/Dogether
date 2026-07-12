@@ -19,6 +19,10 @@ def friend_suggestion_candidates(
 
     friend_by_id = {friend["user_id"]: friend for friend in friends}
     friend_friend_ids: dict[str, set[str]] = {}
+    dismissed_pairs = {
+        tuple(pair)
+        for pair in persistence.dismissed_friend_suggestion_pairs(user_id)
+    }
     candidates = []
     seen_pairs: set[tuple[str, str]] = set()
 
@@ -31,7 +35,7 @@ def friend_suggestion_candidates(
         )
         for first_user_id, second_user_id in combinations(active_friend_participants, 2):
             pair = tuple(sorted([first_user_id, second_user_id]))
-            if pair in seen_pairs:
+            if pair in seen_pairs or pair in dismissed_pairs:
                 continue
             seen_pairs.add(pair)
 
