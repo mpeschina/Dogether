@@ -17,6 +17,11 @@ def test_viewport_component_build_exists_with_streamlit_hooks() -> None:
     assert "iframeHeight" in content
     assert "mobile_portrait" in content
     assert "widescreen" in content
+    assert "DEFAULT_RESIZE_PIXEL_THRESHOLD = 10" in content
+    assert "DEFAULT_RESIZE_DEBOUNCE_MS = 300" in content
+    assert "widthDelta > threshold" in content
+    assert "heightDelta > threshold" in content
+    assert "payload.orientation !== lastReportedPayload.orientation" in content
 
 
 def test_debug_page_renders_viewport_diagnostics() -> None:
@@ -26,3 +31,13 @@ def test_debug_page_renders_viewport_diagnostics() -> None:
     assert "def render_viewport_diagnostics()" in content
     assert "render_viewport_diagnostics()" in content
     assert "viewport_info(key=\"debug_viewport_info\")" in content
+
+
+def test_viewport_component_wrapper_exposes_resize_options() -> None:
+    content = Path("src/viewport_component/__init__.py").read_text(encoding="utf-8")
+
+    assert "pixel_threshold: int = 10" in content
+    assert "debounce_ms: int = 300" in content
+    assert "pixel_threshold=max(0, int(pixel_threshold))" in content
+    assert "debounce_ms=max(0, int(debounce_ms))" in content
+    assert 'viewport_info(key="main_viewport", pixel_threshold=20, debounce_ms=500)' in content

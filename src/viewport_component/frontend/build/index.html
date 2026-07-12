@@ -25,7 +25,11 @@
       const SET_COMPONENT_VALUE = "streamlit:setComponentValue";
       const SET_FRAME_HEIGHT = "streamlit:setFrameHeight";
 
-      let lastPayloadJson = "";
+      const DEFAULT_RESIZE_PIXEL_THRESHOLD = 10;
+      const DEFAULT_RESIZE_DEBOUNCE_MS = 300;
+
+      let args = {};
+      let lastReportedPayload = null;
       let resizeTimer = null;
 
       function sendMessage(type, data) {
@@ -84,6 +88,19 @@
         };
       }
 
+      function numericArg(name, fallback) {
+        const value = Number(args[name]);
+        return Number.isFinite(value) && value >= 0 ? value : fallback;
+      }
+
+      function pixelThreshold() {
+        return numericArg("pixel_threshold", DEFAULT_RESIZE_PIXEL_THRESHOLD);
+      }
+
+      function debounceMs() {
+        return numericArg("debounce_ms", DEFAULT_RESIZE_DEBOUNCE_MS);
+      }
+
       function viewportPayload() {
         const viewport = browserViewportSize();
         const width = viewport.width;
@@ -114,30 +131,44 @@
         };
       }
 
+      function shouldReportPayload(payload) {
+        if (lastReportedPayload === null) {
+          return true;
+        }
+
+        const widthDelta = Math.abs(payload.width - lastReportedPayload.width);
+        const heightDelta = Math.abs(payload.height - lastReportedPayload.height);
+        const threshold = pixelThreshold();
+        return (
+          widthDelta > threshold ||
+          heightDelta > threshold ||
+          payload.orientation !== lastReportedPayload.orientation
+        );
+      }
+
       function reportViewport() {
         const payload = viewportPayload();
-        const comparablePayload = { ...payload, timestamp: "" };
-        const payloadJson = JSON.stringify(comparablePayload);
 
         setFrameHeight(1);
 
-        if (payloadJson === lastPayloadJson) {
+        if (!shouldReportPayload(payload)) {
           return;
         }
 
-        lastPayloadJson = payloadJson;
+        lastReportedPayload = payload;
         setComponentValue(payload);
       }
 
       function debounceReportViewport() {
         window.clearTimeout(resizeTimer);
-        resizeTimer = window.setTimeout(reportViewport, 150);
+        resizeTimer = window.setTimeout(reportViewport, debounceMs());
       }
 
       window.addEventListener("message", (event) => {
         if (event.data.type !== RENDER_EVENT) {
           return;
         }
+        args = event.data.args || {};
         reportViewport();
       });
 
