@@ -84,7 +84,7 @@ def _render_friend_suggestion_candidate(
         )
         cols = st.columns([1, 1, 4])
         if cols[0].button(
-            "Suggest friendship",
+            "🎉 Suggest friendship",
             key=(
                 f"suggest_friendship_{candidate['goal_id']}"
                 f"_{first_user['user_id']}_{second_user['user_id']}"
@@ -311,7 +311,7 @@ def render_friends(
                     format_func=lambda candidate_id: _friend_display_name(friend_by_id[candidate_id]),
                     key="manual_suggest_second_friend",
                 )
-                if st.button("Suggest friendship", key="manual_suggest_friendship_submit", type="primary"):
+                if st.button("🎉 Suggest friendship", key="manual_suggest_friendship_submit", type="primary"):
                     try:
                         create_friend_suggestion_with_push(
                             persistence,
