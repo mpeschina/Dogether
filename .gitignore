@@ -9,6 +9,12 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+
+# Static Streamlit component builds committed for deployment
+!src/viewport_component/
+!src/viewport_component/frontend/
+!src/viewport_component/frontend/build/
+!src/viewport_component/frontend/build/index.html
 develop-eggs/
 dist/
 downloads/

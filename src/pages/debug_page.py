@@ -10,6 +10,7 @@ import streamlit as st
 from src.db.persistence import APP_ZONE, Persistence
 from src.push.sender import push_configured, send_push_to_user
 from src.push.storage import PushStorage
+from src.viewport_component import viewport_info
 
 
 @dataclass
@@ -97,6 +98,7 @@ def render_debug(
         st.rerun()
 
     render_deployment_diagnostics()
+    render_viewport_diagnostics()
     render_debug_push_notification(persistence, push_storage, push_settings or {})
 
 
@@ -112,6 +114,16 @@ def render_deployment_diagnostics() -> None:
         "push component build exists": Path("push_component/frontend/build/index.html").exists(),
     }
     st.table([{"Check": key, "Value": value} for key, value in rows.items()])
+
+
+def render_viewport_diagnostics() -> None:
+    st.subheader("Viewport Diagnostics")
+    viewport = viewport_info(key="debug_viewport_info")
+    if viewport is None:
+        st.info("Browser viewport information has not reported yet. Streamlit may rerun shortly.")
+        return
+
+    st.json(viewport)
 
 
 def render_debug_push_notification(

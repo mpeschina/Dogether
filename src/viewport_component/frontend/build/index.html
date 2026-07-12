@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dogether Viewport Info</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: transparent;
+        color: #111827;
+      }
+
+      .viewport-shell {
+        align-items: center;
+        display: flex;
+        min-height: 1px;
+      }
+
+      .status {
+        color: #6b7280;
+        font-size: 0.85rem;
+        line-height: 1.3;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="viewport-shell">
+      <p class="status" id="status">Reading viewport...</p>
+    </div>
+
+    <script>
+      const COMPONENT_READY = "streamlit:componentReady";
+      const RENDER_EVENT = "streamlit:render";
+      const SET_COMPONENT_VALUE = "streamlit:setComponentValue";
+      const SET_FRAME_HEIGHT = "streamlit:setFrameHeight";
+
+      let lastPayloadJson = "";
+      let resizeTimer = null;
+
+      function sendMessage(type, data) {
+        window.parent.postMessage(
+          {
+            isStreamlitMessage: true,
+            type,
+            ...data,
+          },
+          "*"
+        );
+      }
+
+      function setFrameHeight(height) {
+        sendMessage(SET_FRAME_HEIGHT, { height });
+      }
+
+      function setComponentValue(value) {
+        sendMessage(SET_COMPONENT_VALUE, { value });
+      }
+
+      function currentWindowSize(targetWindow) {
+        const targetDocument = targetWindow.document;
+        return {
+          width: targetWindow.innerWidth || targetDocument.documentElement.clientWidth || 0,
+          height: targetWindow.innerHeight || targetDocument.documentElement.clientHeight || 0,
+        };
+      }
+
+      function browserViewportSize() {
+        const iframe = currentWindowSize(window);
+
+        try {
+          if (window.parent && window.parent !== window) {
+            return {
+              ...currentWindowSize(window.parent),
+              source: "parent_window",
+              iframeWidth: iframe.width,
+              iframeHeight: iframe.height,
+            };
+          }
+        } catch (error) {
+          return {
+            ...iframe,
+            source: "iframe_fallback_parent_blocked",
+            iframeWidth: iframe.width,
+            iframeHeight: iframe.height,
+          };
+        }
+
+        return {
+          ...iframe,
+          source: "iframe",
+          iframeWidth: iframe.width,
+          iframeHeight: iframe.height,
+        };
+      }
+
+      function viewportPayload() {
+        const viewport = browserViewportSize();
+        const width = viewport.width;
+        const height = viewport.height;
+        const aspectRatio = height > 0 ? width / height : null;
+        let orientation = "square";
+
+        if (aspectRatio !== null && aspectRatio < 1) {
+          orientation = "portrait";
+        } else if (aspectRatio !== null && aspectRatio > 1) {
+          orientation = "landscape";
+        }
+
+        return {
+          width,
+          height,
+          iframeWidth: viewport.iframeWidth,
+          iframeHeight: viewport.iframeHeight,
+          viewportSource: viewport.source,
+          screenWidth: window.screen ? window.screen.width : null,
+          screenHeight: window.screen ? window.screen.height : null,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          aspectRatio,
+          orientation,
+          renderPath: aspectRatio !== null && aspectRatio < 1 ? "mobile_portrait" : "widescreen",
+          userAgent: navigator.userAgent,
+          timestamp: new Date().toISOString(),
+        };
+      }
+
+      function reportViewport() {
+        const payload = viewportPayload();
+        const comparablePayload = { ...payload, timestamp: "" };
+        const payloadJson = JSON.stringify(comparablePayload);
+
+        setFrameHeight(document.body.scrollHeight + 8);
+        document.getElementById("status").textContent =
+          `${payload.width} x ${payload.height} (${payload.orientation})`;
+
+        if (payloadJson === lastPayloadJson) {
+          return;
+        }
+
+        lastPayloadJson = payloadJson;
+        setComponentValue(payload);
+      }
+
+      function debounceReportViewport() {
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(reportViewport, 150);
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.data.type !== RENDER_EVENT) {
+          return;
+        }
+        reportViewport();
+      });
+
+      window.addEventListener("resize", debounceReportViewport);
+      window.addEventListener("orientationchange", debounceReportViewport);
+
+      sendMessage(COMPONENT_READY, { apiVersion: 1 });
+      reportViewport();
+    </script>
+  </body>
+</html>
