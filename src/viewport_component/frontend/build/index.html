@@ -101,6 +101,31 @@
         return numericArg("debounce_ms", DEFAULT_RESIZE_DEBOUNCE_MS);
       }
 
+      function detectedDevicePlatform() {
+        const userAgent = navigator.userAgent || "";
+        const platform = navigator.platform || "";
+        const hasTouch = navigator.maxTouchPoints && navigator.maxTouchPoints > 1;
+
+        if (/Android/i.test(userAgent)) {
+          return "android";
+        }
+        if (/iPhone|iPad|iPod/i.test(userAgent)) {
+          return "ios";
+        }
+        if (/Macintosh/i.test(userAgent) && /Mac/i.test(platform) && hasTouch) {
+          return "ios";
+        }
+        return "pc";
+      }
+
+      function devicePlatform() {
+        try {
+          return detectedDevicePlatform();
+        } catch (error) {
+          return "all";
+        }
+      }
+
       function viewportPayload() {
         const viewport = browserViewportSize();
         const width = viewport.width;
@@ -126,6 +151,7 @@
           aspectRatio,
           orientation,
           renderPath: aspectRatio !== null && aspectRatio < 1 ? "mobile_portrait" : "widescreen",
+          devicePlatform: devicePlatform(),
           userAgent: navigator.userAgent,
           timestamp: new Date().toISOString(),
         };
@@ -142,7 +168,8 @@
         return (
           widthDelta > threshold ||
           heightDelta > threshold ||
-          payload.orientation !== lastReportedPayload.orientation
+          payload.orientation !== lastReportedPayload.orientation ||
+          payload.devicePlatform !== lastReportedPayload.devicePlatform
         );
       }
 

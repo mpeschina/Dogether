@@ -7,8 +7,10 @@ from src.pages.health_data_import_page import (
     DEFAULT_SHORTCUT_INSTALL_URL,
     active_health_data_import_goal,
     apple_steps_shortcut_run_url,
+    data_import_available_for_viewport,
     health_data_import_settings,
     health_data_import_enabled,
+    normalized_data_import_availability,
 )
 from src.pages.common_helpers import (
     ACTIVITY_COLORS,
@@ -345,7 +347,36 @@ def test_apple_steps_shortcut_settings_have_install_default_and_encoded_run_url(
     settings = health_data_import_settings({"health_data": {}})
 
     assert settings["apple_steps_shortcut_install_url"] == DEFAULT_SHORTCUT_INSTALL_URL
+    assert settings["apple_steps_shortcut_availability"] == "ios"
     assert apple_steps_shortcut_run_url("Dogether Steps") == "shortcuts://run-shortcut?name=Dogether%20Steps"
+
+
+def test_apple_steps_shortcut_availability_setting_is_per_path_and_normalized() -> None:
+    for availability in ("all", "ios", "android", "pc"):
+        settings = health_data_import_settings(
+            {"health_data": {"apple_steps_shortcut_availability": availability.upper()}}
+        )
+
+        assert settings["apple_steps_shortcut_availability"] == availability
+
+    assert normalized_data_import_availability("desktop") == "ios"
+    assert health_data_import_settings(
+        {"health_data": {"apple_steps_shortcut_availability": "desktop"}}
+    )["apple_steps_shortcut_availability"] == "ios"
+
+
+def test_data_import_availability_matches_viewport_platforms() -> None:
+    assert data_import_available_for_viewport("all", None) is True
+    assert data_import_available_for_viewport("all", {"devicePlatform": "pc"}) is True
+    assert data_import_available_for_viewport("ios", None) is False
+    assert data_import_available_for_viewport("ios", {"devicePlatform": "all"}) is True
+    assert data_import_available_for_viewport("ios", {"devicePlatform": "ios"}) is True
+    assert data_import_available_for_viewport("ios", {"devicePlatform": "android"}) is False
+    assert data_import_available_for_viewport("android", {"devicePlatform": "android"}) is True
+    assert data_import_available_for_viewport("android", {"devicePlatform": "pc"}) is False
+    assert data_import_available_for_viewport("pc", {"devicePlatform": "pc"}) is True
+    assert data_import_available_for_viewport("pc", {"devicePlatform": "ios"}) is False
+    assert data_import_available_for_viewport("pc", {"devicePlatform": "all"}) is True
 
 
 def _friend(persistence: JsonPersistence, first: dict, second: dict) -> None:
@@ -409,7 +440,20 @@ def test_main_page_uses_viewport_render_paths() -> None:
 
     assert "from src.viewport_component import viewport_info" in content
     assert 'viewport_info(key="main_viewport_info")' in content
+    assert "def main_viewport()" in content
+    assert "def main_render_path(viewport: dict)" in content
     assert "def render_goal_actions(" in content
     assert "def render_participant_progress(" in content
     assert 'render_path == "mobile_portrait"' in content
     assert "st.columns([6, 2])" in content
+
+
+def test_main_page_gates_apple_steps_import_by_viewport_device() -> None:
+    content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
+
+    assert "data_import_available_for_viewport" in content
+    assert 'health_data_settings.get("apple_steps_shortcut_availability", "ios")' in content
+    assert "can_use_apple_steps_shortcut = uses_health_data and" in content
+    assert "elif can_use_apple_steps_shortcut:" in content
+    assert "render_goal_actions(" in content
+    assert "viewport," in content

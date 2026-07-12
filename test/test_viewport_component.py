@@ -17,11 +17,19 @@ def test_viewport_component_build_exists_with_streamlit_hooks() -> None:
     assert "iframeHeight" in content
     assert "mobile_portrait" in content
     assert "widescreen" in content
+    assert "function detectedDevicePlatform()" in content
+    assert "function devicePlatform()" in content
+    assert "devicePlatform: devicePlatform()" in content
+    assert 'return "ios"' in content
+    assert 'return "android"' in content
+    assert 'return "pc"' in content
+    assert 'return "all"' in content
     assert "DEFAULT_RESIZE_PIXEL_THRESHOLD = 10" in content
     assert "DEFAULT_RESIZE_DEBOUNCE_MS = 300" in content
     assert "widthDelta > threshold" in content
     assert "heightDelta > threshold" in content
     assert "payload.orientation !== lastReportedPayload.orientation" in content
+    assert "payload.devicePlatform !== lastReportedPayload.devicePlatform" in content
 
 
 def test_debug_page_renders_viewport_diagnostics() -> None:

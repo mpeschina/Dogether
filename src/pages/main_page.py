@@ -10,6 +10,7 @@ from src.pages.account_page import render_activity_diagram
 from src.pages.common_helpers import compact_goal_activity_html, mini_activity_styles
 from src.pages.health_data_import_page import (
     apple_steps_shortcut_run_url,
+    data_import_available_for_viewport,
     health_data_import_settings,
     health_data_import_enabled,
 )
@@ -89,8 +90,12 @@ def participant_name_with_progress_html(
 
 
 
-def main_render_path() -> str:
+def main_viewport() -> dict:
     viewport = viewport_info(key="main_viewport_info")
+    return viewport if isinstance(viewport, dict) else {"devicePlatform": "all"}
+
+
+def main_render_path(viewport: dict) -> str:
     if isinstance(viewport, dict) and viewport.get("renderPath") == "mobile_portrait":
         return "mobile_portrait"
     return "widescreen"
@@ -104,13 +109,19 @@ def render_goal_actions(
     push_storage: PushStorage | None,
     push_settings: dict[str, str] | None,
     now: datetime | None,
+    viewport: dict | None = None,
 ) -> None:
     current = int(participant.get("current", 0))
     target = int(participant.get("target", 1))
     skipped = bool(participant.get("skipped", False))
     action_cols = st.columns([1, 1])
     goal_is_done = current >= max(1, target)
+    health_data_settings = health_data_import_settings()
     uses_health_data = health_data_import_enabled(goal, user_id)
+    can_use_apple_steps_shortcut = uses_health_data and data_import_available_for_viewport(
+        health_data_settings.get("apple_steps_shortcut_availability", "ios"),
+        viewport,
+    )
     if goal_is_done or skipped:
         if action_cols[0].button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
             update_goal_progress_with_push(
@@ -124,8 +135,8 @@ def render_goal_actions(
                 now=now,
             )
             st.rerun()
-    elif uses_health_data:
-        shortcut_name = health_data_import_settings().get("apple_steps_shortcut_name", "Dogether Steps")
+    elif can_use_apple_steps_shortcut:
+        shortcut_name = health_data_settings.get("apple_steps_shortcut_name", "Dogether Steps")
         action_cols[0].link_button(
             "Input Data",
             apple_steps_shortcut_run_url(shortcut_name),
@@ -282,7 +293,8 @@ def render_main(
         st.info("Create a shared goal with a friend to get started.")
         return
 
-    render_path = main_render_path()
+    viewport = main_viewport()
+    render_path = main_render_path(viewport)
     all_participant_ids = sorted({uid for goal in goals for uid in goal.get("participants", {})})
     users = persistence.users_by_ids(all_participant_ids)
     friend_ids = {friend["user_id"] for friend in persistence.list_friends(user_id)}
@@ -309,6 +321,7 @@ def render_main(
                     push_storage,
                     push_settings,
                     now,
+                    viewport,
                 )
             participant_ids = visible_participant_ids(goal, user_id, friend_ids)
             for participant_id in participant_ids:
@@ -330,4 +343,5 @@ def render_main(
                             push_storage,
                             push_settings,
                             now,
+                            viewport,
                         )

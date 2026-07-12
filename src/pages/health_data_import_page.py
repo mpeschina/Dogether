@@ -12,6 +12,28 @@ from src.pages.page_helpers import schedule_label
 DEFAULT_SHORTCUT_NAME = "Dogether Steps"
 DEFAULT_SHORTCUT_INSTALL_URL = "https://www.icloud.com/shortcuts/e7e2d701ee3c4b65b76c2c5942dd0e52"
 DEFAULT_RETURN_URL = "https://dogether.streamlit.app/"
+DEFAULT_APPLE_STEPS_SHORTCUT_AVAILABILITY = "ios"
+DATA_IMPORT_DEVICE_AVAILABILITY = {"all", "ios", "android", "pc"}
+
+
+def normalized_data_import_availability(value: Any) -> str:
+    availability = str(value or "").strip().lower()
+    if availability in DATA_IMPORT_DEVICE_AVAILABILITY:
+        return availability
+    return DEFAULT_APPLE_STEPS_SHORTCUT_AVAILABILITY
+
+
+def data_import_available_for_viewport(
+    availability: str,
+    viewport: Mapping[str, Any] | None,
+) -> bool:
+    availability = normalized_data_import_availability(availability)
+    if availability == "all":
+        return True
+    if not isinstance(viewport, Mapping):
+        return False
+    device_platform = str(viewport.get("devicePlatform") or "").strip().lower()
+    return device_platform == "all" or device_platform == availability
 
 
 def health_data_import_settings(secrets: Mapping[str, Any] | None = None) -> dict[str, str]:
@@ -23,6 +45,9 @@ def health_data_import_settings(secrets: Mapping[str, Any] | None = None) -> dic
         ),
         "apple_steps_shortcut_name": str(
             config.get("apple_steps_shortcut_name", DEFAULT_SHORTCUT_NAME)
+        ),
+        "apple_steps_shortcut_availability": normalized_data_import_availability(
+            config.get("apple_steps_shortcut_availability")
         ),
         "return_url": str(config.get("return_url", DEFAULT_RETURN_URL)),
     }
