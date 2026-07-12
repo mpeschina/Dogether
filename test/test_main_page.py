@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 
 from src.db.json_persistence import JsonPersistence
 from src.pages.friends_page import friend_suggestion_candidates
@@ -401,3 +402,14 @@ def test_friend_suggestion_candidates_exclude_pending_and_declined_suggestions(t
     persistence.respond_friend_suggestion(suggestion["id"], "bob", approve=False)
 
     assert friend_suggestion_candidates(persistence, "alice") == []
+
+
+def test_main_page_uses_viewport_render_paths() -> None:
+    content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
+
+    assert "from src.viewport_component import viewport_info" in content
+    assert 'viewport_info(key="main_viewport_info")' in content
+    assert "def render_goal_actions(" in content
+    assert "def render_participant_progress(" in content
+    assert 'render_path == "mobile_portrait"' in content
+    assert "st.columns([6, 2])" in content

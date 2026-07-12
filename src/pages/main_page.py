@@ -16,6 +16,7 @@ from src.pages.health_data_import_page import (
 from src.pages.page_helpers import participant_name, progress_bar, schedule_label
 from src.push.notifications import update_goal_progress_with_push
 from src.push.storage import PushStorage
+from src.viewport_component import viewport_info
 
 
 DONE_BUTTON_GREEN = "#2E9E57"
@@ -88,6 +89,141 @@ def participant_name_with_progress_html(
 
 
 
+def main_render_path() -> str:
+    viewport = viewport_info(key="main_viewport_info")
+    if isinstance(viewport, dict) and viewport.get("renderPath") == "mobile_portrait":
+        return "mobile_portrait"
+    return "widescreen"
+
+
+def render_goal_actions(
+    persistence: Persistence,
+    goal: dict,
+    participant: dict,
+    user_id: str,
+    push_storage: PushStorage | None,
+    push_settings: dict[str, str] | None,
+    now: datetime | None,
+) -> None:
+    current = int(participant.get("current", 0))
+    target = int(participant.get("target", 1))
+    skipped = bool(participant.get("skipped", False))
+    action_cols = st.columns([1, 1])
+    goal_is_done = current >= max(1, target)
+    uses_health_data = health_data_import_enabled(goal, user_id)
+    if goal_is_done or skipped:
+        if action_cols[0].button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
+            update_goal_progress_with_push(
+                persistence,
+                push_storage,
+                push_settings or {},
+                goal_id=goal["id"],
+                user_id=user_id,
+                current=0,
+                skipped=False,
+                now=now,
+            )
+            st.rerun()
+    elif uses_health_data:
+        shortcut_name = health_data_import_settings().get("apple_steps_shortcut_name", "Dogether Steps")
+        action_cols[0].link_button(
+            "Input Data",
+            apple_steps_shortcut_run_url(shortcut_name),
+            type="primary",
+            use_container_width=True,
+        )
+    elif action_cols[0].button(
+        "Done",
+        key=f"done_{goal['id']}",
+        type="primary",
+        use_container_width=True,
+    ):
+        update_goal_progress_with_push(
+            persistence,
+            push_storage,
+            push_settings or {},
+            goal_id=goal["id"],
+            user_id=user_id,
+            current=max(1, target),
+            now=now,
+        )
+        st.rerun()
+    if not (goal_is_done or skipped):
+        with action_cols[1].popover("Set", use_container_width=True):
+            current_key = f"current_{goal['id']}"
+            current = st.number_input(
+                "Current",
+                min_value=0,
+                value=int(participant.get("current", 0)),
+                key=current_key,
+            )
+            detail_cols = st.columns(3)
+            if detail_cols[0].button("Save", key=f"save_{goal['id']}", use_container_width=True):
+                update_goal_progress_with_push(
+                    persistence,
+                    push_storage,
+                    push_settings or {},
+                    goal_id=goal["id"],
+                    user_id=user_id,
+                    current=current,
+                    now=now,
+                )
+                st.rerun()
+            if detail_cols[1].button("+1", key=f"plus_{goal['id']}", use_container_width=True):
+                update_goal_progress_with_push(
+                    persistence,
+                    push_storage,
+                    push_settings or {},
+                    goal_id=goal["id"],
+                    user_id=user_id,
+                    delta=1,
+                    now=now,
+                )
+                st.rerun()
+            if detail_cols[2].button("-1", key=f"minus_{goal['id']}", use_container_width=True):
+                update_goal_progress_with_push(
+                    persistence,
+                    push_storage,
+                    push_settings or {},
+                    goal_id=goal["id"],
+                    user_id=user_id,
+                    delta=-1,
+                    now=now,
+                )
+                st.rerun()
+            if st.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
+                update_goal_progress_with_push(
+                    persistence,
+                    push_storage,
+                    push_settings or {},
+                    goal_id=goal["id"],
+                    user_id=user_id,
+                    skipped=True,
+                    now=now,
+                )
+                st.rerun()
+
+
+def render_participant_progress(
+    goal: dict,
+    participant_id: str,
+    participant: dict,
+    users: dict[str, dict],
+    now: datetime | None,
+) -> None:
+    current = int(participant.get("current", 0))
+    target = int(participant.get("target", 1))
+    skipped = bool(participant.get("skipped", False))
+    name = participant_name(users, participant_id)
+    progress_label = participant_progress_label(current, target, skipped)
+    st.markdown(
+        participant_name_with_progress_html(name, progress_label, goal, participant, now=now),
+        unsafe_allow_html=True,
+    )
+    if not skipped:
+        progress_bar(current, target, show_caption=False)
+
+
 def render_main(
     persistence: Persistence,
     current_user: dict,
@@ -146,6 +282,7 @@ def render_main(
         st.info("Create a shared goal with a friend to get started.")
         return
 
+    render_path = main_render_path()
     all_participant_ids = sorted({uid for goal in goals for uid in goal.get("participants", {})})
     users = persistence.users_by_ids(all_participant_ids)
     friend_ids = {friend["user_id"] for friend in persistence.list_friends(user_id)}
@@ -163,118 +300,34 @@ def render_main(
                 ),
                 unsafe_allow_html=True,
             )
+            if render_path == "mobile_portrait" and user_id in goal.get("participants", {}):
+                render_goal_actions(
+                    persistence,
+                    goal,
+                    goal["participants"][user_id],
+                    user_id,
+                    push_storage,
+                    push_settings,
+                    now,
+                )
             participant_ids = visible_participant_ids(goal, user_id, friend_ids)
             for participant_id in participant_ids:
                 participant = goal["participants"][participant_id]
-                current = int(participant.get("current", 0))
-                target = int(participant.get("target", 1))
-                skipped = bool(participant.get("skipped", False))
-                is_current_user = participant_id == user_id
+                if render_path == "mobile_portrait":
+                    render_participant_progress(goal, participant_id, participant, users, now)
+                    continue
+
                 cols = st.columns([6, 2])
                 with cols[0]:
-                    name = participant_name(users, participant_id)
-                    progress_label = participant_progress_label(current, target, skipped)
-                    st.markdown(
-                        participant_name_with_progress_html(name, progress_label, goal, participant, now=now),
-                        unsafe_allow_html=True,
-                    )
-                    if not skipped:
-                        progress_bar(current, target, show_caption=False)
-                if is_current_user:
+                    render_participant_progress(goal, participant_id, participant, users, now)
+                if participant_id == user_id:
                     with cols[1]:
-                        action_cols = st.columns([1, 1])
-                        goal_is_done = current >= max(1, target)
-                        uses_health_data = health_data_import_enabled(goal, user_id)
-                        if goal_is_done or skipped:
-                            if action_cols[0].button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
-                                update_goal_progress_with_push(
-                                    persistence,
-                                    push_storage,
-                                    push_settings or {},
-                                    goal_id=goal["id"],
-                                    user_id=user_id,
-                                    current=0,
-                                    skipped=False,
-                                    now=now,
-                                )
-                                st.rerun()
-                        elif uses_health_data:
-                            shortcut_name = health_data_import_settings().get(
-                                "apple_steps_shortcut_name", "Dogether Steps"
-                            )
-                            action_cols[0].link_button(
-                                "Input Data",
-                                apple_steps_shortcut_run_url(shortcut_name),
-                                type="primary",
-                                use_container_width=True,
-                            )
-                        elif action_cols[0].button(
-                            "Done",
-                            key=f"done_{goal['id']}",
-                            type="primary",
-                            use_container_width=True,
-                        ):
-                            update_goal_progress_with_push(
-                                persistence,
-                                push_storage,
-                                push_settings or {},
-                                goal_id=goal["id"],
-                                user_id=user_id,
-                                current=max(1, target),
-                                now=now,
-                            )
-                            st.rerun()
-                        if not (goal_is_done or skipped):
-                            with action_cols[1].popover("Set", use_container_width=True):
-                                current_key = f"current_{goal['id']}"
-                                current = st.number_input(
-                                    "Current",
-                                    min_value=0,
-                                    value=int(participant.get("current", 0)),
-                                    key=current_key,
-                                )
-                                detail_cols = st.columns(3)
-                                if detail_cols[0].button("Save", key=f"save_{goal['id']}", use_container_width=True):
-                                    update_goal_progress_with_push(
-                                        persistence,
-                                        push_storage,
-                                        push_settings or {},
-                                        goal_id=goal["id"],
-                                        user_id=user_id,
-                                        current=current,
-                                        now=now,
-                                    )
-                                    st.rerun()
-                                if detail_cols[1].button("+1", key=f"plus_{goal['id']}", use_container_width=True):
-                                    update_goal_progress_with_push(
-                                        persistence,
-                                        push_storage,
-                                        push_settings or {},
-                                        goal_id=goal["id"],
-                                        user_id=user_id,
-                                        delta=1,
-                                        now=now,
-                                    )
-                                    st.rerun()
-                                if detail_cols[2].button("-1", key=f"minus_{goal['id']}", use_container_width=True):
-                                    update_goal_progress_with_push(
-                                        persistence,
-                                        push_storage,
-                                        push_settings or {},
-                                        goal_id=goal["id"],
-                                        user_id=user_id,
-                                        delta=-1,
-                                        now=now,
-                                    )
-                                    st.rerun()
-                                if st.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
-                                    update_goal_progress_with_push(
-                                        persistence,
-                                        push_storage,
-                                        push_settings or {},
-                                        goal_id=goal["id"],
-                                        user_id=user_id,
-                                        skipped=True,
-                                        now=now,
-                                    )
-                                    st.rerun()
+                        render_goal_actions(
+                            persistence,
+                            goal,
+                            participant,
+                            user_id,
+                            push_storage,
+                            push_settings,
+                            now,
+                        )
