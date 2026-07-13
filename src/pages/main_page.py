@@ -7,7 +7,11 @@ import streamlit as st
 
 from src.db.persistence import Persistence
 from src.pages.account_page import render_activity_diagram
-from src.pages.common_helpers import compact_goal_activity_html, mini_activity_styles
+from src.pages.common_helpers import (
+    compact_goal_activity_html,
+    mini_activity_styles,
+    participant_sparkline_html,
+)
 from src.pages.health_data_import_page import (
     apple_steps_shortcut_run_url,
     data_import_available_for_viewport,
@@ -74,15 +78,17 @@ def participant_name_with_progress_html(
     participant: dict | None = None,
     now: datetime | None = None,
 ) -> str:
-    dots_html = (
-        compact_goal_activity_html(goal, participant, now=now)
-        if goal is not None and participant is not None
-        else ""
-    )
+    if goal is not None and participant is not None:
+        sparkline_html = participant_sparkline_html(goal, participant, now=now)
+        dots_html = compact_goal_activity_html(goal, participant, now=now)
+    else:
+        sparkline_html = ""
+        dots_html = ""
     return (
         "<div class='participant-progress-row'>"
         f"<span class='participant-progress-name' title='{escape(name, quote=True)}'>"
-        f"{escape(truncate_participant_name(name))}</span>"
+        f"<span class='participant-progress-name-text'>{escape(truncate_participant_name(name))}</span>"
+        f"{sparkline_html}</span>"
         f"<span class='participant-progress-count'>{escape(progress_label)}</span>"
         f"{dots_html}"
         "</div>"
@@ -225,6 +231,12 @@ def render_participant_progress(
         progress_bar(current, target, show_caption=False)
 
 
+def main_render_path(viewport: dict) -> str:
+    if isinstance(viewport, dict) and viewport.get("renderPath") == "mobile_portrait":
+        return "mobile_portrait"
+    return "widescreen"
+
+
 def render_main(
     persistence: Persistence,
     current_user: dict,
@@ -261,6 +273,14 @@ def render_main(
             white-space: nowrap;
         }}
         .participant-progress-name {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        .participant-progress-name-text {{
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -276,10 +296,7 @@ def render_main(
     )
 
     viewport = viewport_info()
-    render_path = "widescreen"
-    if isinstance(viewport, dict) and viewport.get("renderPath") == "mobile_portrait":
-        render_path = "mobile_portrait"
-    
+    render_path = main_render_path(viewport)
 
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)

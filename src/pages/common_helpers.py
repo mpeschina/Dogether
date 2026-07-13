@@ -12,6 +12,12 @@ ACTIVITY_CELL_SIZE = "11px"
 ACTIVITY_CELL_GAP = "3px"
 FUTURE_ACTIVITY_COLOR = "#ffffff"
 STREAMLIT_PRIMARY_COLOR = "#1F2937"
+PARTICIPANT_SPARKLINE_COLOR = "#1F2937"
+PARTICIPANT_SPARKLINE_FILL = "#F0F2F6"
+PARTICIPANT_SPARKLINE_WIDTH = 90
+PARTICIPANT_SPARKLINE_HEIGHT = 22
+PARTICIPANT_SPARKLINE_PAD = 2
+PARTICIPANT_SPARKLINE_DEFAULT_DAYS = 10
 X_PER_SCHEDULE_CLASSES = {"daily_x_per_week", "weekly_x_per_month"}
 
 
@@ -45,6 +51,51 @@ def compact_goal_activity_html(goal: dict, participant: dict, now: datetime | No
     return f"<span class='mini-activity-dots'>{''.join(dots)}</span>"
 
 
+def participant_sparkline_html(
+    goal: dict,
+    participant: dict,
+    now: datetime | None = None,
+    days: int = PARTICIPANT_SPARKLINE_DEFAULT_DAYS,
+) -> str:
+    values = _participant_sparkline_values(goal, participant, now=now, days=days)
+    if len(values) < 2:
+        values = [*values, values[0] if values else 0.0]
+
+    min_v = min(values)
+    max_v = max(values)
+    span = max(max_v - min_v, 1e-9)
+    width = PARTICIPANT_SPARKLINE_WIDTH
+    height = PARTICIPANT_SPARKLINE_HEIGHT
+    pad = PARTICIPANT_SPARKLINE_PAD
+
+    points = []
+    for index, value in enumerate(values):
+        x = pad + index * (width - 2 * pad) / (len(values) - 1)
+        y = pad + (max_v - value) * (height - 2 * pad) / span
+        points.append((x, y))
+
+    line_points = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
+    area_points = (
+        f"{points[0][0]:.1f},{height - pad:.1f} "
+        f"{line_points} "
+        f"{points[-1][0]:.1f},{height - pad:.1f}"
+    )
+    last_x, last_y = points[-1]
+
+    return (
+        "<span class='participant-sparkline' aria-hidden='true'>"
+        f"<svg width='{width}' height='{height}' viewBox='0 0 {width} {height}' "
+        "focusable='false'>"
+        f"<polygon points='{area_points}' fill='{PARTICIPANT_SPARKLINE_FILL}'></polygon>"
+        f"<polyline points='{line_points}' fill='none' stroke='{PARTICIPANT_SPARKLINE_COLOR}' "
+        "stroke-width='2' stroke-linecap='round' stroke-linejoin='round'></polyline>"
+        f"<circle cx='{last_x:.1f}' cy='{last_y:.1f}' r='3' "
+        f"fill='{PARTICIPANT_SPARKLINE_COLOR}'></circle>"
+        "</svg>"
+        "</span>"
+    )
+
+
 def mini_activity_styles() -> str:
     return f"""
         .mini-activity-dots {{
@@ -63,7 +114,55 @@ def mini_activity_styles() -> str:
         .mini-activity-dot-current {{
             box-shadow: 0 0 0 1.5px rgba(31,41,55,0.42);
         }}
+        .participant-sparkline {{
+            display: inline-flex;
+            align-items: center;
+            flex: 0 0 auto;
+            line-height: 1;
+            vertical-align: middle;
+        }}
+        .participant-sparkline svg {{
+            display: block;
+        }}
     """
+
+
+def _participant_sparkline_values(
+    goal: dict,
+    participant: dict,
+    now: datetime | None = None,
+    days: int = PARTICIPANT_SPARKLINE_DEFAULT_DAYS,
+) -> list[float]:
+    now_dt = _now(now)
+    day_count = max(1, int(days or PARTICIPANT_SPARKLINE_DEFAULT_DAYS))
+    start_day = now_dt.date() - timedelta(days=day_count - 1)
+    return [
+        _participant_sparkline_value(goal, participant, start_day + timedelta(days=offset), now_dt)
+        for offset in range(day_count)
+    ]
+
+
+def _participant_sparkline_value(
+    goal: dict,
+    participant: dict,
+    day,
+    now_dt: datetime,
+) -> float:
+    outcome = participant.get("period_outcomes", {}).get(day.isoformat())
+    if isinstance(outcome, dict):
+        if bool(outcome.get("completed", False)) or bool(outcome.get("fulfilled", False)):
+            return 100.0
+        return min(100.0, _outcome_percent(outcome))
+
+    if day == now_dt.date():
+        schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+        if _period_fulfilled(goal, participant, _period_start(now_dt, schedule["base"])):
+            return 100.0
+        target = max(1, int(participant.get("target", 1) or 1))
+        current = max(0, int(participant.get("current", 0) or 0))
+        return min(100.0, (current / target) * 100)
+
+    return 0.0
 
 
 def _mini_activity_dot_class(period_start: datetime, current_period_start: datetime) -> str:

@@ -13,10 +13,14 @@ from src.pages.health_data_import_page import (
 from src.pages.common_helpers import (
     ACTIVITY_CELL_SIZE,
     ACTIVITY_COLORS,
+    PARTICIPANT_SPARKLINE_FILL,
     FUTURE_ACTIVITY_COLOR,
+    PARTICIPANT_SPARKLINE_COLOR,
+    PARTICIPANT_SPARKLINE_DEFAULT_DAYS,
     STREAMLIT_PRIMARY_COLOR,
     compact_goal_activity_html,
     mini_activity_styles,
+    participant_sparkline_html,
 )
 from src.pages.main_page import (
     participant_name_with_progress_html,
@@ -137,6 +141,34 @@ def test_participant_name_with_progress_truncates_and_escapes_name() -> None:
     assert "ABCDEFGHIJKLMNOPQRSTUV..." in html
     assert "title='ABCDEFGHIJKLMNOPQRSTUVWX&lt;danger&gt;'" in html
     assert "<danger>" not in html
+
+
+def test_participant_sparkline_renders_ten_day_inline_svg_with_progress_bar_fill() -> None:
+    participant = {
+        "current": 8,
+        "target": 10,
+        "skipped": False,
+        "period_outcomes": {
+            "2026-06-01": {"completed": False, "fulfilled": False, "percent": 20.0},
+            "2026-06-04": {"completed": True, "fulfilled": True},
+            "2026-06-08": {"completed": False, "fulfilled": False, "current": 5, "target": 10},
+        },
+    }
+
+    html = participant_sparkline_html(
+        _goal("daily", participant=participant),
+        participant,
+        now=_at("2026-06-10T12:00:00"),
+    )
+    line_points = html.split("<polyline", 1)[1].split("points='", 1)[1].split("'", 1)[0].split()
+
+    assert "participant-sparkline" in html
+    assert f"stroke='{PARTICIPANT_SPARKLINE_COLOR}'" in html
+    assert f"<polygon points=" in html
+    assert f"fill='{PARTICIPANT_SPARKLINE_FILL}'" in html
+    assert f"<circle" in html
+    assert f"fill='{PARTICIPANT_SPARKLINE_COLOR}'" in html
+    assert len(line_points) == PARTICIPANT_SPARKLINE_DEFAULT_DAYS
 
 
 def test_compact_goal_activity_renders_daily_current_week_seven_dots() -> None:
