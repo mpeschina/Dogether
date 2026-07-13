@@ -18,10 +18,12 @@ if _BUILD_DIR.exists():
     )
 
 
-DEFAULT_VIEWPORT_COMPONENT_KEY = "viewport_info"
+DEFAULT_VIEWPORT_COMPONENT_KEY = "viewport_info:custom_component"
+DEFAULT_VIEWPORT_CACHE_KEY = f"{DEFAULT_VIEWPORT_COMPONENT_KEY}:cache"
+DEFAULT_VIEWPORT_WAIT_START_KEY = f"{DEFAULT_VIEWPORT_COMPONENT_KEY}:wait_started_at"
 DEFAULT_RESIZE_PIXEL_THRESHOLD = 20
 DEFAULT_RESIZE_DEBOUNCE_MS = 500
-DEFAULT_LOADING_MESSAGE = "Loading layout..."
+DEFAULT_LOADING_MESSAGE = None # could be "Loading layout..."
 DEFAULT_FALLBACK_TIMEOUT_SECONDS = 5
 DEBUG_PRINTS = True
 DEBUG_COUNT = 0
@@ -41,16 +43,6 @@ DEFAULT_FALLBACK_VIEWPORT: dict[str, Any] = {
     "renderPath": "widescreen",
     "devicePlatform": "pc",
 }
-
-
-def _viewport_cache_key(session_key: str | None = None) -> str:
-    if session_key:
-        return session_key
-    return f"viewport_info:{DEFAULT_VIEWPORT_COMPONENT_KEY}:payload"
-
-
-def _viewport_wait_start_key(session_key: str | None = None) -> str:
-    return f"{_viewport_cache_key(session_key)}:wait_started_at"
 
 
 def _fallback_viewport(fallback_viewport: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -73,9 +65,8 @@ def viewport_info(
     pixel_threshold: int = DEFAULT_RESIZE_PIXEL_THRESHOLD,
     debounce_ms: int = DEFAULT_RESIZE_DEBOUNCE_MS,
     cache: bool = True,
-    session_key: str | None = None,
     require_ready: bool = True,
-    loading_message: str | None = None,
+    loading_message: str | None = DEFAULT_LOADING_MESSAGE,
     fallback_timeout_seconds: float | None = DEFAULT_FALLBACK_TIMEOUT_SECONDS,
     fallback_viewport: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
@@ -113,11 +104,8 @@ def viewport_info(
             changes are always reported. Defaults to ``20``.
         debounce_ms: Delay in milliseconds before reporting resize/orientation
             changes. Defaults to ``500``.
-        cache: Store and return the last valid payload from ``st.session_state``.
-            Defaults to ``True``.
-        session_key: Optional explicit ``st.session_state`` key for the cached
-            payload. When omitted, the cache key is derived from
-            ``DEFAULT_VIEWPORT_COMPONENT_KEY``.
+        cache: Store and return the last valid payload from ``st.session_state``
+            under ``DEFAULT_VIEWPORT_CACHE_KEY``. Defaults to ``True``.
         require_ready: When ``True``, stop the current Streamlit run until a
             viewport payload is available. This keeps exact viewport-dependent
             pages to a single early call and avoids expensive first-pass work.
@@ -142,13 +130,7 @@ def viewport_info(
         global DEBUG_COUNT
         DEBUG_COUNT += 1
         print(f"viewport_info called ({DEBUG_COUNT})")
-
-    cache_key = _viewport_cache_key(session_key)
-    cached_viewport = st.session_state.get(cache_key, None) if cache else None
-    if isinstance(cached_viewport, dict):
-        if DEBUG_PRINTS: 
-            print(f"cache loaded: {str(cached_viewport)[:20]}")
-        return cached_viewport
+    cached_viewport = st.session_state.get(DEFAULT_VIEWPORT_CACHE_KEY, None) if cache else None
 
     if _component_func is None:
         st.error(
@@ -161,17 +143,18 @@ def viewport_info(
     viewport = _component_func(
         pixel_threshold=max(0, int(pixel_threshold)),
         debounce_ms=max(0, int(debounce_ms)),
+        cached_viewport=cached_viewport if isinstance(cached_viewport, dict) else None,
         key=DEFAULT_VIEWPORT_COMPONENT_KEY,
-        default=None,
+        default=cached_viewport if isinstance(cached_viewport, dict) else None,
     )
     if DEBUG_PRINTS: 
         print(f"_component_func: {str(viewport)[:20]}")
 
     # cache the value into the session state
-    wait_start_key = _viewport_wait_start_key(session_key)
+    wait_start_key = DEFAULT_VIEWPORT_WAIT_START_KEY
     if isinstance(viewport, dict):
         if cache:
-            st.session_state[cache_key] = viewport
+            st.session_state[DEFAULT_VIEWPORT_CACHE_KEY] = viewport
         st.session_state.pop(wait_start_key, None)
         if DEBUG_PRINTS: 
             print(f"cache stored: {str(viewport)[:20]}")
@@ -188,7 +171,7 @@ def viewport_info(
         ):
             viewport = _fallback_viewport(fallback_viewport)
             if cache:
-                st.session_state[cache_key] = viewport
+                st.session_state[DEFAULT_VIEWPORT_CACHE_KEY] = viewport
             return viewport
 
         if loading_message:

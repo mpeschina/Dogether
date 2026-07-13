@@ -29,6 +29,7 @@
       const DEFAULT_RESIZE_DEBOUNCE_MS = 300;
 
       let args = {};
+      let hasRendered = false;
       let lastReportedPayload = null;
       let resizeTimer = null;
 
@@ -99,6 +100,22 @@
 
       function debounceMs() {
         return numericArg("debounce_ms", DEFAULT_RESIZE_DEBOUNCE_MS);
+      }
+
+      function cachedViewportPayload() {
+        const cached = args.cached_viewport;
+        return cached !== null && typeof cached === "object" ? cached : null;
+      }
+
+      function seedLastReportedPayload() {
+        if (lastReportedPayload !== null) {
+          return;
+        }
+
+        const cached = cachedViewportPayload();
+        if (cached !== null) {
+          lastReportedPayload = cached;
+        }
       }
 
       function detectedDevicePlatform() {
@@ -186,6 +203,9 @@
       }
 
       function debounceReportViewport() {
+        if (!hasRendered) {
+          return;
+        }
         window.clearTimeout(resizeTimer);
         resizeTimer = window.setTimeout(reportViewport, debounceMs());
       }
@@ -195,6 +215,8 @@
           return;
         }
         args = event.data.args || {};
+        hasRendered = true;
+        seedLastReportedPayload();
         reportViewport();
       });
 
@@ -202,7 +224,6 @@
       window.addEventListener("orientationchange", debounceReportViewport);
 
       sendMessage(COMPONENT_READY, { apiVersion: 1 });
-      reportViewport();
     </script>
   </body>
 </html>

@@ -118,7 +118,7 @@ def render_deployment_diagnostics() -> None:
 
 def render_viewport_diagnostics() -> None:
     st.subheader("Viewport Diagnostics")
-    viewport = viewport_info()
+    viewport = viewport_info(require_ready=False)
     if viewport is None:
         st.info("Browser viewport information has not reported yet. Streamlit may rerun shortly.")
         return
