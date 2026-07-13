@@ -29,6 +29,17 @@ DEBUG_PRINTS = False
 DEBUG_COUNT = 0
 
 
+# Viewport payload ranges from the browser component:
+# - width, height, iframeWidth, iframeHeight: integer CSS pixels, usually >= 0.
+# - screenWidth, screenHeight: integer physical-screen CSS pixels, or None.
+# - devicePixelRatio: positive number; browsers commonly report 1.0-4.0.
+# - aspectRatio: width / height as a positive float, or None when height is 0.
+# - orientation: "portrait" when aspectRatio < 1, "landscape" when > 1, else "square".
+# - renderPath: "mobile_portrait" for portrait viewports, otherwise "widescreen".
+# - devicePlatform: "ios", "android", "pc", or "all" if detection fails.
+# - viewportSource: "parent_window", "iframe", "iframe_fallback_parent_blocked", or "fallback_timeout".
+# - userAgent: browser user-agent string when reported by the browser component.
+# - timestamp: ISO-8601 browser timestamp when reported by the browser component.
 DEFAULT_FALLBACK_VIEWPORT: dict[str, Any] = {
     "width": 1920,
     "height": 1080,
