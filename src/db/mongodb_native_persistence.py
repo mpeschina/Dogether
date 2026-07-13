@@ -1,0 +1,680 @@
+"""MongoDB persistence backend using native collections and targeted updates."""
+from __future__ import annotations
+
+import copy
+from datetime import datetime
+from typing import Any, Iterable
+
+from .persistence_helpers import (
+    ACTIVITY_DAYS_REPAIR_VERSION,
+    _days_using_app,
+    _empty_store,
+    _friendship_id,
+    _goal_active_for_user,
+    _iso,
+    _new_id,
+    _normalise_friend_pair,
+    _normalise_goal_participants,
+    _normalise_store,
+    _normalise_user_profile,
+    _now,
+    _parse_dt,
+    _period_start,
+    _record_period_outcome,
+    _refresh_activity_day,
+    _repair_activity_days,
+    _schedule,
+    _next_period_start,
+    normalize_email,
+)
+
+MIGRATION_ID = "native_mongo_v1"
+class MongoNativePersistence:
+    """MongoDB persistence that stores each domain record in its own collection."""
+
+    def __init__(
+        self,
+        uri: str = "",
+        database: str = "dogether",
+        *,
+        legacy_collection: str = "users",
+        mongo_database: Any | None = None,
+    ) -> None:
+        self.uri = uri
+        self.database_name = database
+        self.legacy_collection = legacy_collection
+        self._client = None
+        self._database = mongo_database
+        if mongo_database is None and not uri:
+            raise ValueError("MongoDB native persistence requires mongodb_uri.")
+        self._ensure_indexes()
+        self._migrate_legacy_store()
+
+    @property
+    def database(self) -> Any:
+        if self._database is None:
+            from pymongo import MongoClient
+
+            self._client = MongoClient(self.uri)
+            self._database = self._client[self.database_name]
+        return self._database
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
+
+    def _collection(self, name: str) -> Any:
+        return self.database[name]
+
+    def _ensure_indexes(self) -> None:
+        self._collection("users").create_index("email")
+        self._collection("friend_invites").create_index([("status", 1), ("to_user_id", 1)])
+        self._collection("friend_invites").create_index([("status", 1), ("to_email", 1)])
+        self._collection("friend_invites").create_index([("from_user_id", 1), ("status", 1)])
+        self._collection("friendships").create_index([("user_ids", 1), ("active", 1)])
+        self._collection("friend_suggestions").create_index("status")
+        self._collection("friend_suggestions").create_index("suggested_by_user_id")
+        self._collection("friend_suggestions").create_index("suggested_user_ids")
+        self._collection("goals").create_index("participant_user_ids")
+        self._collection("goals").create_index("created_at")
+        self._collection("goals").create_index("archived_at")
+
+    def _migrate_legacy_store(self) -> None:
+        migrations = self._collection("migrations")
+        if migrations.find_one({"_id": MIGRATION_ID}):
+            return
+
+        legacy = self._collection(self.legacy_collection).find_one({"_id": "app_store"})
+        if legacy and isinstance(legacy.get("data"), dict):
+            store = _normalise_store(copy.deepcopy(legacy["data"]))
+            for key in ["users", "friend_invites", "friend_suggestions", "friendships", "goals", "user_stats"]:
+                collection = self._collection(key)
+                for document_id, document in store[key].items():
+                    collection.replace_one({"_id": document_id}, {"_id": document_id, **copy.deepcopy(document)}, upsert=True)
+            self._collection("debug").replace_one(
+                {"_id": "debug"},
+                {"_id": "debug", **copy.deepcopy(store.get("debug", {"time_offset_seconds": 0}))},
+                upsert=True,
+            )
+
+        migrations.replace_one(
+            {"_id": MIGRATION_ID},
+            {"_id": MIGRATION_ID, "completed_at": _iso(), "source_collection": self.legacy_collection},
+            upsert=True,
+        )
+
+    def _strip_id(self, document: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not document:
+            return None
+        result = copy.deepcopy(document)
+        result.pop("_id", None)
+        return result
+
+    def _strip_many(self, documents: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [self._strip_id(document) or {} for document in documents]
+
+    def _user_goal_query(self, user_id: str) -> dict[str, Any]:
+        return {
+            "participant_user_ids": user_id,
+            "archived_at": None,
+            f"participants.{user_id}.left_at": None,
+        }
+
+    def _active_goals_for_user(self, user_id: str) -> list[dict[str, Any]]:
+        goals = self._strip_many(self._collection("goals").find(self._user_goal_query(user_id)))
+        _normalise_goal_participants({goal["id"]: goal for goal in goals if "id" in goal})
+        return [goal for goal in goals if _goal_active_for_user(goal, user_id)]
+
+    def _refresh_activity_day_for_user(self, user_id: str, day: Any) -> None:
+        stats = self._strip_id(self._collection("user_stats").find_one({"_id": user_id})) or {"activity_days": {}}
+        data = {
+            "users": {},
+            "friend_invites": {},
+            "friend_suggestions": {},
+            "friendships": {},
+            "goals": {goal["id"]: goal for goal in self._active_goals_for_user(user_id)},
+            "user_stats": {user_id: stats},
+            "debug": {"time_offset_seconds": 0},
+        }
+        before = copy.deepcopy(data["user_stats"][user_id])
+        _refresh_activity_day(data, user_id, day)
+        updated = data["user_stats"][user_id]
+        if updated != before:
+            self._collection("user_stats").replace_one({"_id": user_id}, {"_id": user_id, **updated}, upsert=True)
+
+    def _repair_activity_days_for_user(self, user_id: str, now: datetime) -> dict[str, Any]:
+        stats = self._strip_id(self._collection("user_stats").find_one({"_id": user_id})) or {"activity_days": {}}
+        if stats.get("activity_days_repair_version") == ACTIVITY_DAYS_REPAIR_VERSION:
+            return stats
+        data = {
+            "users": {},
+            "friend_invites": {},
+            "friend_suggestions": {},
+            "friendships": {},
+            "goals": {goal["id"]: goal for goal in self._active_goals_for_user(user_id)},
+            "user_stats": {user_id: stats},
+            "debug": {"time_offset_seconds": 0},
+        }
+        _repair_activity_days(data, user_id, now)
+        updated = data["user_stats"][user_id]
+        self._collection("user_stats").replace_one({"_id": user_id}, {"_id": user_id, **updated}, upsert=True)
+        return updated
+
+    def _rollover_goal_participant(self, goal: dict[str, Any], user_id: str, now: datetime) -> dict[str, Any]:
+        if not _goal_active_for_user(goal, user_id):
+            return goal
+        participant = goal["participants"][user_id]
+        schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+        current_start = _period_start(now, schedule["base"])
+        stored_start = _parse_dt(participant.get("period_start")) or current_start
+        stored_start = _period_start(stored_start, schedule["base"])
+        changed = False
+        affected_days = []
+        while stored_start < current_start:
+            period_end = _next_period_start(stored_start, schedule["base"])
+            fulfilled = _record_period_outcome(goal, participant, stored_start)
+            participant["completion_streak"] = (
+                max(0, int(participant.get("completion_streak", 0))) + 1 if fulfilled else 0
+            )
+            participant["current"] = 0
+            participant["skipped"] = False
+            participant["period_start"] = period_end.isoformat()
+            affected_days.append(stored_start.date())
+            stored_start = period_end
+            changed = True
+        if changed:
+            self._collection("goals").update_one(
+                {"_id": goal["id"]},
+                {"$set": {f"participants.{user_id}": participant}},
+            )
+            for affected_day in affected_days:
+                self._refresh_activity_day_for_user(user_id, affected_day)
+            self._refresh_activity_day_for_user(user_id, now.date())
+        return goal
+
+    def _rollover_user_goals(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
+        now_dt = _now(now)
+        goals = self._active_goals_for_user(user_id)
+        return [self._rollover_goal_participant(goal, user_id, now_dt) for goal in goals]
+
+    def upsert_user(self, user_id: str, email: str, name: str, now: datetime | None = None) -> dict[str, Any]:
+        now_iso = _iso(now)
+        normalized_email = normalize_email(email)
+        existing = self.get_user(user_id) or {}
+        user = dict(existing)
+        user.update(
+            {
+                "user_id": user_id,
+                "email": normalized_email,
+                "name": name.strip() or normalized_email,
+                "created_at": existing.get("created_at", now_iso),
+                "last_seen_at": existing.get("last_seen_at", now_iso),
+            }
+        )
+        user.setdefault("dismissed_friend_suggestion_pairs", [])
+        if user != existing:
+            self._collection("users").update_one({"_id": user_id}, {"$set": user}, upsert=True)
+        return user
+
+    def get_user(self, user_id: str) -> dict[str, Any] | None:
+        user = self._strip_id(self._collection("users").find_one({"_id": user_id}))
+        return _normalise_user_profile(user) if user else None
+
+    def users_by_ids(self, user_ids: list[str]) -> dict[str, dict[str, Any]]:
+        unique_ids = sorted(set(user_ids))
+        if not unique_ids:
+            return {}
+        users = self._strip_many(self._collection("users").find({"_id": {"$in": unique_ids}}))
+        return {user["user_id"]: _normalise_user_profile(user) for user in users if "user_id" in user}
+
+    def find_user_by_email(self, email: str) -> dict[str, Any] | None:
+        user = self._strip_id(self._collection("users").find_one({"email": normalize_email(email)}))
+        return _normalise_user_profile(user) if user else None
+
+    def list_users(self) -> list[dict[str, Any]]:
+        users = [
+            _normalise_user_profile(user)
+            for user in self._strip_many(self._collection("users").find({}))
+            if "user_id" in user and "email" in user
+        ]
+        return sorted(users, key=lambda user: (user.get("name", ""), user.get("email", "")))
+
+    def debug_time_offset_seconds(self) -> int:
+        debug = self._strip_id(self._collection("debug").find_one({"_id": "debug"})) or {}
+        return int(debug.get("time_offset_seconds", 0))
+
+    def add_debug_time_offset(self, seconds: int) -> int:
+        current = self.debug_time_offset_seconds()
+        updated = max(0, current + int(seconds))
+        self._collection("debug").update_one({"_id": "debug"}, {"$set": {"time_offset_seconds": updated}}, upsert=True)
+        return updated
+
+    def reset_debug_time_offset(self) -> None:
+        self._collection("debug").update_one({"_id": "debug"}, {"$set": {"time_offset_seconds": 0}}, upsert=True)
+
+    def create_friend_invite(self, from_user_id: str, from_email: str, to_email: str, now: datetime | None = None) -> dict[str, Any]:
+        to_email = normalize_email(to_email)
+        from_email = normalize_email(from_email)
+        if not to_email or "@" not in to_email:
+            raise ValueError("Enter a valid email address.")
+        if to_email == from_email:
+            raise ValueError("You cannot invite yourself.")
+        target_user = self.find_user_by_email(to_email)
+        if not target_user:
+            raise ValueError("No user found with that email address.")
+        if self._active_friendship(from_user_id, target_user["user_id"]):
+            raise ValueError("You are already friends with that user.")
+        existing = self._strip_id(
+            self._collection("friend_invites").find_one(
+                {"from_user_id": from_user_id, "to_email": to_email, "status": "pending"}
+            )
+        )
+        if existing:
+            if existing.get("to_user_id") != target_user["user_id"]:
+                existing["to_user_id"] = target_user["user_id"]
+                self._collection("friend_invites").update_one({"_id": existing["id"]}, {"$set": {"to_user_id": target_user["user_id"]}})
+            return existing
+        now_iso = _iso(now)
+        invite_id = _new_id("invite")
+        invite = {
+            "id": invite_id,
+            "from_user_id": from_user_id,
+            "from_email": from_email,
+            "to_email": to_email,
+            "to_user_id": target_user["user_id"],
+            "status": "pending",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+        self._collection("friend_invites").replace_one({"_id": invite_id}, {"_id": invite_id, **invite}, upsert=True)
+        return invite
+
+    def incoming_friend_invites(self, user_email: str, user_id: str | None = None) -> list[dict[str, Any]]:
+        user_email = normalize_email(user_email)
+        queries = [{"status": "pending", "to_email": user_email}]
+        if user_id is not None:
+            queries.insert(0, {"status": "pending", "to_user_id": user_id})
+        invites_by_id = {}
+        for query in queries:
+            for invite in self._strip_many(self._collection("friend_invites").find(query)):
+                invites_by_id[invite["id"]] = invite
+        return sorted(invites_by_id.values(), key=lambda invite: invite["created_at"])
+
+    def outgoing_friend_invites(self, user_id: str) -> list[dict[str, Any]]:
+        invites = self._strip_many(self._collection("friend_invites").find({"from_user_id": user_id, "status": "pending"}))
+        visible = [
+            invite
+            for invite in invites
+            if (invite.get("to_user_id") and self.get_user(invite["to_user_id"]))
+            or self.find_user_by_email(invite.get("to_email", "")) is not None
+        ]
+        return sorted(visible, key=lambda invite: invite["created_at"])
+
+    def _active_friendship(self, first_user_id: str, second_user_id: str) -> bool:
+        return bool(self._collection("friendships").find_one({"_id": _friendship_id(first_user_id, second_user_id), "active": True}))
+
+    def respond_friend_invite(self, invite_id: str, user_id: str, user_email: str, approve: bool, now: datetime | None = None) -> dict[str, Any]:
+        invite = self._strip_id(self._collection("friend_invites").find_one({"_id": invite_id}))
+        if not invite or invite.get("status") != "pending":
+            raise ValueError("This invite is no longer pending.")
+        user_email = normalize_email(user_email)
+        if invite.get("to_user_id") and invite.get("to_user_id") != user_id:
+            raise ValueError("This invite is not addressed to your account.")
+        if not invite.get("to_user_id") and invite.get("to_email") != user_email:
+            raise ValueError("This invite is not addressed to your account.")
+        now_iso = _iso(now)
+        invite["status"] = "accepted" if approve else "declined"
+        invite["updated_at"] = now_iso
+        if approve:
+            friendship_id = _friendship_id(invite["from_user_id"], user_id)
+            from_user = self.get_user(invite["from_user_id"]) or {}
+            to_user = self.get_user(user_id) or {}
+            existing_friendship = self._strip_id(self._collection("friendships").find_one({"_id": friendship_id})) or {}
+            friendship = {
+                "id": friendship_id,
+                "user_ids": sorted([invite["from_user_id"], user_id]),
+                "emails": sorted([
+                    normalize_email(from_user.get("email", invite["from_email"])),
+                    normalize_email(to_user.get("email", user_email)),
+                ]),
+                "active": True,
+                "created_at": existing_friendship.get("created_at", now_iso),
+                "updated_at": now_iso,
+            }
+            self._collection("friendships").replace_one({"_id": friendship_id}, {"_id": friendship_id, **friendship}, upsert=True)
+            self._collection("friend_invites").delete_one({"_id": invite_id})
+        else:
+            self._collection("friend_invites").update_one({"_id": invite_id}, {"$set": {"status": "declined", "updated_at": now_iso}})
+        return invite
+
+    def dismissed_friend_suggestion_pairs(self, user_id: str) -> list[list[str]]:
+        user = self.get_user(user_id) or {}
+        return [list(pair) for pair in user.get("dismissed_friend_suggestion_pairs", [])]
+
+    def dismiss_friend_suggestion_pair(self, user_id: str, first_friend_id: str, second_friend_id: str, now: datetime | None = None) -> dict[str, Any]:
+        pair = _normalise_friend_pair([first_friend_id, second_friend_id])
+        if pair is None:
+            raise ValueError("Select two different friends to dismiss.")
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError("User was not found.")
+        dismissed_pairs = user.setdefault("dismissed_friend_suggestion_pairs", [])
+        if tuple(pair) not in {tuple(existing_pair) for existing_pair in dismissed_pairs}:
+            dismissed_pairs.append(pair)
+        user["updated_at"] = _iso(now)
+        self._collection("users").update_one(
+            {"_id": user_id},
+            {"$set": {"dismissed_friend_suggestion_pairs": dismissed_pairs, "updated_at": user["updated_at"]}},
+        )
+        return user
+
+    def create_friend_suggestion(self, suggested_by_user_id: str, suggested_user_ids: list[str], source_goal_id: str | None = None, now: datetime | None = None) -> dict[str, Any]:
+        suggested_user_ids = sorted(set(suggested_user_ids))
+        if len(suggested_user_ids) != 2:
+            raise ValueError("Select exactly two users to suggest.")
+        if suggested_by_user_id in suggested_user_ids:
+            raise ValueError("You cannot suggest yourself.")
+        if not self.get_user(suggested_by_user_id):
+            raise ValueError("Suggestion creator was not found.")
+        missing_user_ids = [uid for uid in suggested_user_ids if not self.get_user(uid)]
+        if missing_user_ids:
+            raise ValueError("Suggested users must exist.")
+        if self._active_friendship(suggested_user_ids[0], suggested_user_ids[1]):
+            raise ValueError("Those users are already friends.")
+        existing_suggestions = self._strip_many(self._collection("friend_suggestions").find({"suggested_user_ids": suggested_user_ids}))
+        for suggestion in existing_suggestions:
+            if suggestion.get("status") == "pending":
+                return suggestion
+            if suggestion.get("status") == "declined" and suggestion.get("suggested_by_user_id") == suggested_by_user_id and suggestion.get("source_goal_id") == source_goal_id:
+                raise ValueError("This suggestion was already declined.")
+        now_iso = _iso(now)
+        suggestion_id = _new_id("suggestion")
+        suggestion = {
+            "id": suggestion_id,
+            "suggested_by_user_id": suggested_by_user_id,
+            "suggested_user_ids": suggested_user_ids,
+            "source_goal_id": source_goal_id,
+            "responses": {uid: "pending" for uid in suggested_user_ids},
+            "status": "pending",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+        self._collection("friend_suggestions").replace_one({"_id": suggestion_id}, {"_id": suggestion_id, **suggestion}, upsert=True)
+        return suggestion
+
+    def incoming_friend_suggestions(self, user_id: str) -> list[dict[str, Any]]:
+        suggestions = [
+            suggestion
+            for suggestion in self._strip_many(self._collection("friend_suggestions").find({"status": "pending", "suggested_user_ids": user_id}))
+            if suggestion.get("responses", {}).get(user_id) == "pending"
+        ]
+        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+    def outgoing_friend_suggestions(self, user_id: str, include_resolved: bool = False) -> list[dict[str, Any]]:
+        suggestions = self._strip_many(self._collection("friend_suggestions").find({"suggested_by_user_id": user_id}))
+        if not include_resolved:
+            suggestions = [suggestion for suggestion in suggestions if suggestion.get("status") == "pending"]
+        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+    def list_friend_suggestions_for_pair(self, first_user_id: str, second_user_id: str) -> list[dict[str, Any]]:
+        suggested_user_ids = sorted([first_user_id, second_user_id])
+        suggestions = self._strip_many(self._collection("friend_suggestions").find({"suggested_user_ids": suggested_user_ids}))
+        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+    def respond_friend_suggestion(self, suggestion_id: str, user_id: str, approve: bool, now: datetime | None = None) -> dict[str, Any]:
+        suggestion = self._strip_id(self._collection("friend_suggestions").find_one({"_id": suggestion_id}))
+        if not suggestion or suggestion.get("status") != "pending":
+            raise ValueError("This suggestion is no longer pending.")
+        if user_id not in suggestion.get("suggested_user_ids", []):
+            raise ValueError("This suggestion is not addressed to your account.")
+        if suggestion.get("responses", {}).get(user_id) != "pending":
+            raise ValueError("You have already responded to this suggestion.")
+        now_iso = _iso(now)
+        suggestion["responses"][user_id] = "accepted" if approve else "declined"
+        suggestion["updated_at"] = now_iso
+        if not approve:
+            suggestion["status"] = "declined"
+        elif all(response == "accepted" for response in suggestion["responses"].values()):
+            first_user_id, second_user_id = suggestion["suggested_user_ids"]
+            friendship_id = _friendship_id(first_user_id, second_user_id)
+            first_user = self.get_user(first_user_id) or {}
+            second_user = self.get_user(second_user_id) or {}
+            existing_friendship = self._strip_id(self._collection("friendships").find_one({"_id": friendship_id})) or {}
+            friendship = {
+                "id": friendship_id,
+                "user_ids": sorted([first_user_id, second_user_id]),
+                "emails": sorted([normalize_email(first_user.get("email", "")), normalize_email(second_user.get("email", ""))]),
+                "active": True,
+                "created_at": existing_friendship.get("created_at", now_iso),
+                "updated_at": now_iso,
+            }
+            self._collection("friendships").replace_one({"_id": friendship_id}, {"_id": friendship_id, **friendship}, upsert=True)
+            suggestion["status"] = "accepted"
+        self._collection("friend_suggestions").update_one(
+            {"_id": suggestion_id},
+            {"$set": {"responses": suggestion["responses"], "status": suggestion["status"], "updated_at": now_iso}},
+        )
+        return suggestion
+
+    def list_friends(self, user_id: str) -> list[dict[str, Any]]:
+        friendships = self._strip_many(self._collection("friendships").find({"user_ids": user_id, "active": True}))
+        friend_ids = [next(uid for uid in friendship["user_ids"] if uid != user_id) for friendship in friendships]
+        friends = list(self.users_by_ids(friend_ids).values())
+        return sorted(friends, key=lambda user: (user.get("name", ""), user.get("email", "")))
+
+    def remove_friend(self, user_id: str, friend_id: str, now: datetime | None = None) -> None:
+        friendship_id = _friendship_id(user_id, friend_id)
+        friendship = self._strip_id(self._collection("friendships").find_one({"_id": friendship_id, "active": True}))
+        if not friendship:
+            raise ValueError("That friendship is not active.")
+        self._collection("friendships").update_one({"_id": friendship_id}, {"$set": {"active": False, "updated_at": _iso(now)}})
+
+    def create_goal(self, created_by: str, description: str, schedule_class: str, required_periods: int, friend_user_ids: list[str], target: int, current: int = 0, now: datetime | None = None) -> dict[str, Any]:
+        description = description.strip()
+        if not description:
+            raise ValueError("Goal description is required.")
+        schedule = _schedule(schedule_class, required_periods)
+        target = max(1, int(target))
+        current = max(0, int(current))
+        now_dt = _now(now)
+        now_iso = _iso(now_dt)
+        active_friend_ids = {friend["user_id"] for friend in self.list_friends(created_by)}
+        invalid = sorted(set(friend_user_ids) - active_friend_ids)
+        if invalid:
+            raise ValueError("Goals can only be shared with accepted friends.")
+        participant_ids = [created_by, *sorted(set(friend_user_ids))]
+        period_start = _period_start(now_dt, schedule["base"]).isoformat()
+        goal_id = _new_id("goal")
+        goal = {
+            "id": goal_id,
+            "description": description,
+            "schedule_class": schedule_class,
+            "required_periods": schedule["required_periods"],
+            "created_by": created_by,
+            "participant_user_ids": participant_ids,
+            "participants": {
+                participant_id: {
+                    "target": target,
+                    "current": current if participant_id == created_by else 0,
+                    "period_start": period_start,
+                    "completion_streak": 0,
+                    "completion_notifications_enabled": True,
+                    "skipped": False,
+                    "period_outcomes": {},
+                    "left_at": None,
+                }
+                for participant_id in participant_ids
+            },
+            "created_at": now_iso,
+            "archived_at": None,
+        }
+        self._collection("goals").replace_one({"_id": goal_id}, {"_id": goal_id, **goal}, upsert=True)
+        for participant_id in participant_ids:
+            self._refresh_activity_day_for_user(participant_id, now_dt.date())
+        return goal
+
+    def list_goals_for_user(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
+        goals = self._rollover_user_goals(user_id, now)
+        return sorted(goals, key=lambda goal: goal["created_at"])
+
+    def add_goal_friends(self, goal_id: str, user_id: str, friend_user_ids: list[str], now: datetime | None = None) -> dict[str, Any]:
+        now_dt = _now(now)
+        goal = self._strip_id(self._collection("goals").find_one({"_id": goal_id}))
+        if not goal or not _goal_active_for_user(goal, user_id):
+            raise ValueError("Goal is not active for this user.")
+        self._rollover_goal_participant(goal, user_id, now_dt)
+        active_friend_ids = {friend["user_id"] for friend in self.list_friends(user_id)}
+        requested_friend_ids = set(friend_user_ids)
+        invalid = sorted(requested_friend_ids - active_friend_ids)
+        if invalid:
+            raise ValueError("Goals can only be shared with accepted friends.")
+        existing_participant_ids = set(goal.get("participants", {}))
+        new_participant_ids = sorted(requested_friend_ids - existing_participant_ids)
+        if not new_participant_ids:
+            return goal
+        schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+        period_start = _period_start(now_dt, schedule["base"]).isoformat()
+        inviter = goal["participants"][user_id]
+        target = max(1, int(inviter.get("target", 1)))
+        set_fields = {}
+        for participant_id in new_participant_ids:
+            participant = {
+                "target": target,
+                "current": 0,
+                "period_start": period_start,
+                "completion_streak": 0,
+                "completion_notifications_enabled": True,
+                "skipped": False,
+                "period_outcomes": {},
+                "left_at": None,
+            }
+            goal["participants"][participant_id] = participant
+            set_fields[f"participants.{participant_id}"] = participant
+        goal["participant_user_ids"] = [
+            *goal.get("participant_user_ids", []),
+            *[participant_id for participant_id in new_participant_ids if participant_id not in goal.get("participant_user_ids", [])],
+        ]
+        set_fields["participant_user_ids"] = goal["participant_user_ids"]
+        self._collection("goals").update_one({"_id": goal_id}, {"$set": set_fields})
+        for participant_id in new_participant_ids:
+            self._refresh_activity_day_for_user(participant_id, now_dt.date())
+        return goal
+
+    def update_goal_progress(self, goal_id: str, user_id: str, current: int | None = None, target: int | None = None, delta: int = 0, skipped: bool | None = None, now: datetime | None = None) -> dict[str, Any]:
+        now_dt = _now(now)
+        today_key = now_dt.date().isoformat()
+        goal = self._strip_id(self._collection("goals").find_one({"_id": goal_id}))
+        if not goal or not _goal_active_for_user(goal, user_id):
+            raise ValueError("Goal is not active for this user.")
+        self._rollover_goal_participant(goal, user_id, now_dt)
+        participant = goal["participants"][user_id]
+        before_current = max(0, int(participant.get("current", 0)))
+        before_target = max(1, int(participant.get("target", 1)))
+        was_complete = before_current >= before_target
+        if target is not None:
+            participant["target"] = max(1, int(target))
+        if skipped is not None:
+            participant["skipped"] = bool(skipped)
+            if skipped:
+                participant["current"] = 0
+        if current is not None:
+            participant["current"] = max(0, int(current))
+            participant["skipped"] = False
+        elif delta:
+            participant["current"] = max(0, int(participant.get("current", 0)) + int(delta))
+            participant["skipped"] = False
+        after_current = max(0, int(participant.get("current", 0)))
+        after_target = max(1, int(participant.get("target", 1)))
+        is_complete = after_current >= after_target
+        notification_event = None
+        if is_complete and not was_complete and participant.get("last_completion_notification_day") != today_key:
+            participant["last_completion_notification_day"] = today_key
+            notification_event = {"type": "goal_completed", "goal_id": goal_id, "completed_by_user_id": user_id, "day": today_key}
+        self._collection("goals").update_one({"_id": goal_id}, {"$set": {f"participants.{user_id}": participant}})
+        self._collection("users").update_one({"_id": user_id}, {"$set": {"last_seen_at": _iso(now)}})
+        self._refresh_activity_day_for_user(user_id, now_dt.date())
+        result = copy.deepcopy(goal)
+        if notification_event:
+            result["_notification_event"] = notification_event
+        return result
+
+    def set_goal_completion_notifications(self, goal_id: str, user_id: str, enabled: bool, now: datetime | None = None) -> dict[str, Any]:
+        goal = self._strip_id(self._collection("goals").find_one({"_id": goal_id}))
+        if not goal or not _goal_active_for_user(goal, user_id):
+            raise ValueError("Goal is not active for this user.")
+        goal["participants"][user_id]["completion_notifications_enabled"] = bool(enabled)
+        self._collection("goals").update_one(
+            {"_id": goal_id},
+            {"$set": {f"participants.{user_id}.completion_notifications_enabled": bool(enabled)}},
+        )
+        return goal
+
+    def set_health_data_workflow_target(self, goal_id: str | None, user_id: str, enabled: bool, now: datetime | None = None) -> dict[str, Any] | None:
+        now_iso = _iso(now)
+        selected_goal = None
+        if enabled:
+            if not goal_id:
+                raise ValueError("Choose a goal for Apple Health import.")
+            selected_goal = self._strip_id(self._collection("goals").find_one({"_id": goal_id}))
+            if not selected_goal or not _goal_active_for_user(selected_goal, user_id):
+                raise ValueError("Goal is not active for this user.")
+        for goal in self._active_goals_for_user(user_id):
+            workflow = goal.get("participants", {}).get(user_id, {}).get("health_data_workflow")
+            if isinstance(workflow, dict) and workflow.get("enabled"):
+                self._collection("goals").update_one(
+                    {"_id": goal["id"]},
+                    {"$set": {f"participants.{user_id}.health_data_workflow.enabled": False, f"participants.{user_id}.health_data_workflow.disabled_at": now_iso}},
+                )
+        if enabled and selected_goal is not None:
+            workflow = {"enabled": True, "provider": "apple_health_steps", "configured_at": now_iso}
+            selected_goal["participants"][user_id]["health_data_workflow"] = workflow
+            self._collection("goals").update_one({"_id": selected_goal["id"]}, {"$set": {f"participants.{user_id}.health_data_workflow": workflow}})
+        return copy.deepcopy(selected_goal) if selected_goal is not None else None
+
+    def leave_goal(self, goal_id: str, user_id: str, now: datetime | None = None) -> None:
+        now_dt = _now(now)
+        goal = self._strip_id(self._collection("goals").find_one({"_id": goal_id}))
+        if not goal or user_id not in goal.get("participants", {}):
+            raise ValueError("Goal not found.")
+        del goal["participants"][user_id]
+        goal["participant_user_ids"] = [participant_id for participant_id in goal.get("participant_user_ids", []) if participant_id != user_id]
+        if not goal["participants"]:
+            self._collection("goals").delete_one({"_id": goal_id})
+        else:
+            self._collection("goals").update_one(
+                {"_id": goal_id},
+                {"$set": {"participants": goal["participants"], "participant_user_ids": goal["participant_user_ids"]}},
+            )
+        self._refresh_activity_day_for_user(user_id, now_dt.date())
+
+    def account_stats(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:
+        now_dt = _now(now)
+        self._rollover_user_goals(user_id, now_dt)
+        stats = self._repair_activity_days_for_user(user_id, now_dt)
+        before = copy.deepcopy(stats)
+        self._refresh_activity_day_for_user(user_id, now_dt.date())
+        stats = self._strip_id(self._collection("user_stats").find_one({"_id": user_id})) or before
+        active_goals = self._collection("goals").count_documents(self._user_goal_query(user_id))
+        friend_count = self._collection("friendships").count_documents({"user_ids": user_id, "active": True})
+        user = self.get_user(user_id) or {}
+        month_prefix = f"{now_dt.year:04d}-{now_dt.month:02d}-"
+        month_days = [day for date_key, day in stats.get("activity_days", {}).items() if date_key.startswith(month_prefix)]
+        active_goal_days = sum(max(0, int(day.get("active_goals", 0))) for day in month_days)
+        fulfilled_goal_days = sum(max(0, int(day.get("fulfilled_goals", 0))) for day in month_days)
+        completion_rate = round((fulfilled_goal_days / active_goal_days) * 100, 1) if active_goal_days else 0.0
+        return {
+            "active_goals": active_goals,
+            "friend_count": friend_count,
+            "days_using_app": _days_using_app(user, now_dt),
+            "completion_rate": completion_rate,
+            "activity_days": dict(sorted(stats.get("activity_days", {}).items())),
+        }
+
+    def raw_data(self) -> dict[str, Any]:
+        store = _empty_store()
+        for key in ["users", "friend_invites", "friend_suggestions", "friendships", "goals", "user_stats"]:
+            store[key] = {document.get("id", document.get("user_id", document.get("_id"))): self._strip_id(document) for document in self._collection(key).find({})}
+        debug = self._strip_id(self._collection("debug").find_one({"_id": "debug"}))
+        if debug:
+            store["debug"] = debug
+        return _normalise_store(store)

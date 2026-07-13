@@ -9,7 +9,7 @@ from .document_persistence import DocumentPersistence
 
 
 DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS = 5.0
-DEBUG_PRINT = True
+DEBUG_PRINT = False
 
 
 class CachedDocumentPersistence(DocumentPersistence):

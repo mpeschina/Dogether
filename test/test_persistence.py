@@ -8,6 +8,7 @@ import pytest
 
 import src.db.cached_document_persistence as cached_document_persistence
 from src.db.mongodb_persistence import MongoPersistence
+from src.db.mongodb_native_persistence import MongoNativePersistence
 from src.db.persistence import JsonPersistence, create_persistence, persistence_settings
 from src.pages.debug_page import DebugMechanics, debug_now, debug_view_enabled
 
@@ -33,6 +34,126 @@ class FakeMongoCollection:
         assert query == {"_id": replacement["_id"]}
         assert upsert is True
         self.document = copy.deepcopy(replacement)
+
+
+class CountingJsonPersistence(JsonPersistence):
+    def __init__(self, *args, **kwargs) -> None:
+        self.write_count = 0
+        super().__init__(*args, **kwargs)
+
+    def _write_uncached(self, data: dict) -> None:
+        self.write_count += 1
+        super()._write_uncached(data)
+
+
+class FakeMongoNativeCollection:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.documents = {}
+        self.calls = []
+        self.indexes = []
+
+    def create_index(self, spec):
+        self.calls.append(("create_index", spec))
+        self.indexes.append(spec)
+
+    def find_one(self, query: dict) -> dict | None:
+        self.calls.append(("find_one", copy.deepcopy(query)))
+        for document in self.documents.values():
+            if self._matches(document, query):
+                return copy.deepcopy(document)
+        return None
+
+    def find(self, query: dict | None = None):
+        query = query or {}
+        self.calls.append(("find", copy.deepcopy(query)))
+        return [copy.deepcopy(document) for document in self.documents.values() if self._matches(document, query)]
+
+    def count_documents(self, query: dict) -> int:
+        self.calls.append(("count_documents", copy.deepcopy(query)))
+        return sum(1 for document in self.documents.values() if self._matches(document, query))
+
+    def replace_one(self, query: dict, replacement: dict, upsert: bool = False) -> None:
+        self.calls.append(("replace_one", copy.deepcopy(query), copy.deepcopy(replacement), upsert))
+        document_id = query.get("_id", replacement.get("_id"))
+        if document_id in self.documents or upsert:
+            self.documents[document_id] = copy.deepcopy(replacement)
+
+    def update_one(self, query: dict, update: dict, upsert: bool = False) -> None:
+        self.calls.append(("update_one", copy.deepcopy(query), copy.deepcopy(update), upsert))
+        document = None
+        document_id = query.get("_id")
+        if document_id is not None:
+            document = self.documents.get(document_id)
+        if document is None:
+            for candidate in self.documents.values():
+                if self._matches(candidate, query):
+                    document = candidate
+                    break
+        if document is None:
+            if not upsert:
+                return
+            document_id = document_id or update.get("$set", {}).get("id")
+            document = {"_id": document_id}
+            self.documents[document_id] = document
+        for key, value in update.get("$set", {}).items():
+            self._set_path(document, key, copy.deepcopy(value))
+
+    def delete_one(self, query: dict) -> None:
+        self.calls.append(("delete_one", copy.deepcopy(query)))
+        for document_id, document in list(self.documents.items()):
+            if self._matches(document, query):
+                del self.documents[document_id]
+                return
+
+    def _matches(self, document: dict, query: dict) -> bool:
+        for key, expected in query.items():
+            actual = self._get_path(document, key)
+            if isinstance(expected, dict):
+                if "$in" in expected:
+                    if actual not in expected["$in"]:
+                        return False
+                    continue
+                if "$ne" in expected:
+                    if actual == expected["$ne"]:
+                        return False
+                    continue
+                if "$exists" in expected:
+                    exists = actual is not None
+                    if bool(expected["$exists"]) != exists:
+                        return False
+                    continue
+            if isinstance(actual, list):
+                if expected not in actual and actual != expected:
+                    return False
+            elif actual != expected:
+                return False
+        return True
+
+    def _get_path(self, document: dict, path: str):
+        current = document
+        for part in path.split("."):
+            if not isinstance(current, dict) or part not in current:
+                return None
+            current = current[part]
+        return current
+
+    def _set_path(self, document: dict, path: str, value) -> None:
+        current = document
+        parts = path.split(".")
+        for part in parts[:-1]:
+            current = current.setdefault(part, {})
+        current[parts[-1]] = value
+
+
+class FakeMongoNativeDatabase:
+    def __init__(self) -> None:
+        self.collections = {}
+
+    def __getitem__(self, name: str) -> FakeMongoNativeCollection:
+        if name not in self.collections:
+            self.collections[name] = FakeMongoNativeCollection(name)
+        return self.collections[name]
 
 
 def users_and_friendship(persistence: JsonPersistence) -> tuple[dict, dict]:
@@ -163,6 +284,17 @@ def test_user_profile_upsert_normalizes_email_and_preserves_activity_timestamp(t
     assert second["name"] == "Alice A."
     assert second["created_at"] == first["created_at"]
     assert second["last_seen_at"] == first["last_seen_at"]
+
+
+def test_user_profile_upsert_skips_write_when_profile_is_unchanged(tmp_path: Path) -> None:
+    persistence = CountingJsonPersistence(tmp_path / "users.json")
+
+    first = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    writes_after_create = persistence.write_count
+    second = persistence.upsert_user("alice", "ALICE@example.com", "Alice", at("2026-06-02T09:00:00"))
+
+    assert second == first
+    assert persistence.write_count == writes_after_create
 
 
 def test_friend_invite_lifecycle_and_duplicate_prevention(tmp_path: Path) -> None:
@@ -862,6 +994,131 @@ def test_account_stats_report_current_month_rate_and_days_using_app(tmp_path: Pa
     assert stats["activity_days"]["2026-06-01"]["percent"] == 100.0
     assert stats["activity_days"]["2026-06-02"]["percent"] == 0.0
 
+
+def test_account_stats_skips_write_when_activity_days_are_current(tmp_path: Path) -> None:
+    persistence = CountingJsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    persistence.create_goal(
+        created_by="alice",
+        description="Drink water",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=1,
+        current=1,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    persistence.account_stats(alice["user_id"], now=at("2026-06-01T13:00:00"))
+    writes_after_refresh = persistence.write_count
+    persistence.account_stats(alice["user_id"], now=at("2026-06-01T13:00:00"))
+
+    assert persistence.write_count == writes_after_refresh
+
+
+
+def test_mongodb_native_migrates_legacy_app_store_once() -> None:
+    database = FakeMongoNativeDatabase()
+    database["users"].documents["app_store"] = {
+        "_id": "app_store",
+        "data": {
+            "users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alice"}},
+            "goals": {},
+            "friend_invites": {},
+            "friend_suggestions": {},
+            "friendships": {},
+            "user_stats": {},
+            "debug": {"time_offset_seconds": 3600},
+        },
+    }
+
+    persistence = MongoNativePersistence(mongo_database=database)
+    again = MongoNativePersistence(mongo_database=database)
+
+    assert persistence.get_user("alice")["email"] == "alice@example.com"
+    assert [user["user_id"] for user in persistence.list_users()] == ["alice"]
+    assert database["debug"].documents["debug"]["time_offset_seconds"] == 3600
+    assert database["migrations"].documents["native_mongo_v1"]["source_collection"] == "users"
+    migration_writes = [call for call in database["migrations"].calls if call[0] == "replace_one"]
+    assert len(migration_writes) == 1
+    assert again.get_user("alice")["name"] == "Alice"
+
+
+def test_mongodb_native_goal_progress_uses_targeted_updates() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    goal = persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Run",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=10,
+        current=0,
+        now=at("2026-06-01T09:01:00"),
+    )
+    for collection in database.collections.values():
+        collection.calls.clear()
+
+    updated = persistence.update_goal_progress(
+        goal["id"],
+        alice["user_id"],
+        current=4,
+        now=at("2026-06-01T09:02:00"),
+    )
+
+    assert updated["participants"]["alice"]["current"] == 4
+    goal_update_calls = [call for call in database["goals"].calls if call[0] == "update_one"]
+    assert goal_update_calls
+    assert not [call for call in database["goals"].calls if call[0] == "replace_one"]
+    assert [call for call in database["users"].calls if call[0] == "update_one"]
+    assert database["goals"].documents[goal["id"]]["participants"]["alice"]["current"] == 4
+
+
+def test_mongodb_native_list_goals_reads_matching_goal_collection_only() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    persistence.create_goal("alice", "Run", "daily", 1, [], 10, now=at("2026-06-01T09:01:00"))
+    for collection in database.collections.values():
+        collection.calls.clear()
+
+    goals = persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-01T10:00:00"))
+
+    assert [goal["description"] for goal in goals] == ["Run"]
+    goal_find_calls = [call for call in database["goals"].calls if call[0] == "find"]
+    assert goal_find_calls
+    assert goal_find_calls[0][1]["participant_user_ids"] == "alice"
+    assert not database["users"].calls
+
+
+def test_factory_creates_mongodb_native_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    import src.db.persistence as persistence_module
+
+    created = {}
+
+    class DummyMongoNativePersistence:
+        def __init__(self, uri: str, database: str, legacy_collection: str) -> None:
+            created["uri"] = uri
+            created["database"] = database
+            created["legacy_collection"] = legacy_collection
+
+    monkeypatch.setattr(persistence_module, "MongoNativePersistence", DummyMongoNativePersistence)
+
+    persistence = persistence_module.create_persistence(
+        "mongodb_native",
+        mongodb_uri="mongodb://localhost:27017",
+        mongodb_database="dogether_test",
+        mongodb_collection="legacy_store",
+    )
+
+    assert isinstance(persistence, DummyMongoNativePersistence)
+    assert created == {
+        "uri": "mongodb://localhost:27017",
+        "database": "dogether_test",
+        "legacy_collection": "legacy_store",
+    }
 
 def test_mongodb_document_backend_uses_same_store_contract() -> None:
     collection = FakeMongoCollection()

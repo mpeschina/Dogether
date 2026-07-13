@@ -109,7 +109,7 @@ json_path = "data/users.json"
 cache_ttl_seconds = 5
 ```
 
-For MongoDB Atlas, use:
+For the legacy MongoDB Atlas backend, use:
 
 ```toml
 [persistence]
@@ -120,13 +120,27 @@ mongodb_collection = "users"
 cache_ttl_seconds = 5
 ```
 
-Both backends persist the same app store shape: users, friend invites,
-friendships, goals, compact user stats, and debug settings. The JSON backend
-writes the file atomically; the MongoDB backend stores the app state in a single
-MongoDB document for now so it matches the existing persistence contract.
-Both backends keep a short process-local read cache, controlled by
+The legacy MongoDB backend stores the app state in a single MongoDB document so
+it matches the JSON persistence contract. For collection-level MongoDB reads and
+writes, use the native backend:
+
+```toml
+[persistence]
+backend = "mongodb_native"
+mongodb_uri = "mongodb+srv://..."
+mongodb_database = "dogether"
+mongodb_collection = "users"  # legacy single-document collection to migrate from
+cache_ttl_seconds = 0
+```
+
+The native MongoDB backend stores users, goals, friendships, invites,
+suggestions, user stats, debug data, and migrations in separate collections. On
+first startup it copies a legacy `{"_id": "app_store"}` document into those
+collections and leaves the legacy document in place. The JSON and legacy MongoDB
+backends keep a short process-local read cache, controlled by
 `cache_ttl_seconds`, and refresh that cache immediately after writes. Set it to
-`0` to disable persistence read caching.
+`0` to disable persistence read caching. The native MongoDB backend performs
+targeted collection reads and writes and does not use the whole-store cache.
 
 
 ## Web Push Notifications
