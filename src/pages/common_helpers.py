@@ -150,18 +150,19 @@ def _participant_sparkline_value(
 ) -> float:
     outcome = participant.get("period_outcomes", {}).get(day.isoformat())
     if isinstance(outcome, dict):
-        if bool(outcome.get("completed", False)) or bool(outcome.get("fulfilled", False)):
-            return 100.0
-        return min(100.0, _outcome_percent(outcome))
+        return _sparkline_progress_value(outcome)
 
     if day == now_dt.date():
-        schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
-        if _period_fulfilled(goal, participant, _period_start(now_dt, schedule["base"])):
-            return 100.0
-        target = max(1, int(participant.get("target", 1) or 1))
-        current = max(0, int(participant.get("current", 0) or 0))
-        return min(100.0, (current / target) * 100)
+        return _sparkline_progress_value(participant)
 
+    return 0.0
+
+
+def _sparkline_progress_value(record: dict) -> float:
+    if "current" in record:
+        return max(0.0, float(record.get("current") or 0.0))
+    if "percent" in record:
+        return max(0.0, float(record.get("percent") or 0.0))
     return 0.0
 
 

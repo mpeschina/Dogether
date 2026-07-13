@@ -231,12 +231,6 @@ def render_participant_progress(
         progress_bar(current, target, show_caption=False)
 
 
-def main_render_path(viewport: dict) -> str:
-    if isinstance(viewport, dict) and viewport.get("renderPath") == "mobile_portrait":
-        return "mobile_portrait"
-    return "widescreen"
-
-
 def render_main(
     persistence: Persistence,
     current_user: dict,
@@ -296,7 +290,9 @@ def render_main(
     )
 
     viewport = viewport_info()
-    render_path = main_render_path(viewport)
+    render_path = "widescreen"
+    if isinstance(viewport, dict) and viewport.get("renderPath") == "mobile_portrait":
+        render_path = "mobile_portrait"
 
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)

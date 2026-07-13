@@ -149,8 +149,8 @@ def test_participant_sparkline_renders_ten_day_inline_svg_with_progress_bar_fill
         "target": 10,
         "skipped": False,
         "period_outcomes": {
-            "2026-06-01": {"completed": False, "fulfilled": False, "percent": 20.0},
-            "2026-06-04": {"completed": True, "fulfilled": True},
+            "2026-06-01": {"completed": False, "fulfilled": False, "current": 2, "target": 10},
+            "2026-06-04": {"completed": True, "fulfilled": True, "current": 4, "target": 4},
             "2026-06-08": {"completed": False, "fulfilled": False, "current": 5, "target": 10},
         },
     }
@@ -168,7 +168,12 @@ def test_participant_sparkline_renders_ten_day_inline_svg_with_progress_bar_fill
     assert f"fill='{PARTICIPANT_SPARKLINE_FILL}'" in html
     assert f"<circle" in html
     assert f"fill='{PARTICIPANT_SPARKLINE_COLOR}'" in html
+    completed_x, completed_y = [float(value) for value in line_points[3].split(",")]
+    today_x, today_y = [float(value) for value in line_points[-1].split(",")]
+
     assert len(line_points) == PARTICIPANT_SPARKLINE_DEFAULT_DAYS
+    assert completed_x < today_x
+    assert completed_y > today_y
 
 
 def test_compact_goal_activity_renders_daily_current_week_seven_dots() -> None:
