@@ -22,9 +22,10 @@ PARTICIPANT_PROGRESS_COLOR = "rgba(49, 51, 63, 0.6)"
 MINI_ACTIVITY_NAME_MAX_LENGTH = 25
 PARTICIPANT_SPARKLINE_COLOR = "#1F2937"
 PARTICIPANT_SPARKLINE_FILL = "#F0F2F6"
-PARTICIPANT_SPARKLINE_WIDTH = 90
+PARTICIPANT_SPARKLINE_WIDTH = 80
 PARTICIPANT_SPARKLINE_HEIGHT = 22
 PARTICIPANT_SPARKLINE_PAD = 2
+PARTICIPANT_SPARKLINE_STROKE_WIDTH = 1.2
 PARTICIPANT_SPARKLINE_DEFAULT_DAYS = 10
 X_PER_SCHEDULE_CLASSES = {"daily_x_per_week", "weekly_x_per_month"}
 
@@ -96,7 +97,8 @@ def participant_sparkline_html(
         "focusable='false'>"
         f"<polygon points='{area_points}' fill='{PARTICIPANT_SPARKLINE_FILL}'></polygon>"
         f"<polyline points='{line_points}' fill='none' stroke='{PARTICIPANT_SPARKLINE_COLOR}' "
-        "stroke-width='2' stroke-linecap='round' stroke-linejoin='round'></polyline>"
+        f"stroke-width='{PARTICIPANT_SPARKLINE_STROKE_WIDTH}' "
+        "stroke-linecap='round' stroke-linejoin='round'></polyline>"
         f"<circle cx='{last_x:.1f}' cy='{last_y:.1f}' r='3' "
         f"fill='{PARTICIPANT_SPARKLINE_COLOR}'></circle>"
         "</svg>"

@@ -14,6 +14,7 @@ from src.pages.common_helpers import (
     MINI_ACTIVITY_CELL_SIZE,
     ACTIVITY_COLORS,
     PARTICIPANT_SPARKLINE_FILL,
+    PARTICIPANT_SPARKLINE_STROKE_WIDTH,
     FUTURE_ACTIVITY_COLOR,
     PARTICIPANT_SPARKLINE_COLOR,
     PARTICIPANT_SPARKLINE_DEFAULT_DAYS,
@@ -164,6 +165,7 @@ def test_participant_sparkline_renders_ten_day_inline_svg_with_progress_bar_fill
 
     assert "participant-sparkline" in html
     assert f"stroke='{PARTICIPANT_SPARKLINE_COLOR}'" in html
+    assert f"stroke-width='{PARTICIPANT_SPARKLINE_STROKE_WIDTH}'" in html
     assert f"<polygon points=" in html
     assert f"fill='{PARTICIPANT_SPARKLINE_FILL}'" in html
     assert f"<circle" in html
