@@ -11,7 +11,7 @@ from src.pages.health_data_import_page import (
     normalized_data_import_availability,
 )
 from src.pages.common_helpers import (
-    ACTIVITY_CELL_SIZE,
+    MINI_ACTIVITY_CELL_SIZE,
     ACTIVITY_COLORS,
     PARTICIPANT_SPARKLINE_FILL,
     FUTURE_ACTIVITY_COLOR,
@@ -191,11 +191,11 @@ def test_compact_goal_activity_renders_daily_current_week_seven_dots() -> None:
     assert "title='Wednesday'" in html
 
 
-def test_mini_activity_uses_main_activity_cell_size() -> None:
+def test_mini_activity_uses_own_configurable_cell_size() -> None:
     styles = mini_activity_styles()
 
-    assert f"width: {ACTIVITY_CELL_SIZE};" in styles
-    assert f"height: {ACTIVITY_CELL_SIZE};" in styles
+    assert f"width: {MINI_ACTIVITY_CELL_SIZE};" in styles
+    assert f"height: {MINI_ACTIVITY_CELL_SIZE};" in styles
 
 
 def test_compact_goal_activity_renders_unreached_days_as_white() -> None:

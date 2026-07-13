@@ -7,11 +7,19 @@ from html import escape
 from src.db.persistence_helpers import _now, _period_fulfilled, _period_start, _schedule
 
 
+DONE_BUTTON_GREEN = "#2E9E57"
+DONE_BUTTON_GREEN_HOVER = "#218243"
+DONE_BUTTON_GREEN_ACTIVE = "#1b6d38"
+
 ACTIVITY_COLORS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
 ACTIVITY_CELL_SIZE = "11px"
 ACTIVITY_CELL_GAP = "3px"
+MINI_ACTIVITY_CELL_SIZE = "8px"
+MINI_ACTIVITY_CELL_GAP = "2px"
 FUTURE_ACTIVITY_COLOR = "#ffffff"
 STREAMLIT_PRIMARY_COLOR = "#1F2937"
+PARTICIPANT_PROGRESS_COLOR = "rgba(49, 51, 63, 0.6)"
+MINI_ACTIVITY_NAME_MAX_LENGTH = 25
 PARTICIPANT_SPARKLINE_COLOR = "#1F2937"
 PARTICIPANT_SPARKLINE_FILL = "#F0F2F6"
 PARTICIPANT_SPARKLINE_WIDTH = 90
@@ -101,12 +109,12 @@ def mini_activity_styles() -> str:
         .mini-activity-dots {{
             display: inline-flex;
             align-items: center;
-            gap: {ACTIVITY_CELL_GAP};
+            gap: {MINI_ACTIVITY_CELL_GAP};
             white-space: nowrap;
         }}
         .mini-activity-dot {{
-            width: {ACTIVITY_CELL_SIZE};
-            height: {ACTIVITY_CELL_SIZE};
+            width: {MINI_ACTIVITY_CELL_SIZE};
+            height: {MINI_ACTIVITY_CELL_SIZE};
             border-radius: 2px;
             box-shadow: inset 0 0 0 1px rgba(27,31,36,0.14);
             flex: 0 0 auto;

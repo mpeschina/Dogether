@@ -8,6 +8,11 @@ import streamlit as st
 from src.db.persistence import Persistence
 from src.pages.account_page import render_activity_diagram
 from src.pages.common_helpers import (
+    DONE_BUTTON_GREEN,
+    DONE_BUTTON_GREEN_ACTIVE,
+    DONE_BUTTON_GREEN_HOVER,
+    MINI_ACTIVITY_NAME_MAX_LENGTH,
+    PARTICIPANT_PROGRESS_COLOR,
     compact_goal_activity_html,
     mini_activity_styles,
     participant_sparkline_html,
@@ -22,13 +27,6 @@ from src.pages.page_helpers import participant_name, progress_bar, schedule_labe
 from src.push.notifications import update_goal_progress_with_push
 from src.push.storage import PushStorage
 from src.viewport_component import viewport_info
-
-
-DONE_BUTTON_GREEN = "#2E9E57"
-DONE_BUTTON_GREEN_HOVER = "#218243"
-DONE_BUTTON_GREEN_ACTIVE = "#1b6d38"
-PARTICIPANT_PROGRESS_COLOR = "rgba(49, 51, 63, 0.6)"
-MINI_ACTIVITY_NAME_MAX_LENGTH = 25
 
 
 def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str]:
