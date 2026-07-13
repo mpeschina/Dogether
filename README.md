@@ -133,14 +133,14 @@ mongodb_collection = "users"  # legacy single-document collection to migrate fro
 cache_ttl_seconds = 5
 ```
 
-The native MongoDB backend stores users, goals, friendships, invites,
-suggestions, user stats, debug data, and migrations in separate collections. On
-first startup it copies a legacy `{"_id": "app_store"}` document into those
-collections and leaves the legacy document in place. All persistence backends
-use `cache_ttl_seconds` for short process-local read caching; set it to `0` to
-disable caching. The native MongoDB backend caches targeted records and query
-results rather than a whole database snapshot, and clears that cache after
-successful writes.
+The native MongoDB backend stores users in `users_inventory` and stores goals,
+friendships, invites, suggestions, user stats, debug data, and migrations in
+separate collections. On first startup it copies a legacy `{"_id": "app_store"}`
+document from `mongodb_collection` into those native collections and leaves the
+legacy document in place. All persistence backends use `cache_ttl_seconds` for
+short process-local read caching; set it to `0` to disable caching. The native
+MongoDB backend caches targeted records and query results rather than a whole
+database snapshot, and clears that cache after successful writes.
 
 
 ## Web Push Notifications

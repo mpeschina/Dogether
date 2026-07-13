@@ -1036,6 +1036,8 @@ def test_mongodb_native_migrates_legacy_app_store_once() -> None:
     again = MongoNativePersistence(mongo_database=database)
 
     assert persistence.get_user("alice")["email"] == "alice@example.com"
+    assert "alice" in database["users_inventory"].documents
+    assert "alice" not in database["users"].documents
     assert [user["user_id"] for user in persistence.list_users()] == ["alice"]
     assert database["debug"].documents["debug"]["time_offset_seconds"] == 3600
     assert database["migrations"].documents["native_mongo_v1"]["source_collection"] == "users"
@@ -1072,7 +1074,7 @@ def test_mongodb_native_goal_progress_uses_targeted_updates() -> None:
     goal_update_calls = [call for call in database["goals"].calls if call[0] == "update_one"]
     assert goal_update_calls
     assert not [call for call in database["goals"].calls if call[0] == "replace_one"]
-    assert [call for call in database["users"].calls if call[0] == "update_one"]
+    assert [call for call in database["users_inventory"].calls if call[0] == "update_one"]
     assert database["goals"].documents[goal["id"]]["participants"]["alice"]["current"] == 4
 
 
@@ -1090,7 +1092,7 @@ def test_mongodb_native_list_goals_reads_matching_goal_collection_only() -> None
     goal_find_calls = [call for call in database["goals"].calls if call[0] == "find"]
     assert goal_find_calls
     assert goal_find_calls[0][1]["participant_user_ids"] == "alice"
-    assert not database["users"].calls
+    assert not database["users_inventory"].calls
 
 
 
@@ -1098,12 +1100,12 @@ def test_mongodb_native_get_user_uses_cache_inside_ttl() -> None:
     database = FakeMongoNativeDatabase()
     persistence = MongoNativePersistence(mongo_database=database, cache_ttl_seconds=5)
     persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
-    database["users"].calls.clear()
+    database["users_inventory"].calls.clear()
 
     assert persistence.get_user("alice")["name"] == "Alice"
     assert persistence.get_user("alice")["name"] == "Alice"
 
-    find_calls = [call for call in database["users"].calls if call[0] == "find_one"]
+    find_calls = [call for call in database["users_inventory"].calls if call[0] == "find_one"]
     assert len(find_calls) == 1
 
 
@@ -1111,12 +1113,12 @@ def test_mongodb_native_cache_can_be_disabled() -> None:
     database = FakeMongoNativeDatabase()
     persistence = MongoNativePersistence(mongo_database=database, cache_ttl_seconds=0)
     persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
-    database["users"].calls.clear()
+    database["users_inventory"].calls.clear()
 
     persistence.get_user("alice")
     persistence.get_user("alice")
 
-    find_calls = [call for call in database["users"].calls if call[0] == "find_one"]
+    find_calls = [call for call in database["users_inventory"].calls if call[0] == "find_one"]
     assert len(find_calls) == 2
 
 
@@ -1142,13 +1144,13 @@ def test_mongodb_native_write_clears_cache() -> None:
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
     goal = persistence.create_goal("alice", "Run", "daily", 1, [], 10, current=0, now=at("2026-06-01T09:01:00"))
     persistence.get_user("alice")
-    database["users"].calls.clear()
+    database["users_inventory"].calls.clear()
 
     persistence.update_goal_progress(goal["id"], alice["user_id"], current=4, now=at("2026-06-01T09:02:00"))
     user = persistence.get_user("alice")
 
     assert user["last_seen_at"] == "2026-06-01T07:02:00+00:00"
-    find_calls = [call for call in database["users"].calls if call[0] == "find_one"]
+    find_calls = [call for call in database["users_inventory"].calls if call[0] == "find_one"]
     assert find_calls
 
 def test_factory_creates_mongodb_native_backend(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -30,6 +30,9 @@ from .persistence_helpers import (
 )
 
 MIGRATION_ID = "native_mongo_v1"
+NATIVE_COLLECTION_NAMES = {"users": "users_inventory"}
+
+
 class MongoNativePersistence:
     """MongoDB persistence that stores each domain record in its own collection."""
 
@@ -68,7 +71,10 @@ class MongoNativePersistence:
             self._client.close()
 
     def _collection(self, name: str) -> Any:
-        return self.database[name]
+        return self.database[NATIVE_COLLECTION_NAMES.get(name, name)]
+
+    def _legacy_collection(self) -> Any:
+        return self.database[self.legacy_collection]
 
     def _cache_enabled(self) -> bool:
         return self.cache_ttl_seconds > 0
@@ -117,7 +123,7 @@ class MongoNativePersistence:
         if migrations.find_one({"_id": MIGRATION_ID}):
             return
 
-        legacy = self._collection(self.legacy_collection).find_one({"_id": "app_store"})
+        legacy = self._legacy_collection().find_one({"_id": "app_store"})
         if legacy and isinstance(legacy.get("data"), dict):
             store = _normalise_store(copy.deepcopy(legacy["data"]))
             for key in ["users", "friend_invites", "friend_suggestions", "friendships", "goals", "user_stats"]:
