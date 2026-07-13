@@ -438,7 +438,9 @@ def test_main_page_uses_viewport_render_paths() -> None:
     assert "fallback_timeout_seconds=5" not in content
     assert "def main_viewport" not in content
     assert "MAIN_VIEWPORT_SESSION_KEY" not in content
-    assert "def main_render_path(viewport: dict)" in content
+    assert "def main_render_path" not in content
+    assert 'render_path = "widescreen"' in content
+    assert 'viewport.get("renderPath") == "mobile_portrait"' in content
     assert "def render_goal_actions(" in content
     assert "def render_participant_progress(" in content
     assert 'render_path == "mobile_portrait"' in content

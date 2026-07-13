@@ -6,6 +6,7 @@ import copy
 import json
 import pytest
 
+import src.db.cached_document_persistence as cached_document_persistence
 from src.db.mongodb_persistence import MongoPersistence
 from src.db.persistence import JsonPersistence, create_persistence, persistence_settings
 from src.pages.debug_page import DebugMechanics, debug_now, debug_view_enabled
@@ -20,8 +21,10 @@ def at(value: str) -> datetime:
 class FakeMongoCollection:
     def __init__(self) -> None:
         self.document = None
+        self.find_one_calls = 0
 
     def find_one(self, query: dict) -> dict | None:
+        self.find_one_calls += 1
         if self.document and query == {"_id": self.document["_id"]}:
             return copy.deepcopy(self.document)
         return None
@@ -39,6 +42,93 @@ def users_and_friendship(persistence: JsonPersistence) -> tuple[dict, dict]:
     persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True, now=at("2026-06-01T09:03:00"))
     return alice, bob
 
+
+def test_json_persistence_uses_cache_inside_ttl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    now = 100.0
+    monkeypatch.setattr(cached_document_persistence, "monotonic", lambda: now)
+    path = tmp_path / "users.json"
+    path.write_text(
+        json.dumps({"users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alice"}}}),
+        encoding="utf-8",
+    )
+    persistence = JsonPersistence(path, cache_ttl_seconds=5)
+
+    assert persistence.get_user("alice")["name"] == "Alice"
+    path.write_text(
+        json.dumps({"users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alicia"}}}),
+        encoding="utf-8",
+    )
+
+    assert persistence.get_user("alice")["name"] == "Alice"
+
+
+def test_json_persistence_reloads_after_cache_ttl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    current_time = 100.0
+    monkeypatch.setattr(cached_document_persistence, "monotonic", lambda: current_time)
+    path = tmp_path / "users.json"
+    path.write_text(
+        json.dumps({"users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alice"}}}),
+        encoding="utf-8",
+    )
+    persistence = JsonPersistence(path, cache_ttl_seconds=5)
+
+    assert persistence.get_user("alice")["name"] == "Alice"
+    path.write_text(
+        json.dumps({"users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alicia"}}}),
+        encoding="utf-8",
+    )
+    current_time = 106.0
+
+    assert persistence.get_user("alice")["name"] == "Alicia"
+
+
+def test_json_persistence_write_refreshes_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(cached_document_persistence, "monotonic", lambda: 100.0)
+    path = tmp_path / "users.json"
+    persistence = JsonPersistence(path, cache_ttl_seconds=5)
+
+    persistence.upsert_user("alice", "alice@example.com", "Alice")
+    path.write_text(
+        json.dumps({"users": {"charlie": {"user_id": "charlie", "email": "charlie@example.com", "name": "Charlie"}}}),
+        encoding="utf-8",
+    )
+    persistence.upsert_user("bob", "bob@example.com", "Bob")
+
+    assert persistence.get_user("bob")["name"] == "Bob"
+    assert persistence.get_user("alice")["name"] == "Alice"
+    assert persistence.get_user("charlie") is None
+
+
+def test_json_persistence_cache_can_be_disabled(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    path.write_text(
+        json.dumps({"users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alice"}}}),
+        encoding="utf-8",
+    )
+    persistence = JsonPersistence(path, cache_ttl_seconds=0)
+
+    assert persistence.get_user("alice")["name"] == "Alice"
+    path.write_text(
+        json.dumps({"users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alicia"}}}),
+        encoding="utf-8",
+    )
+
+    assert persistence.get_user("alice")["name"] == "Alicia"
+
+
+def test_mongodb_document_backend_uses_cache_inside_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cached_document_persistence, "monotonic", lambda: 100.0)
+    collection = FakeMongoCollection()
+    collection.document = {
+        "_id": "app_store",
+        "data": {"users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alice"}}},
+    }
+    persistence = MongoPersistence(mongo_collection=collection, cache_ttl_seconds=5)
+
+    assert persistence.get_user("alice")["name"] == "Alice"
+    assert persistence.get_user("alice")["name"] == "Alice"
+
+    assert collection.find_one_calls == 1
 
 def test_missing_file_gets_new_app_schema(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
@@ -62,7 +152,7 @@ def test_old_counter_state_is_ignored(tmp_path: Path) -> None:
     assert persistence.raw_data()["users"] == {}
 
 
-def test_user_profile_upsert_normalizes_email_and_preserves_created_at(tmp_path: Path) -> None:
+def test_user_profile_upsert_normalizes_email_and_preserves_activity_timestamp(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
 
     first = persistence.upsert_user("alice", "Alice@Example.com", "Alice", at("2026-06-01T09:00:00"))
@@ -72,7 +162,7 @@ def test_user_profile_upsert_normalizes_email_and_preserves_created_at(tmp_path:
     assert second["email"] == "alice@example.com"
     assert second["name"] == "Alice A."
     assert second["created_at"] == first["created_at"]
-    assert second["last_seen_at"] != first["last_seen_at"]
+    assert second["last_seen_at"] == first["last_seen_at"]
 
 
 def test_friend_invite_lifecycle_and_duplicate_prevention(tmp_path: Path) -> None:
@@ -439,15 +529,17 @@ def test_goal_participant_can_add_more_accepted_friends(tmp_path: Path) -> None:
 
 def test_participant_updates_own_progress_and_can_leave_goal(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
-    users_and_friendship(persistence)
+    _alice, bob = users_and_friendship(persistence)
     goal = persistence.create_goal("alice", "Run", "weekly", 1, ["bob"], 10, current=2)
 
-    persistence.update_goal_progress(goal["id"], "bob", current=4, target=12)
+    persistence.update_goal_progress(goal["id"], "bob", current=4, target=12, now=at("2026-06-01T09:04:00"))
     updated = persistence.list_goals_for_user("bob")[0]
 
     assert updated["participants"]["bob"]["current"] == 4
     assert updated["participants"]["bob"]["target"] == 12
     assert updated["participants"]["alice"]["target"] == 10
+    assert persistence.raw_data()["users"]["bob"]["last_seen_at"] != bob["last_seen_at"]
+    assert persistence.raw_data()["users"]["bob"]["last_seen_at"] == "2026-06-01T07:04:00+00:00"
 
     persistence.leave_goal(goal["id"], "bob")
     data = persistence.raw_data()
@@ -681,7 +773,7 @@ def test_activity_summaries_keep_last_365_days(tmp_path: Path) -> None:
 
 def test_activity_days_repair_runs_once_and_restores_stale_historical_cache(tmp_path: Path) -> None:
     path = tmp_path / "users.json"
-    persistence = JsonPersistence(path)
+    persistence = JsonPersistence(path, cache_ttl_seconds=0)
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-07-03T09:00:00"))
     goals = [
         persistence.create_goal(
@@ -807,4 +899,28 @@ def test_persistence_settings_come_from_secrets() -> None:
         "mongodb_uri": "",
         "mongodb_database": "dogether",
         "mongodb_collection": "users",
+        "cache_ttl_seconds": 5.0,
     }
+
+
+def test_persistence_settings_accept_cache_ttl_seconds() -> None:
+    settings = persistence_settings({"persistence": {"cache_ttl_seconds": 2.5}})
+
+    assert settings["cache_ttl_seconds"] == 2.5
+
+
+def test_factory_passes_cache_ttl_to_backends(tmp_path: Path) -> None:
+    json_persistence = create_persistence(
+        "json",
+        json_path=str(tmp_path / "users.json"),
+        cache_ttl_seconds=2,
+    )
+    mongo_persistence = create_persistence(
+        "mongodb",
+        mongodb_uri="mongodb://localhost:27017",
+        cache_ttl_seconds=3,
+    )
+
+    assert json_persistence.cache_ttl_seconds == 2
+    assert mongo_persistence.cache_ttl_seconds == 3
+    mongo_persistence.close()

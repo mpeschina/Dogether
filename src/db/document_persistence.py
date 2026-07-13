@@ -58,12 +58,13 @@ class DocumentPersistence:
                     "email": normalized_email,
                     "name": name.strip() or normalized_email,
                     "created_at": existing.get("created_at", now_iso),
-                    "last_seen_at": now_iso,
+                    "last_seen_at": existing.get("last_seen_at", now_iso),
                 }
             )
             user.setdefault("dismissed_friend_suggestion_pairs", [])
-            data["users"][user_id] = user
-            self._write(data)
+            if existing != user:
+                data["users"][user_id] = user
+                self._write(data)
             return user
 
     def get_user(self, user_id: str) -> dict[str, Any] | None:
@@ -570,6 +571,8 @@ class DocumentPersistence:
             elif delta:
                 participant["current"] = max(0, int(participant.get("current", 0)) + int(delta))
                 participant["skipped"] = False
+            if user_id in data["users"]:
+                data["users"][user_id]["last_seen_at"] = _iso(now)
             after_current = max(0, int(participant.get("current", 0)))
             after_target = max(1, int(participant.get("target", 1)))
             is_complete = after_current >= after_target
@@ -704,9 +707,11 @@ class DocumentPersistence:
         now_dt = _now(now)
         with self._lock:
             data = self._read()
+            before_data = copy.deepcopy(data)
             _repair_activity_days(data, user_id, now_dt)
             _refresh_activity_day(data, user_id, now_dt.date())
-            self._write(data)
+            if data != before_data:
+                self._write(data)
             active_goals = sum(1 for goal in data["goals"].values() if _goal_active_for_user(goal, user_id))
             friend_count = len(
                 [

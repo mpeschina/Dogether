@@ -39,6 +39,7 @@ server_metadata_url = "https://accounts.google.com/.well-known/openid-configurat
 [persistence]
 backend = "json"
 json_path = "data/users.json"
+cache_ttl_seconds = 5
 
 [debug]
 view = true
@@ -105,6 +106,7 @@ MongoDB persistence backend for Atlas deployments. Local development defaults to
 [persistence]
 backend = "json"
 json_path = "data/users.json"
+cache_ttl_seconds = 5
 ```
 
 For MongoDB Atlas, use:
@@ -115,12 +117,16 @@ backend = "mongodb"
 mongodb_uri = "mongodb+srv://..."
 mongodb_database = "dogether"
 mongodb_collection = "users"
+cache_ttl_seconds = 5
 ```
 
 Both backends persist the same app store shape: users, friend invites,
 friendships, goals, compact user stats, and debug settings. The JSON backend
 writes the file atomically; the MongoDB backend stores the app state in a single
 MongoDB document for now so it matches the existing persistence contract.
+Both backends keep a short process-local read cache, controlled by
+`cache_ttl_seconds`, and refresh that cache immediately after writes. Set it to
+`0` to disable persistence read caching.
 
 
 ## Web Push Notifications
@@ -232,6 +238,7 @@ backend = "mongodb"
 mongodb_uri = "mongodb+srv://..."
 mongodb_database = "dogether"
 mongodb_collection = "users"
+cache_ttl_seconds = 5
 ```
 
 Use the same production callback URL as an authorized redirect URI in the Google

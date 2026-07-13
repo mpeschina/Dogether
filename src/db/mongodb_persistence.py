@@ -4,11 +4,14 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from .document_persistence import DocumentPersistence
+from .cached_document_persistence import (
+    DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS,
+    CachedDocumentPersistence,
+)
 from .persistence_helpers import _empty_store, _normalise_store
 
 
-class MongoPersistence(DocumentPersistence):
+class MongoPersistence(CachedDocumentPersistence):
     """Document-backed MongoDB persistence.
 
     The current app logic expects an atomic whole-store read/write model. This
@@ -24,7 +27,9 @@ class MongoPersistence(DocumentPersistence):
         *,
         store_id: str = "app_store",
         mongo_collection: Any | None = None,
+        cache_ttl_seconds: float = DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS,
     ) -> None:
+        super().__init__(cache_ttl_seconds=cache_ttl_seconds)
         self.store_id = store_id
         self.uri = uri
         self.database = database
@@ -43,7 +48,7 @@ class MongoPersistence(DocumentPersistence):
             self._collection = self._client[self.database][self.collection_name]
         return self._collection
 
-    def _read(self) -> dict[str, Any]:
+    def _read_uncached(self) -> dict[str, Any]:
         document = self.collection.find_one({"_id": self.store_id})
         if not document:
             return _empty_store()
@@ -52,7 +57,7 @@ class MongoPersistence(DocumentPersistence):
             return _empty_store()
         return _normalise_store(copy.deepcopy(data))
 
-    def _write(self, data: dict[str, Any]) -> None:
+    def _write_uncached(self, data: dict[str, Any]) -> None:
         store = _normalise_store(copy.deepcopy(data))
         self.collection.replace_one(
             {"_id": self.store_id},

@@ -7,17 +7,25 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .document_persistence import DocumentPersistence
+from .cached_document_persistence import (
+    DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS,
+    CachedDocumentPersistence,
+)
 from .persistence_helpers import _empty_store, _normalise_store
 
 
-class JsonPersistence(DocumentPersistence):
+class JsonPersistence(CachedDocumentPersistence):
     """Atomic JSON persistence for Dogether."""
 
-    def __init__(self, path: str | Path = "data/users.json") -> None:
+    def __init__(
+        self,
+        path: str | Path = "data/users.json",
+        cache_ttl_seconds: float = DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS,
+    ) -> None:
+        super().__init__(cache_ttl_seconds=cache_ttl_seconds)
         self.path = Path(path)
 
-    def _read(self) -> dict[str, Any]:
+    def _read_uncached(self) -> dict[str, Any]:
         if not self.path.exists():
             return _empty_store()
 
@@ -28,7 +36,7 @@ class JsonPersistence(DocumentPersistence):
             return _empty_store()
         return _normalise_store(loaded)
 
-    def _write(self, data: dict[str, Any]) -> None:
+    def _write_uncached(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary_path = tempfile.mkstemp(
             dir=self.path.parent,

@@ -6,6 +6,7 @@ from typing import Any, Mapping, Protocol
 
 import streamlit as st
 
+from .cached_document_persistence import DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS
 from .json_persistence import JsonPersistence
 from .mongodb_persistence import MongoPersistence
 from .persistence_helpers import APP_ZONE, SCHEDULES, normalize_email
@@ -150,20 +151,22 @@ def create_persistence(
     mongodb_uri: str = "",
     mongodb_database: str = "dogether",
     mongodb_collection: str = "users",
+    cache_ttl_seconds: float = DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS,
 ) -> Persistence:
     backend = backend.strip().lower()
     if backend == "json":
-        return JsonPersistence(json_path)
+        return JsonPersistence(json_path, cache_ttl_seconds=cache_ttl_seconds)
     if backend == "mongodb":
         return MongoPersistence(
             mongodb_uri,
             database=mongodb_database,
             collection=mongodb_collection,
+            cache_ttl_seconds=cache_ttl_seconds,
         )
     raise ValueError("Unsupported persistence backend. Use 'json' or 'mongodb'.")
 
 
-def persistence_settings(secrets: Mapping[str, Any] | None = None) -> dict[str, str]:
+def persistence_settings(secrets: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Read persistence settings from Streamlit secrets."""
     secrets = st.secrets if secrets is None else secrets
     persistence = secrets.get("persistence", {})
@@ -174,6 +177,9 @@ def persistence_settings(secrets: Mapping[str, Any] | None = None) -> dict[str, 
         "mongodb_uri": str(persistence.get("mongodb_uri", "")),
         "mongodb_database": str(persistence.get("mongodb_database", "dogether")),
         "mongodb_collection": str(persistence.get("mongodb_collection", "users")),
+        "cache_ttl_seconds": float(
+            persistence.get("cache_ttl_seconds", DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS)
+        ),
     }
 
 
@@ -184,6 +190,7 @@ def get_persistence(
     mongodb_uri: str,
     mongodb_database: str,
     mongodb_collection: str,
+    cache_ttl_seconds: float,
 ) -> Persistence:
     return create_persistence(
         backend,
@@ -191,6 +198,7 @@ def get_persistence(
         mongodb_uri=mongodb_uri,
         mongodb_database=mongodb_database,
         mongodb_collection=mongodb_collection,
+        cache_ttl_seconds=cache_ttl_seconds,
     )
 
 
