@@ -8,6 +8,8 @@ from src.db.persistence_helpers import _now, _period_fulfilled, _period_start, _
 
 
 ACTIVITY_COLORS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
+ACTIVITY_CELL_SIZE = "11px"
+ACTIVITY_CELL_GAP = "3px"
 FUTURE_ACTIVITY_COLOR = "#ffffff"
 STREAMLIT_PRIMARY_COLOR = "#1F2937"
 X_PER_SCHEDULE_CLASSES = {"daily_x_per_week", "weekly_x_per_month"}
@@ -44,23 +46,23 @@ def compact_goal_activity_html(goal: dict, participant: dict, now: datetime | No
 
 
 def mini_activity_styles() -> str:
-    return """
-        .mini-activity-dots {
+    return f"""
+        .mini-activity-dots {{
             display: inline-flex;
             align-items: center;
-            gap: 3px;
+            gap: {ACTIVITY_CELL_GAP};
             white-space: nowrap;
-        }
-        .mini-activity-dot {
-            width: 8px;
-            height: 8px;
+        }}
+        .mini-activity-dot {{
+            width: {ACTIVITY_CELL_SIZE};
+            height: {ACTIVITY_CELL_SIZE};
             border-radius: 2px;
             box-shadow: inset 0 0 0 1px rgba(27,31,36,0.14);
             flex: 0 0 auto;
-        }
-        .mini-activity-dot-current {
+        }}
+        .mini-activity-dot-current {{
             box-shadow: 0 0 0 1.5px rgba(31,41,55,0.42);
-        }
+        }}
     """
 
 

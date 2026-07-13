@@ -5,7 +5,12 @@ from html import escape
 import streamlit as st
 
 from src.db.persistence import Persistence
-from src.pages.common_helpers import ACTIVITY_COLORS, activity_color_for_percent
+from src.pages.common_helpers import (
+    ACTIVITY_CELL_GAP,
+    ACTIVITY_CELL_SIZE,
+    ACTIVITY_COLORS,
+    activity_color_for_percent,
+)
 
 
 def render_account(
@@ -116,7 +121,8 @@ def activity_diagram_html(
     legend_nodes = "".join(f"<span style='background:{color}'></span>" for color in ACTIVITY_COLORS)
     return (
         "<style>"
-        ".activity-shell{--cell:11px;--gap:3px;color:#57606a;max-width:100%;overflow-x:auto;"
+        f".activity-shell{{--cell:{ACTIVITY_CELL_SIZE};--gap:{ACTIVITY_CELL_GAP};"
+        "color:#57606a;max-width:100%;overflow-x:auto;"
         "padding:0.15rem 0 0.35rem;}"
         ".activity-grid{display:grid;grid-template-columns:22px repeat("
         f"{week_count},var(--cell));grid-template-rows:18px repeat(7,var(--cell));"
