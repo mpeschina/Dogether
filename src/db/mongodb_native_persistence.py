@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime
+from time import monotonic
 from typing import Any, Iterable
 
 from .persistence_helpers import (
@@ -39,10 +40,13 @@ class MongoNativePersistence:
         *,
         legacy_collection: str = "users",
         mongo_database: Any | None = None,
+        cache_ttl_seconds: float = 0,
     ) -> None:
         self.uri = uri
         self.database_name = database
         self.legacy_collection = legacy_collection
+        self.cache_ttl_seconds = float(cache_ttl_seconds)
+        self._cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
         self._client = None
         self._database = mongo_database
         if mongo_database is None and not uri:
@@ -65,6 +69,35 @@ class MongoNativePersistence:
 
     def _collection(self, name: str) -> Any:
         return self.database[name]
+
+    def _cache_enabled(self) -> bool:
+        return self.cache_ttl_seconds > 0
+
+    def _cache_get(self, key: tuple[Any, ...]) -> Any | None:
+        if not self._cache_enabled():
+            return None
+        cached = self._cache.get(key)
+        if cached is None:
+            return None
+        cached_at, value = cached
+        if monotonic() - cached_at > self.cache_ttl_seconds:
+            self._cache.pop(key, None)
+            return None
+        return copy.deepcopy(value)
+
+    def _cache_set(self, key: tuple[Any, ...], value: Any) -> Any:
+        if self._cache_enabled():
+            self._cache[key] = (monotonic(), copy.deepcopy(value))
+        return value
+
+    def _cache_clear(self) -> None:
+        self._cache.clear()
+
+    def _read_cached(self, key: tuple[Any, ...], loader):
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+        return self._cache_set(key, loader())
 
     def _ensure_indexes(self) -> None:
         self._collection("users").create_index("email")
@@ -121,12 +154,15 @@ class MongoNativePersistence:
         }
 
     def _active_goals_for_user(self, user_id: str) -> list[dict[str, Any]]:
-        goals = self._strip_many(self._collection("goals").find(self._user_goal_query(user_id)))
-        _normalise_goal_participants({goal["id"]: goal for goal in goals if "id" in goal})
-        return [goal for goal in goals if _goal_active_for_user(goal, user_id)]
+        def load_goals() -> list[dict[str, Any]]:
+            goals = self._strip_many(self._collection("goals").find(self._user_goal_query(user_id)))
+            _normalise_goal_participants({goal["id"]: goal for goal in goals if "id" in goal})
+            return [goal for goal in goals if _goal_active_for_user(goal, user_id)]
+
+        return self._read_cached(("active_goals_for_user", user_id), load_goals)
 
     def _refresh_activity_day_for_user(self, user_id: str, day: Any) -> None:
-        stats = self._strip_id(self._collection("user_stats").find_one({"_id": user_id})) or {"activity_days": {}}
+        stats = self._user_stats_for_user(user_id)
         data = {
             "users": {},
             "friend_invites": {},
@@ -141,9 +177,16 @@ class MongoNativePersistence:
         updated = data["user_stats"][user_id]
         if updated != before:
             self._collection("user_stats").replace_one({"_id": user_id}, {"_id": user_id, **updated}, upsert=True)
+            self._cache_clear()
+
+    def _user_stats_for_user(self, user_id: str) -> dict[str, Any]:
+        def load_stats() -> dict[str, Any]:
+            return self._strip_id(self._collection("user_stats").find_one({"_id": user_id})) or {"activity_days": {}}
+
+        return self._read_cached(("user_stats", user_id), load_stats)
 
     def _repair_activity_days_for_user(self, user_id: str, now: datetime) -> dict[str, Any]:
-        stats = self._strip_id(self._collection("user_stats").find_one({"_id": user_id})) or {"activity_days": {}}
+        stats = self._user_stats_for_user(user_id)
         if stats.get("activity_days_repair_version") == ACTIVITY_DAYS_REPAIR_VERSION:
             return stats
         data = {
@@ -158,6 +201,7 @@ class MongoNativePersistence:
         _repair_activity_days(data, user_id, now)
         updated = data["user_stats"][user_id]
         self._collection("user_stats").replace_one({"_id": user_id}, {"_id": user_id, **updated}, upsert=True)
+        self._cache_clear()
         return updated
 
     def _rollover_goal_participant(self, goal: dict[str, Any], user_id: str, now: datetime) -> dict[str, Any]:
@@ -187,6 +231,7 @@ class MongoNativePersistence:
                 {"_id": goal["id"]},
                 {"$set": {f"participants.{user_id}": participant}},
             )
+            self._cache_clear()
             for affected_day in affected_days:
                 self._refresh_activity_day_for_user(user_id, affected_day)
             self._refresh_activity_day_for_user(user_id, now.date())
@@ -214,43 +259,64 @@ class MongoNativePersistence:
         user.setdefault("dismissed_friend_suggestion_pairs", [])
         if user != existing:
             self._collection("users").update_one({"_id": user_id}, {"$set": user}, upsert=True)
+            self._cache_clear()
         return user
 
     def get_user(self, user_id: str) -> dict[str, Any] | None:
-        user = self._strip_id(self._collection("users").find_one({"_id": user_id}))
-        return _normalise_user_profile(user) if user else None
+        def load_user() -> dict[str, Any] | None:
+            user = self._strip_id(self._collection("users").find_one({"_id": user_id}))
+            return _normalise_user_profile(user) if user else None
+
+        return self._read_cached(("user", user_id), load_user)
 
     def users_by_ids(self, user_ids: list[str]) -> dict[str, dict[str, Any]]:
-        unique_ids = sorted(set(user_ids))
+        unique_ids = tuple(sorted(set(user_ids)))
         if not unique_ids:
             return {}
-        users = self._strip_many(self._collection("users").find({"_id": {"$in": unique_ids}}))
-        return {user["user_id"]: _normalise_user_profile(user) for user in users if "user_id" in user}
+
+        def load_users() -> dict[str, dict[str, Any]]:
+            users = self._strip_many(self._collection("users").find({"_id": {"$in": list(unique_ids)}}))
+            return {user["user_id"]: _normalise_user_profile(user) for user in users if "user_id" in user}
+
+        return self._read_cached(("users_by_ids", unique_ids), load_users)
 
     def find_user_by_email(self, email: str) -> dict[str, Any] | None:
-        user = self._strip_id(self._collection("users").find_one({"email": normalize_email(email)}))
-        return _normalise_user_profile(user) if user else None
+        normalized_email = normalize_email(email)
+
+        def load_user() -> dict[str, Any] | None:
+            user = self._strip_id(self._collection("users").find_one({"email": normalized_email}))
+            return _normalise_user_profile(user) if user else None
+
+        return self._read_cached(("user_by_email", normalized_email), load_user)
 
     def list_users(self) -> list[dict[str, Any]]:
-        users = [
-            _normalise_user_profile(user)
-            for user in self._strip_many(self._collection("users").find({}))
-            if "user_id" in user and "email" in user
-        ]
-        return sorted(users, key=lambda user: (user.get("name", ""), user.get("email", "")))
+        def load_users() -> list[dict[str, Any]]:
+            users = [
+                _normalise_user_profile(user)
+                for user in self._strip_many(self._collection("users").find({}))
+                if "user_id" in user and "email" in user
+            ]
+            return sorted(users, key=lambda user: (user.get("name", ""), user.get("email", "")))
+
+        return self._read_cached(("list_users",), load_users)
 
     def debug_time_offset_seconds(self) -> int:
-        debug = self._strip_id(self._collection("debug").find_one({"_id": "debug"})) or {}
-        return int(debug.get("time_offset_seconds", 0))
+        def load_offset() -> int:
+            debug = self._strip_id(self._collection("debug").find_one({"_id": "debug"})) or {}
+            return int(debug.get("time_offset_seconds", 0))
+
+        return self._read_cached(("debug_time_offset_seconds",), load_offset)
 
     def add_debug_time_offset(self, seconds: int) -> int:
         current = self.debug_time_offset_seconds()
         updated = max(0, current + int(seconds))
         self._collection("debug").update_one({"_id": "debug"}, {"$set": {"time_offset_seconds": updated}}, upsert=True)
+        self._cache_clear()
         return updated
 
     def reset_debug_time_offset(self) -> None:
         self._collection("debug").update_one({"_id": "debug"}, {"$set": {"time_offset_seconds": 0}}, upsert=True)
+        self._cache_clear()
 
     def create_friend_invite(self, from_user_id: str, from_email: str, to_email: str, now: datetime | None = None) -> dict[str, Any]:
         to_email = normalize_email(to_email)
@@ -273,6 +339,7 @@ class MongoNativePersistence:
             if existing.get("to_user_id") != target_user["user_id"]:
                 existing["to_user_id"] = target_user["user_id"]
                 self._collection("friend_invites").update_one({"_id": existing["id"]}, {"$set": {"to_user_id": target_user["user_id"]}})
+                self._cache_clear()
             return existing
         now_iso = _iso(now)
         invite_id = _new_id("invite")
@@ -287,28 +354,36 @@ class MongoNativePersistence:
             "updated_at": now_iso,
         }
         self._collection("friend_invites").replace_one({"_id": invite_id}, {"_id": invite_id, **invite}, upsert=True)
+        self._cache_clear()
         return invite
 
     def incoming_friend_invites(self, user_email: str, user_id: str | None = None) -> list[dict[str, Any]]:
         user_email = normalize_email(user_email)
-        queries = [{"status": "pending", "to_email": user_email}]
-        if user_id is not None:
-            queries.insert(0, {"status": "pending", "to_user_id": user_id})
-        invites_by_id = {}
-        for query in queries:
-            for invite in self._strip_many(self._collection("friend_invites").find(query)):
-                invites_by_id[invite["id"]] = invite
-        return sorted(invites_by_id.values(), key=lambda invite: invite["created_at"])
+
+        def load_invites() -> list[dict[str, Any]]:
+            queries = [{"status": "pending", "to_email": user_email}]
+            if user_id is not None:
+                queries.insert(0, {"status": "pending", "to_user_id": user_id})
+            invites_by_id = {}
+            for query in queries:
+                for invite in self._strip_many(self._collection("friend_invites").find(query)):
+                    invites_by_id[invite["id"]] = invite
+            return sorted(invites_by_id.values(), key=lambda invite: invite["created_at"])
+
+        return self._read_cached(("incoming_friend_invites", user_email, user_id), load_invites)
 
     def outgoing_friend_invites(self, user_id: str) -> list[dict[str, Any]]:
-        invites = self._strip_many(self._collection("friend_invites").find({"from_user_id": user_id, "status": "pending"}))
-        visible = [
-            invite
-            for invite in invites
-            if (invite.get("to_user_id") and self.get_user(invite["to_user_id"]))
-            or self.find_user_by_email(invite.get("to_email", "")) is not None
-        ]
-        return sorted(visible, key=lambda invite: invite["created_at"])
+        def load_invites() -> list[dict[str, Any]]:
+            invites = self._strip_many(self._collection("friend_invites").find({"from_user_id": user_id, "status": "pending"}))
+            visible = [
+                invite
+                for invite in invites
+                if (invite.get("to_user_id") and self.get_user(invite["to_user_id"]))
+                or self.find_user_by_email(invite.get("to_email", "")) is not None
+            ]
+            return sorted(visible, key=lambda invite: invite["created_at"])
+
+        return self._read_cached(("outgoing_friend_invites", user_id), load_invites)
 
     def _active_friendship(self, first_user_id: str, second_user_id: str) -> bool:
         return bool(self._collection("friendships").find_one({"_id": _friendship_id(first_user_id, second_user_id), "active": True}))
@@ -343,8 +418,10 @@ class MongoNativePersistence:
             }
             self._collection("friendships").replace_one({"_id": friendship_id}, {"_id": friendship_id, **friendship}, upsert=True)
             self._collection("friend_invites").delete_one({"_id": invite_id})
+            self._cache_clear()
         else:
             self._collection("friend_invites").update_one({"_id": invite_id}, {"$set": {"status": "declined", "updated_at": now_iso}})
+            self._cache_clear()
         return invite
 
     def dismissed_friend_suggestion_pairs(self, user_id: str) -> list[list[str]]:
@@ -366,6 +443,7 @@ class MongoNativePersistence:
             {"_id": user_id},
             {"$set": {"dismissed_friend_suggestion_pairs": dismissed_pairs, "updated_at": user["updated_at"]}},
         )
+        self._cache_clear()
         return user
 
     def create_friend_suggestion(self, suggested_by_user_id: str, suggested_user_ids: list[str], source_goal_id: str | None = None, now: datetime | None = None) -> dict[str, Any]:
@@ -400,26 +478,37 @@ class MongoNativePersistence:
             "updated_at": now_iso,
         }
         self._collection("friend_suggestions").replace_one({"_id": suggestion_id}, {"_id": suggestion_id, **suggestion}, upsert=True)
+        self._cache_clear()
         return suggestion
 
     def incoming_friend_suggestions(self, user_id: str) -> list[dict[str, Any]]:
-        suggestions = [
-            suggestion
-            for suggestion in self._strip_many(self._collection("friend_suggestions").find({"status": "pending", "suggested_user_ids": user_id}))
-            if suggestion.get("responses", {}).get(user_id) == "pending"
-        ]
-        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+        def load_suggestions() -> list[dict[str, Any]]:
+            suggestions = [
+                suggestion
+                for suggestion in self._strip_many(self._collection("friend_suggestions").find({"status": "pending", "suggested_user_ids": user_id}))
+                if suggestion.get("responses", {}).get(user_id) == "pending"
+            ]
+            return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+        return self._read_cached(("incoming_friend_suggestions", user_id), load_suggestions)
 
     def outgoing_friend_suggestions(self, user_id: str, include_resolved: bool = False) -> list[dict[str, Any]]:
-        suggestions = self._strip_many(self._collection("friend_suggestions").find({"suggested_by_user_id": user_id}))
-        if not include_resolved:
-            suggestions = [suggestion for suggestion in suggestions if suggestion.get("status") == "pending"]
-        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+        def load_suggestions() -> list[dict[str, Any]]:
+            suggestions = self._strip_many(self._collection("friend_suggestions").find({"suggested_by_user_id": user_id}))
+            if not include_resolved:
+                suggestions = [suggestion for suggestion in suggestions if suggestion.get("status") == "pending"]
+            return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+        return self._read_cached(("outgoing_friend_suggestions", user_id, include_resolved), load_suggestions)
 
     def list_friend_suggestions_for_pair(self, first_user_id: str, second_user_id: str) -> list[dict[str, Any]]:
-        suggested_user_ids = sorted([first_user_id, second_user_id])
-        suggestions = self._strip_many(self._collection("friend_suggestions").find({"suggested_user_ids": suggested_user_ids}))
-        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+        suggested_user_ids = tuple(sorted([first_user_id, second_user_id]))
+
+        def load_suggestions() -> list[dict[str, Any]]:
+            suggestions = self._strip_many(self._collection("friend_suggestions").find({"suggested_user_ids": list(suggested_user_ids)}))
+            return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+        return self._read_cached(("friend_suggestions_for_pair", suggested_user_ids), load_suggestions)
 
     def respond_friend_suggestion(self, suggestion_id: str, user_id: str, approve: bool, now: datetime | None = None) -> dict[str, Any]:
         suggestion = self._strip_id(self._collection("friend_suggestions").find_one({"_id": suggestion_id}))
@@ -454,13 +543,17 @@ class MongoNativePersistence:
             {"_id": suggestion_id},
             {"$set": {"responses": suggestion["responses"], "status": suggestion["status"], "updated_at": now_iso}},
         )
+        self._cache_clear()
         return suggestion
 
     def list_friends(self, user_id: str) -> list[dict[str, Any]]:
-        friendships = self._strip_many(self._collection("friendships").find({"user_ids": user_id, "active": True}))
-        friend_ids = [next(uid for uid in friendship["user_ids"] if uid != user_id) for friendship in friendships]
-        friends = list(self.users_by_ids(friend_ids).values())
-        return sorted(friends, key=lambda user: (user.get("name", ""), user.get("email", "")))
+        def load_friends() -> list[dict[str, Any]]:
+            friendships = self._strip_many(self._collection("friendships").find({"user_ids": user_id, "active": True}))
+            friend_ids = [next(uid for uid in friendship["user_ids"] if uid != user_id) for friendship in friendships]
+            friends = list(self.users_by_ids(friend_ids).values())
+            return sorted(friends, key=lambda user: (user.get("name", ""), user.get("email", "")))
+
+        return self._read_cached(("friends", user_id), load_friends)
 
     def remove_friend(self, user_id: str, friend_id: str, now: datetime | None = None) -> None:
         friendship_id = _friendship_id(user_id, friend_id)
@@ -468,6 +561,7 @@ class MongoNativePersistence:
         if not friendship:
             raise ValueError("That friendship is not active.")
         self._collection("friendships").update_one({"_id": friendship_id}, {"$set": {"active": False, "updated_at": _iso(now)}})
+        self._cache_clear()
 
     def create_goal(self, created_by: str, description: str, schedule_class: str, required_periods: int, friend_user_ids: list[str], target: int, current: int = 0, now: datetime | None = None) -> dict[str, Any]:
         description = description.strip()
@@ -509,6 +603,7 @@ class MongoNativePersistence:
             "archived_at": None,
         }
         self._collection("goals").replace_one({"_id": goal_id}, {"_id": goal_id, **goal}, upsert=True)
+        self._cache_clear()
         for participant_id in participant_ids:
             self._refresh_activity_day_for_user(participant_id, now_dt.date())
         return goal
@@ -556,6 +651,7 @@ class MongoNativePersistence:
         ]
         set_fields["participant_user_ids"] = goal["participant_user_ids"]
         self._collection("goals").update_one({"_id": goal_id}, {"$set": set_fields})
+        self._cache_clear()
         for participant_id in new_participant_ids:
             self._refresh_activity_day_for_user(participant_id, now_dt.date())
         return goal
@@ -592,6 +688,7 @@ class MongoNativePersistence:
             notification_event = {"type": "goal_completed", "goal_id": goal_id, "completed_by_user_id": user_id, "day": today_key}
         self._collection("goals").update_one({"_id": goal_id}, {"$set": {f"participants.{user_id}": participant}})
         self._collection("users").update_one({"_id": user_id}, {"$set": {"last_seen_at": _iso(now)}})
+        self._cache_clear()
         self._refresh_activity_day_for_user(user_id, now_dt.date())
         result = copy.deepcopy(goal)
         if notification_event:
@@ -607,6 +704,7 @@ class MongoNativePersistence:
             {"_id": goal_id},
             {"$set": {f"participants.{user_id}.completion_notifications_enabled": bool(enabled)}},
         )
+        self._cache_clear()
         return goal
 
     def set_health_data_workflow_target(self, goal_id: str | None, user_id: str, enabled: bool, now: datetime | None = None) -> dict[str, Any] | None:
@@ -625,10 +723,12 @@ class MongoNativePersistence:
                     {"_id": goal["id"]},
                     {"$set": {f"participants.{user_id}.health_data_workflow.enabled": False, f"participants.{user_id}.health_data_workflow.disabled_at": now_iso}},
                 )
+                self._cache_clear()
         if enabled and selected_goal is not None:
             workflow = {"enabled": True, "provider": "apple_health_steps", "configured_at": now_iso}
             selected_goal["participants"][user_id]["health_data_workflow"] = workflow
             self._collection("goals").update_one({"_id": selected_goal["id"]}, {"$set": {f"participants.{user_id}.health_data_workflow": workflow}})
+            self._cache_clear()
         return copy.deepcopy(selected_goal) if selected_goal is not None else None
 
     def leave_goal(self, goal_id: str, user_id: str, now: datetime | None = None) -> None:
@@ -640,11 +740,13 @@ class MongoNativePersistence:
         goal["participant_user_ids"] = [participant_id for participant_id in goal.get("participant_user_ids", []) if participant_id != user_id]
         if not goal["participants"]:
             self._collection("goals").delete_one({"_id": goal_id})
+            self._cache_clear()
         else:
             self._collection("goals").update_one(
                 {"_id": goal_id},
                 {"$set": {"participants": goal["participants"], "participant_user_ids": goal["participant_user_ids"]}},
             )
+            self._cache_clear()
         self._refresh_activity_day_for_user(user_id, now_dt.date())
 
     def account_stats(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:
@@ -653,7 +755,7 @@ class MongoNativePersistence:
         stats = self._repair_activity_days_for_user(user_id, now_dt)
         before = copy.deepcopy(stats)
         self._refresh_activity_day_for_user(user_id, now_dt.date())
-        stats = self._strip_id(self._collection("user_stats").find_one({"_id": user_id})) or before
+        stats = self._user_stats_for_user(user_id) or before
         active_goals = self._collection("goals").count_documents(self._user_goal_query(user_id))
         friend_count = self._collection("friendships").count_documents({"user_ids": user_id, "active": True})
         user = self.get_user(user_id) or {}

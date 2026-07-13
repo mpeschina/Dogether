@@ -1093,16 +1093,81 @@ def test_mongodb_native_list_goals_reads_matching_goal_collection_only() -> None
     assert not database["users"].calls
 
 
+
+def test_mongodb_native_get_user_uses_cache_inside_ttl() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database, cache_ttl_seconds=5)
+    persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    database["users"].calls.clear()
+
+    assert persistence.get_user("alice")["name"] == "Alice"
+    assert persistence.get_user("alice")["name"] == "Alice"
+
+    find_calls = [call for call in database["users"].calls if call[0] == "find_one"]
+    assert len(find_calls) == 1
+
+
+def test_mongodb_native_cache_can_be_disabled() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database, cache_ttl_seconds=0)
+    persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    database["users"].calls.clear()
+
+    persistence.get_user("alice")
+    persistence.get_user("alice")
+
+    find_calls = [call for call in database["users"].calls if call[0] == "find_one"]
+    assert len(find_calls) == 2
+
+
+def test_mongodb_native_list_goals_uses_cached_targeted_query() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database, cache_ttl_seconds=5)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    persistence.create_goal("alice", "Run", "daily", 1, [], 10, now=at("2026-06-01T09:01:00"))
+    for collection in database.collections.values():
+        collection.calls.clear()
+
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-01T10:00:00"))
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-01T10:00:00"))
+
+    goal_find_calls = [call for call in database["goals"].calls if call[0] == "find"]
+    assert len(goal_find_calls) == 1
+    assert goal_find_calls[0][1]["participant_user_ids"] == "alice"
+
+
+def test_mongodb_native_write_clears_cache() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database, cache_ttl_seconds=5)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    goal = persistence.create_goal("alice", "Run", "daily", 1, [], 10, current=0, now=at("2026-06-01T09:01:00"))
+    persistence.get_user("alice")
+    database["users"].calls.clear()
+
+    persistence.update_goal_progress(goal["id"], alice["user_id"], current=4, now=at("2026-06-01T09:02:00"))
+    user = persistence.get_user("alice")
+
+    assert user["last_seen_at"] == "2026-06-01T07:02:00+00:00"
+    find_calls = [call for call in database["users"].calls if call[0] == "find_one"]
+    assert find_calls
+
 def test_factory_creates_mongodb_native_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     import src.db.persistence as persistence_module
 
     created = {}
 
     class DummyMongoNativePersistence:
-        def __init__(self, uri: str, database: str, legacy_collection: str) -> None:
+        def __init__(
+            self,
+            uri: str,
+            database: str,
+            legacy_collection: str,
+            cache_ttl_seconds: float,
+        ) -> None:
             created["uri"] = uri
             created["database"] = database
             created["legacy_collection"] = legacy_collection
+            created["cache_ttl_seconds"] = cache_ttl_seconds
 
     monkeypatch.setattr(persistence_module, "MongoNativePersistence", DummyMongoNativePersistence)
 
@@ -1111,6 +1176,7 @@ def test_factory_creates_mongodb_native_backend(monkeypatch: pytest.MonkeyPatch)
         mongodb_uri="mongodb://localhost:27017",
         mongodb_database="dogether_test",
         mongodb_collection="legacy_store",
+        cache_ttl_seconds=2.5,
     )
 
     assert isinstance(persistence, DummyMongoNativePersistence)
@@ -1118,6 +1184,7 @@ def test_factory_creates_mongodb_native_backend(monkeypatch: pytest.MonkeyPatch)
         "uri": "mongodb://localhost:27017",
         "database": "dogether_test",
         "legacy_collection": "legacy_store",
+        "cache_ttl_seconds": 2.5,
     }
 
 def test_mongodb_document_backend_uses_same_store_contract() -> None:

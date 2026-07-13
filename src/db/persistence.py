@@ -169,6 +169,7 @@ def create_persistence(
             mongodb_uri,
             database=mongodb_database,
             legacy_collection=mongodb_collection,
+            cache_ttl_seconds=cache_ttl_seconds,
         )
     raise ValueError("Unsupported persistence backend. Use 'json', 'mongodb', or 'mongodb_native'.")
 
