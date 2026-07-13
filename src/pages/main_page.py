@@ -90,11 +90,6 @@ def participant_name_with_progress_html(
 
 
 
-def main_viewport() -> dict:
-    viewport = viewport_info(key="main_viewport_info")
-    return viewport if isinstance(viewport, dict) else {"devicePlatform": "all"}
-
-
 def main_render_path(viewport: dict) -> str:
     if isinstance(viewport, dict) and viewport.get("renderPath") == "mobile_portrait":
         return "mobile_portrait"
@@ -285,6 +280,9 @@ def render_main(
         unsafe_allow_html=True,
     )
 
+    viewport = viewport_info()
+    render_path = main_render_path(viewport)
+
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)
 
@@ -293,8 +291,6 @@ def render_main(
         st.info("Create a shared goal with a friend to get started.")
         return
 
-    viewport = main_viewport()
-    render_path = main_render_path(viewport)
     all_participant_ids = sorted({uid for goal in goals for uid in goal.get("participants", {})})
     users = persistence.users_by_ids(all_participant_ids)
     friend_ids = {friend["user_id"] for friend in persistence.list_friends(user_id)}

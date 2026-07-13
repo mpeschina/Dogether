@@ -176,12 +176,11 @@
       function reportViewport() {
         const payload = viewportPayload();
 
-        setFrameHeight(1);
-
         if (!shouldReportPayload(payload)) {
           return;
         }
 
+        setFrameHeight(1);
         lastReportedPayload = payload;
         setComponentValue(payload);
       }

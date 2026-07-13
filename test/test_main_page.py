@@ -381,8 +381,15 @@ def test_main_page_uses_viewport_render_paths() -> None:
     content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
 
     assert "from src.viewport_component import viewport_info" in content
-    assert 'viewport_info(key="main_viewport_info")' in content
-    assert "def main_viewport()" in content
+    assert "viewport = viewport_info()" in content
+    assert 'key="main_viewport_info"' not in content
+    assert "pixel_threshold=20" not in content
+    assert "debounce_ms=500" not in content
+    assert "require_ready=True" not in content
+    assert 'loading_message="Loading layout..."' not in content
+    assert "fallback_timeout_seconds=5" not in content
+    assert "def main_viewport" not in content
+    assert "MAIN_VIEWPORT_SESSION_KEY" not in content
     assert "def main_render_path(viewport: dict)" in content
     assert "def render_goal_actions(" in content
     assert "def render_participant_progress(" in content
@@ -399,3 +406,10 @@ def test_main_page_gates_apple_steps_import_by_viewport_device() -> None:
     assert "elif can_use_apple_steps_shortcut:" in content
     assert "render_goal_actions(" in content
     assert "viewport," in content
+
+
+def test_main_page_reads_viewport_before_loading_data() -> None:
+    content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
+
+    assert content.index("viewport = viewport_info()") < content.index("persistence.account_stats")
+    assert "st.session_state" not in content

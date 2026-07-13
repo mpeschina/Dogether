@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import pytest
+
+import src.viewport_component as viewport_component
+
 
 def test_viewport_component_build_exists_with_streamlit_hooks() -> None:
     component_html = Path("src/viewport_component/frontend/build/index.html")
@@ -38,14 +42,169 @@ def test_debug_page_renders_viewport_diagnostics() -> None:
     assert "from src.viewport_component import viewport_info" in content
     assert "def render_viewport_diagnostics()" in content
     assert "render_viewport_diagnostics()" in content
-    assert "viewport_info(key=\"debug_viewport_info\")" in content
+    assert "viewport_info(require_ready=False)" in content
+    assert "debug_viewport_info" not in content
 
 
 def test_viewport_component_wrapper_exposes_resize_options() -> None:
     content = Path("src/viewport_component/__init__.py").read_text(encoding="utf-8")
 
-    assert "pixel_threshold: int = 10" in content
-    assert "debounce_ms: int = 300" in content
+    assert "DEFAULT_VIEWPORT_COMPONENT_KEY = \"viewport_info\"" in content
+    assert "DEFAULT_RESIZE_PIXEL_THRESHOLD = 20" in content
+    assert "DEFAULT_RESIZE_DEBOUNCE_MS = 500" in content
+    assert "DEFAULT_LOADING_MESSAGE = \"Loading layout...\"" in content
+    assert "DEFAULT_FALLBACK_TIMEOUT_SECONDS = 5" in content
+    assert "key: str | None = DEFAULT_VIEWPORT_COMPONENT_KEY" not in content
+    assert "key=DEFAULT_VIEWPORT_COMPONENT_KEY" in content
+    assert "pixel_threshold: int = DEFAULT_RESIZE_PIXEL_THRESHOLD" in content
+    assert "debounce_ms: int = DEFAULT_RESIZE_DEBOUNCE_MS" in content
+    assert "cache: bool = True" in content
+    assert "session_key: str | None = None" in content
+    assert "require_ready: bool = True" in content
+    assert "loading_message: str | None = DEFAULT_LOADING_MESSAGE" in content
+    assert "fallback_timeout_seconds: float | None = DEFAULT_FALLBACK_TIMEOUT_SECONDS" in content
+    assert "fallback_viewport: dict[str, Any] | None = None" in content
     assert "pixel_threshold=max(0, int(pixel_threshold))" in content
     assert "debounce_ms=max(0, int(debounce_ms))" in content
-    assert 'viewport_info(key="main_viewport", pixel_threshold=20, debounce_ms=500)' in content
+    assert "st.session_state[cache_key] = viewport" in content
+    assert "st.stop()" in content
+    assert "DEFAULT_FALLBACK_VIEWPORT" in content
+    assert "_viewport_wait_start_key" in content
+    assert "_fallback_timeout_reached" in content
+    assert "first call usually returns ``None``" in content
+    assert "session keys themselves" in content
+    assert "single early call" in content
+
+
+class _StopCalled(Exception):
+    pass
+
+
+class _FakeStreamlit:
+    def __init__(self) -> None:
+        self.session_state = {}
+        self.info_messages = []
+
+    def info(self, message: str) -> None:
+        self.info_messages.append(message)
+
+    def stop(self) -> None:
+        raise _StopCalled
+
+
+def test_default_fallback_viewport_is_pc_widescreen() -> None:
+    fallback = viewport_component._fallback_viewport()
+
+    assert fallback["width"] == 1920
+    assert fallback["height"] == 1080
+    assert fallback["aspectRatio"] == 16 / 9
+    assert fallback["orientation"] == "landscape"
+    assert fallback["renderPath"] == "widescreen"
+    assert fallback["devicePlatform"] == "pc"
+    assert fallback["viewportSource"] == "fallback_timeout"
+
+
+def test_viewport_wait_start_key_uses_configured_cache_key() -> None:
+    assert (
+        viewport_component._viewport_wait_start_key()
+        == "viewport_info:viewport_info:payload:wait_started_at"
+    )
+    assert viewport_component._viewport_wait_start_key("custom") == "custom:wait_started_at"
+
+
+def test_fallback_timeout_reached_checks_elapsed_time() -> None:
+    assert viewport_component._fallback_timeout_reached(
+        wait_started_at=10.0,
+        fallback_timeout_seconds=5,
+        now=14.9,
+    ) is False
+    assert viewport_component._fallback_timeout_reached(
+        wait_started_at=10.0,
+        fallback_timeout_seconds=5,
+        now=15.0,
+    ) is True
+    assert viewport_component._fallback_timeout_reached(
+        wait_started_at=10.0,
+        fallback_timeout_seconds=None,
+        now=99.0,
+    ) is False
+
+
+def test_viewport_info_uses_default_component_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = _FakeStreamlit()
+    component_calls = []
+
+    def fake_component(**kwargs):
+        component_calls.append(kwargs)
+        return {"renderPath": "widescreen"}
+
+    monkeypatch.setattr(viewport_component, "st", fake_st)
+    monkeypatch.setattr(viewport_component, "_component_func", fake_component)
+
+    viewport = viewport_component.viewport_info()
+
+    assert viewport == {"renderPath": "widescreen"}
+    assert component_calls == [
+        {
+            "pixel_threshold": 20,
+            "debounce_ms": 500,
+            "key": "viewport_info",
+            "default": None,
+        }
+    ]
+    assert fake_st.session_state["viewport_info:viewport_info:payload"] == viewport
+
+
+def test_viewport_info_stops_before_fallback_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = _FakeStreamlit()
+    monkeypatch.setattr(viewport_component, "st", fake_st)
+    monkeypatch.setattr(viewport_component, "_component_func", lambda **kwargs: None)
+    monkeypatch.setattr(viewport_component, "monotonic", lambda: 100.0)
+
+    with pytest.raises(_StopCalled):
+        viewport_component.viewport_info(
+            require_ready=True,
+            loading_message="Loading layout...",
+            fallback_timeout_seconds=5,
+        )
+
+    assert fake_st.info_messages == ["Loading layout..."]
+    assert fake_st.session_state["viewport_info:viewport_info:payload:wait_started_at"] == 100.0
+    assert "viewport_info:viewport_info:payload" not in fake_st.session_state
+
+
+def test_viewport_info_returns_and_caches_fallback_after_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = _FakeStreamlit()
+    fake_st.session_state["viewport_info:viewport_info:payload:wait_started_at"] = 100.0
+    monkeypatch.setattr(viewport_component, "st", fake_st)
+    monkeypatch.setattr(viewport_component, "_component_func", lambda **kwargs: None)
+    monkeypatch.setattr(viewport_component, "monotonic", lambda: 105.0)
+
+    viewport = viewport_component.viewport_info(
+        require_ready=True,
+        loading_message="Loading layout...",
+        fallback_timeout_seconds=5,
+    )
+
+    assert viewport is not None
+    assert viewport["viewportSource"] == "fallback_timeout"
+    assert viewport["devicePlatform"] == "pc"
+    assert fake_st.session_state["viewport_info:viewport_info:payload"] == viewport
+    assert fake_st.info_messages == []
+
+
+def test_viewport_info_real_payload_overwrites_fallback_and_resets_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_st = _FakeStreamlit()
+    fake_st.session_state["viewport_info:viewport_info:payload"] = viewport_component._fallback_viewport()
+    fake_st.session_state["viewport_info:viewport_info:payload:wait_started_at"] = 100.0
+    real_viewport = {"width": 390, "height": 844, "renderPath": "mobile_portrait"}
+    monkeypatch.setattr(viewport_component, "st", fake_st)
+    monkeypatch.setattr(viewport_component, "_component_func", lambda **kwargs: real_viewport)
+
+    viewport = viewport_component.viewport_info(require_ready=True)
+
+    assert viewport == real_viewport
+    assert fake_st.session_state["viewport_info:viewport_info:payload"] == real_viewport
+    assert "viewport_info:viewport_info:payload:wait_started_at" not in fake_st.session_state
