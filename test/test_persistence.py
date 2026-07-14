@@ -1096,6 +1096,48 @@ def test_mongodb_native_list_goals_reads_matching_goal_collection_only() -> None
 
 
 
+def test_mongodb_native_list_goals_rolls_over_shared_participants() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob", at("2026-06-01T09:01:00"))
+    invite = persistence.create_friend_invite(
+        alice["user_id"],
+        alice["email"],
+        bob["email"],
+        at("2026-06-01T09:02:00"),
+    )
+    persistence.respond_friend_invite(invite["id"], bob["user_id"], bob["email"], approve=True, now=at("2026-06-01T09:03:00"))
+    goal = persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Steps",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[bob["user_id"]],
+        target=10,
+        current=0,
+        now=at("2026-06-01T09:04:00"),
+    )
+    persistence.update_goal_progress(goal["id"], bob["user_id"], current=10, now=at("2026-06-01T10:00:00"))
+
+    goals = persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-02T08:00:00"))
+
+    bob_participant = goals[0]["participants"]["bob"]
+    assert bob_participant["current"] == 0
+    assert bob_participant["period_start"] == "2026-06-02T00:00:00+02:00"
+    assert bob_participant["period_outcomes"]["2026-06-01"] == {
+        "completed": True,
+        "skipped": False,
+        "fulfilled": True,
+        "current": 10,
+        "target": 10,
+        "percent": 100.0,
+    }
+    stored_bob = database["goals"].documents[goal["id"]]["participants"]["bob"]
+    assert stored_bob["current"] == 0
+    assert "2026-06-01" in stored_bob["period_outcomes"]
+
+
 def test_mongodb_native_get_user_uses_cache_inside_ttl() -> None:
     database = FakeMongoNativeDatabase()
     persistence = MongoNativePersistence(mongo_database=database, cache_ttl_seconds=5)

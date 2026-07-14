@@ -277,7 +277,12 @@ class MongoNativePersistence:
     def _rollover_user_goals(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
         now_dt = _now(now)
         goals = self._active_goals_for_user(user_id)
-        return [self._rollover_goal_participant(goal, user_id, now_dt) for goal in goals]
+        return [self._rollover_goal_participants(goal, now_dt) for goal in goals]
+
+    def _rollover_goal_participants(self, goal: dict[str, Any], now: datetime) -> dict[str, Any]:
+        for participant_id in list(goal.get("participants", {})):
+            self._rollover_goal_participant(goal, participant_id, now)
+        return goal
 
     def upsert_user(self, user_id: str, email: str, name: str, now: datetime | None = None) -> dict[str, Any]:
         now_iso = _iso(now)
@@ -699,7 +704,7 @@ class MongoNativePersistence:
         goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
         if not goal or not _goal_active_for_user(goal, user_id):
             raise ValueError("Goal is not active for this user.")
-        self._rollover_goal_participant(goal, user_id, now_dt)
+        self._rollover_goal_participants(goal, now_dt)
         participant = goal["participants"][user_id]
         before_current = max(0, int(participant.get("current", 0)))
         before_target = max(1, int(participant.get("target", 1)))
