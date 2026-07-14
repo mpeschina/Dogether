@@ -659,7 +659,7 @@ class MongoNativePersistence:
         goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
         if not goal or not _goal_active_for_user(goal, user_id):
             raise ValueError("Goal is not active for this user.")
-        self._rollover_goal_participant(goal, user_id, now_dt)
+        self._rollover_goal_participants(goal, now_dt)
         active_friend_ids = {friend["user_id"] for friend in self.list_friends(user_id)}
         requested_friend_ids = set(friend_user_ids)
         invalid = sorted(requested_friend_ids - active_friend_ids)
