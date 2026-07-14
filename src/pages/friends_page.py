@@ -56,6 +56,27 @@ def _friend_display_name(friend: dict[str, Any]) -> str:
     return str(friend.get("name") or friend.get("email") or friend["user_id"])
 
 
+def _friend_name_with_email(
+    friend: dict[str, Any] | None,
+    fallback_email: str | None = None,
+    note: str | None = None,
+) -> str:
+    if not friend:
+        name = str(fallback_email or "Unknown friend")
+        return f"{name} ({note})" if note else name
+
+    name = str(friend.get("name") or friend.get("email") or friend.get("user_id") or fallback_email or "Unknown friend")
+    email = str(friend.get("email") or fallback_email or "")
+    details = []
+    if email and email != name:
+        details.append(email)
+    if note:
+        details.append(note)
+    if details:
+        return f"{name} ({', '.join(details)})"
+    return name
+
+
 def _render_friend_suggestion_candidate(
     candidate: dict[str, Any],
     persistence: Persistence,
@@ -167,7 +188,7 @@ def render_friends(
     incoming = persistence.incoming_friend_invites(current_user["email"], user_id)
     incoming_suggestions = persistence.incoming_friend_suggestions(user_id)
     if incoming or incoming_suggestions:
-        st.subheader("Pending invites")
+        st.subheader("Pending friend invites")
         for invite in incoming:
             from_user = persistence.get_user(invite["from_user_id"])
             from_name = from_user.get("name") if from_user else invite["from_email"]
@@ -241,7 +262,7 @@ def render_friends(
                     if updated.get("status") == "accepted":
                         st.success("Friend suggestion accepted. You are now friends.")
                     else:
-                        st.success("Friend suggestion accepted.")
+                        st.success(f"Friend suggestion accepted. Waiting for {other_name} to accept.")
                     st.rerun()
                 if cols[1].button("No", key=f"decline_suggestion_{suggestion['id']}"):
                     persistence.respond_friend_suggestion(suggestion["id"], user_id, approve=False, now=now)
@@ -329,20 +350,39 @@ def render_friends(
                         st.error(str(error))
 
     outgoing = persistence.outgoing_friend_invites(user_id)
-    outgoing_suggestions = persistence.outgoing_friend_suggestions(user_id)
+    outgoing_suggestions = [
+        *persistence.outgoing_friend_suggestions(user_id),
+        *persistence.accepted_pending_friend_suggestions(user_id),
+    ]
+    outgoing_suggestions = sorted(outgoing_suggestions, key=lambda suggestion: suggestion["created_at"])
     if outgoing or outgoing_suggestions:
         st.subheader("Outgoing pending invites")
         for invite in outgoing:
-            st.write(f"To {invite['to_email']}")
+            recipient = persistence.find_user_by_email(invite["to_email"])
+            st.write(f"To {_friend_name_with_email(recipient, invite['to_email'])}")
         for suggestion in outgoing_suggestions:
-            suggested_users = persistence.users_by_ids(suggestion["suggested_user_ids"])
-            names = [
-                suggested_users.get(suggested_user_id, {}).get("name")
-                or suggested_users.get(suggested_user_id, {}).get("email")
-                or suggested_user_id
+            users = persistence.users_by_ids([suggestion["suggested_by_user_id"], *suggestion["suggested_user_ids"]])
+            suggester_user = users.get(suggestion["suggested_by_user_id"])
+            suggester = _friend_display_name(suggester_user) if suggester_user else suggestion["suggested_by_user_id"]
+            suggested_user_ids = [
+                suggested_user_id
                 for suggested_user_id in suggestion["suggested_user_ids"]
-            ]
-            st.write(f"Suggested {names[0]} and {names[1]}")
+                if suggested_user_id != user_id
+            ] or suggestion["suggested_user_ids"]
+            if len(suggested_user_ids) == 1:
+                suggested_user_id = suggested_user_ids[0]
+                recipient = _friend_name_with_email(
+                    users.get(suggested_user_id),
+                    suggested_user_id,
+                    note=f"suggested by {suggester}",
+                )
+            else:
+                recipient = " and ".join(
+                    _friend_name_with_email(users.get(suggested_user_id), suggested_user_id)
+                    for suggested_user_id in suggested_user_ids
+                )
+                recipient = f"{recipient} (suggested by {suggester})"
+            st.write(f"To {recipient}")
 
     #
     # Expandable Friendlist Section

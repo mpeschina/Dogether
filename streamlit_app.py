@@ -4,6 +4,7 @@ import streamlit as st
 
 from src.data_imports.health_data_import import handle_health_data_import
 from src.db.persistence import Persistence, get_persistence, persistence_settings
+from src.friends.alerts import pending_friend_request_alert_items
 from src.pages.account_page import render_account
 from src.pages.debug_page import DebugMechanics, render_debug
 from src.pages.friends_page import render_friends
@@ -189,9 +190,16 @@ def friend_request_alert(invite_count: int, signature: str) -> None:
         st.rerun()
 
 
-incoming_friend_requests = persistence.incoming_friend_invites(current_user["email"], user_id)
+incoming_friend_requests = pending_friend_request_alert_items(
+    persistence,
+    current_user["email"],
+    user_id,
+)
 if incoming_friend_requests:
-    friend_request_signature = "|".join(invite["id"] for invite in incoming_friend_requests)
+    friend_request_signature = "|".join(
+        f"{request_type}:{request_id}"
+        for request_type, request_id in incoming_friend_requests
+    )
     if st.session_state.get("friend_request_alert_signature") != friend_request_signature:
         friend_request_alert(len(incoming_friend_requests), friend_request_signature)
 

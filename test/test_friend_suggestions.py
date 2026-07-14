@@ -1,4 +1,6 @@
 from src.db.json_persistence import JsonPersistence
+from src.friends.alerts import pending_friend_request_alert_items
+from src.pages.friends_page import _friend_name_with_email
 from src.friends.suggestions import friend_suggestion_candidates, manual_friend_suggestion_options
 
 
@@ -174,4 +176,30 @@ def test_friend_suggestion_candidates_exclude_pending_and_declined_suggestions(t
     persistence.respond_friend_suggestion(suggestion["id"], "bob", approve=False)
 
     assert friend_suggestion_candidates(persistence, "alice") == []
+
+
+def test_pending_friend_request_alert_items_include_suggestions(tmp_path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    invite = persistence.create_friend_invite(alice["user_id"], alice["email"], bob["email"])
+    suggestion = persistence.create_friend_suggestion(
+        alice["user_id"],
+        [bob["user_id"], charlie["user_id"]],
+    )
+
+    assert pending_friend_request_alert_items(persistence, bob["email"], bob["user_id"]) == [
+        ("invite", invite["id"]),
+        ("suggestion", suggestion["id"]),
+    ]
+
+
+def test_friend_name_with_email_can_include_compact_note() -> None:
+    label = _friend_name_with_email(
+        {"user_id": "mareike", "name": "Mareike Mandtler", "email": "mandtler.m@outlook.de"},
+        note="suggested by Sören Rinne",
+    )
+
+    assert label == "Mareike Mandtler (mandtler.m@outlook.de, suggested by Sören Rinne)"
 

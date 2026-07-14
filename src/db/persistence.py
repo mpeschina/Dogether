@@ -65,6 +65,8 @@ class Persistence(Protocol):
 
     def incoming_friend_suggestions(self, user_id: str) -> list[dict[str, Any]]: ...
 
+    def accepted_pending_friend_suggestions(self, user_id: str) -> list[dict[str, Any]]: ...
+
     def outgoing_friend_suggestions(
         self,
         user_id: str,

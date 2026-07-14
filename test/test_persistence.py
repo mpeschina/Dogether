@@ -439,7 +439,9 @@ def test_friend_suggestion_requires_both_users_to_accept(tmp_path: Path) -> None
     assert first_response["status"] == "pending"
     assert persistence.list_friends("bob") == []
     assert persistence.incoming_friend_suggestions("bob") == []
+    assert persistence.accepted_pending_friend_suggestions("bob") == [first_response]
     assert persistence.incoming_friend_suggestions("charlie") == [first_response]
+    assert persistence.accepted_pending_friend_suggestions("charlie") == []
 
     second_response = persistence.respond_friend_suggestion(
         suggestion["id"],
@@ -449,6 +451,8 @@ def test_friend_suggestion_requires_both_users_to_accept(tmp_path: Path) -> None
     )
 
     assert second_response["status"] == "accepted"
+    assert persistence.accepted_pending_friend_suggestions("bob") == []
+    assert persistence.accepted_pending_friend_suggestions("charlie") == []
     assert [friend["user_id"] for friend in persistence.list_friends("bob")] == ["charlie"]
     assert [friend["user_id"] for friend in persistence.list_friends("charlie")] == ["bob"]
     assert persistence.list_friends("alice") == []

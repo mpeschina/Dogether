@@ -321,6 +321,16 @@ class DocumentPersistence:
             ]
         return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
 
+    def accepted_pending_friend_suggestions(self, user_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            suggestions = [
+                suggestion
+                for suggestion in self._read()["friend_suggestions"].values()
+                if suggestion.get("status") == "pending"
+                and suggestion.get("responses", {}).get(user_id) == "accepted"
+            ]
+        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
     def outgoing_friend_suggestions(
         self,
         user_id: str,

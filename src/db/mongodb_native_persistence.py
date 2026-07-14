@@ -534,6 +534,17 @@ class MongoNativePersistence:
 
         return self._read_cached(("incoming_friend_suggestions", user_id), load_suggestions)
 
+    def accepted_pending_friend_suggestions(self, user_id: str) -> list[dict[str, Any]]:
+        def load_suggestions() -> list[dict[str, Any]]:
+            suggestions = [
+                suggestion
+                for suggestion in self._strip_many(self._friend_suggestions_collection().find({"status": "pending", "suggested_user_ids": user_id}))
+                if suggestion.get("responses", {}).get(user_id) == "accepted"
+            ]
+            return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+        return self._read_cached(("accepted_pending_friend_suggestions", user_id), load_suggestions)
+
     def outgoing_friend_suggestions(self, user_id: str, include_resolved: bool = False) -> list[dict[str, Any]]:
         def load_suggestions() -> list[dict[str, Any]]:
             suggestions = self._strip_many(self._friend_suggestions_collection().find({"suggested_by_user_id": user_id}))
