@@ -184,13 +184,17 @@ def _participant_sparkline_value(
 
 
 def _sparkline_progress_value(record: dict, *, fulfilled: bool = False) -> float:
-    if fulfilled:
-        return max(1.0, float(record.get("target") or 1.0))
+    value = 0.0
     if "current" in record:
-        return max(0.0, float(record.get("current") or 0.0))
-    if "percent" in record:
-        return max(0.0, float(record.get("percent") or 0.0))
-    return 0.0
+        value = max(0.0, float(record.get("current") or 0.0))
+    elif "percent" in record:
+        value = max(0.0, float(record.get("percent") or 0.0))
+
+    if fulfilled:
+        target = max(1.0, float(record.get("target") or 1.0))
+        return max(value, target)
+
+    return value
 
 
 def _mini_activity_dot_class(period_start: datetime, current_period_start: datetime) -> str:

@@ -22,6 +22,7 @@ from src.pages.common_helpers import (
     compact_goal_activity_html,
     mini_activity_styles,
     participant_sparkline_html,
+    _participant_sparkline_values,
 )
 from src.pages.main_page import (
     participant_name_with_progress_html,
@@ -164,6 +165,7 @@ def test_participant_sparkline_renders_ten_day_inline_svg_with_progress_bar_fill
     line_points = html.split("<polyline", 1)[1].split("points='", 1)[1].split("'", 1)[0].split()
 
     assert "participant-sparkline" in html
+    assert f"title='Sparkline of the last {PARTICIPANT_SPARKLINE_DEFAULT_DAYS} days'" in html
     assert f"stroke='{PARTICIPANT_SPARKLINE_COLOR}'" in html
     assert f"stroke-width='{PARTICIPANT_SPARKLINE_STROKE_WIDTH}'" in html
     assert f"<polygon points=" in html
@@ -176,6 +178,51 @@ def test_participant_sparkline_renders_ten_day_inline_svg_with_progress_bar_fill
     assert len(line_points) == PARTICIPANT_SPARKLINE_DEFAULT_DAYS
     assert completed_x < today_x
     assert completed_y > today_y
+
+
+def test_participant_sparkline_treats_allowed_x_per_week_skip_as_reached() -> None:
+    participant = {
+        "current": 0,
+        "target": 10,
+        "skipped": True,
+        "period_outcomes": {
+            "2026-06-01": {
+                "completed": False,
+                "skipped": True,
+                "fulfilled": True,
+                "current": 0,
+                "target": 10,
+            }
+        },
+    }
+    goal = _goal("daily_x_per_week", required_periods=5, participant=participant)
+
+    values = _participant_sparkline_values(goal, participant, now=_at("2026-06-03T12:00:00"))
+
+    assert values[-3] == 10
+    assert values[-1] == 10
+
+
+def test_participant_sparkline_does_not_cap_progress_at_target() -> None:
+    participant = {
+        "current": 15,
+        "target": 10,
+        "skipped": False,
+        "period_outcomes": {
+            "2026-06-01": {
+                "completed": True,
+                "fulfilled": True,
+                "current": 14,
+                "target": 10,
+            }
+        },
+    }
+    goal = _goal("daily", participant=participant)
+
+    values = _participant_sparkline_values(goal, participant, now=_at("2026-06-03T12:00:00"))
+
+    assert values[-3] == 14
+    assert values[-1] == 15
 
 
 def test_compact_goal_activity_renders_daily_current_week_seven_dots() -> None:
