@@ -66,7 +66,8 @@ def participant_sparkline_html(
     now: datetime | None = None,
     days: int = PARTICIPANT_SPARKLINE_DEFAULT_DAYS,
 ) -> str:
-    values = _participant_sparkline_values(goal, participant, now=now, days=days)
+    day_count = max(1, int(days or PARTICIPANT_SPARKLINE_DEFAULT_DAYS))
+    values = _participant_sparkline_values(goal, participant, now=now, days=day_count)
     if len(values) < 2:
         values = [*values, values[0] if values else 0.0]
 
@@ -92,7 +93,8 @@ def participant_sparkline_html(
     last_x, last_y = points[-1]
 
     return (
-        "<span class='participant-sparkline' aria-hidden='true'>"
+        f"<span class='participant-sparkline' aria-hidden='true' "
+        f"title='Sparkline of the last {day_count} days'>"
         f"<svg width='{width}' height='{height}' viewBox='0 0 {width} {height}' "
         "focusable='false'>"
         f"<polygon points='{area_points}' fill='{PARTICIPANT_SPARKLINE_FILL}'></polygon>"
@@ -160,15 +162,30 @@ def _participant_sparkline_value(
 ) -> float:
     outcome = participant.get("period_outcomes", {}).get(day.isoformat())
     if isinstance(outcome, dict):
-        return _sparkline_progress_value(outcome)
+        return _sparkline_progress_value(
+            outcome,
+            fulfilled=bool(outcome.get("fulfilled", outcome.get("completed", False))),
+        )
 
+    period_start = now_dt.replace(
+        year=day.year,
+        month=day.month,
+        day=day.day,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
     if day == now_dt.date():
-        return _sparkline_progress_value(participant)
+        fulfilled = _period_fulfilled(goal, participant, period_start)
+        return _sparkline_progress_value(participant, fulfilled=fulfilled)
 
     return 0.0
 
 
-def _sparkline_progress_value(record: dict) -> float:
+def _sparkline_progress_value(record: dict, *, fulfilled: bool = False) -> float:
+    if fulfilled:
+        return max(1.0, float(record.get("target") or 1.0))
     if "current" in record:
         return max(0.0, float(record.get("current") or 0.0))
     if "percent" in record:
