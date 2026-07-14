@@ -349,6 +349,41 @@ def render_friends(
                     except ValueError as error:
                         st.error(str(error))
 
+    #
+    # Expandable Friendlist Section
+    #
+    friends = persistence.list_friends(user_id)
+    pending_removals = set(st.session_state.get("friends_pending_removals", []))
+    pending_removals &= {friend["user_id"] for friend in friends}
+    st.session_state["friends_pending_removals"] = sorted(pending_removals)
+
+    with st.expander("Current friends", expanded=False):
+        if not friends:
+            st.info("No friends yet.")
+        for friend_index, friend in enumerate(friends):
+            friend_id = friend["user_id"]
+            confirm_remove = friend_id in pending_removals
+            remove_label = "Confirm Remove" if confirm_remove else "Remove"
+            remove_type = "primary" if confirm_remove else "secondary"
+
+            cols = st.columns([3, 3, 1])
+            cols[0].write(friend.get("name", friend["email"]))
+            cols[1].write(friend.get("email", ""))
+            if cols[2].button(remove_label, key=f"remove_friend_{friend_id}", type=remove_type):
+                if confirm_remove:
+                    persistence.remove_friend(user_id, friend_id, now=now)
+                    pending_removals.discard(friend_id)
+                else:
+                    pending_removals.add(friend_id)
+                st.session_state["friends_pending_removals"] = sorted(pending_removals)
+                st.rerun()
+            if friend_index < len(friends) - 1:
+                st.markdown('<hr class="friends-mobile-separator">', unsafe_allow_html=True)
+
+    
+    #
+    # Pending Invites Section
+    #
     outgoing = persistence.outgoing_friend_invites(user_id)
     outgoing_suggestions = [
         *persistence.outgoing_friend_suggestions(user_id),
@@ -383,34 +418,3 @@ def render_friends(
                 )
                 recipient = f"{recipient} (suggested by {suggester})"
             st.write(f"To {recipient}")
-
-    #
-    # Expandable Friendlist Section
-    #
-    friends = persistence.list_friends(user_id)
-    pending_removals = set(st.session_state.get("friends_pending_removals", []))
-    pending_removals &= {friend["user_id"] for friend in friends}
-    st.session_state["friends_pending_removals"] = sorted(pending_removals)
-
-    with st.expander("Current friends", expanded=False):
-        if not friends:
-            st.info("No friends yet.")
-        for friend_index, friend in enumerate(friends):
-            friend_id = friend["user_id"]
-            confirm_remove = friend_id in pending_removals
-            remove_label = "Confirm Remove" if confirm_remove else "Remove"
-            remove_type = "primary" if confirm_remove else "secondary"
-
-            cols = st.columns([3, 3, 1])
-            cols[0].write(friend.get("name", friend["email"]))
-            cols[1].write(friend.get("email", ""))
-            if cols[2].button(remove_label, key=f"remove_friend_{friend_id}", type=remove_type):
-                if confirm_remove:
-                    persistence.remove_friend(user_id, friend_id, now=now)
-                    pending_removals.discard(friend_id)
-                else:
-                    pending_removals.add(friend_id)
-                st.session_state["friends_pending_removals"] = sorted(pending_removals)
-                st.rerun()
-            if friend_index < len(friends) - 1:
-                st.markdown('<hr class="friends-mobile-separator">', unsafe_allow_html=True)
