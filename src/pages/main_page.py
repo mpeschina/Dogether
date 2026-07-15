@@ -117,7 +117,7 @@ def render_goal_actions(
         viewport,
     )
     if goal_is_done or skipped:
-        if action_cols[0].button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
+        if skipped and action_cols[0].button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
             update_goal_progress_with_push(
                 persistence,
                 push_storage,
@@ -153,8 +153,9 @@ def render_goal_actions(
             now=now,
         )
         st.rerun()
-    if not (goal_is_done or skipped):
-        with action_cols[1].popover("Set", use_container_width=True):
+    if not skipped:
+        manage_col = action_cols[0] if goal_is_done else action_cols[1]
+        with manage_col.popover("Manage", use_container_width=True):
             current_key = f"current_{goal['id']}"
             current = st.number_input(
                 "Current",
