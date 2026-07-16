@@ -17,11 +17,18 @@ def _addable_friend_options(goal: dict, friend_options: dict[str, str]) -> dict[
     }
 
 
-def _render_goal_summary(goal: dict, participant: dict) -> None:
+def _render_goal_summary(
+    persistence: Persistence,
+    goal: dict,
+    user_id: str,
+    participant: dict,
+    now: datetime | None,
+) -> None:
     summary_cols = st.columns([3, 1.6, 1.2])
     summary_cols[0].write(goal["description"])
     summary_cols[1].write(schedule_label(goal))
-    summary_cols[2].write(f"{participant.get('current', 0)} / {participant.get('target', 1)}")
+    with summary_cols[2]:
+        _render_goal_notifications(persistence, goal, user_id, participant, now)
 
 
 def _render_goal_notifications(
@@ -46,22 +53,33 @@ def _render_goal_notifications(
         )
         st.rerun()
 
+
+def _render_goal_notification_limit(
+    persistence: Persistence,
+    goal: dict,
+    user_id: str,
+    participant: dict,
+    now: datetime | None,
+) -> None:
     current_limit = max(1, int(participant.get("completion_notifications_max_per_day", 3) or 3))
-    selected_limit = st.number_input(
-        "Max push notifications/day",
-        min_value=1,
-        value=current_limit,
-        step=1,
-        key=f"completion_notifications_limit_{goal['id']}",
-    )
-    if int(selected_limit) != current_limit:
-        persistence.set_goal_completion_notification_limit(
-            goal["id"],
-            user_id,
-            int(selected_limit),
-            now=now,
-        )
-        st.rerun()
+    with st.popover("Max push notifications/day", use_container_width=True):
+        with st.form(f"configure_notification_limit_{goal['id']}"):
+            selected_limit = st.number_input(
+                "Max push notifications/day",
+                min_value=1,
+                value=current_limit,
+                step=1,
+                key=f"completion_notifications_limit_{goal['id']}",
+            )
+            if st.form_submit_button("Save"):
+                persistence.set_goal_completion_notification_limit(
+                    goal["id"],
+                    user_id,
+                    int(selected_limit),
+                    now=now,
+                )
+                st.success("Max push notifications updated.")
+                st.rerun()
 
 
 def _render_configure_max_value(
@@ -71,7 +89,7 @@ def _render_configure_max_value(
     participant: dict,
     now: datetime | None,
 ) -> None:
-    with st.popover("Configure Max Value", use_container_width=True):
+    with st.popover("Max value", use_container_width=True):
         with st.form(f"configure_max_value_{goal['id']}"):
             target = st.number_input(
                 "Max value",
@@ -100,32 +118,31 @@ def _render_add_goal_friends(
         st.caption("All friends are already on this goal.")
         return
 
-    with st.expander("Add Friends", expanded=False):
-        with st.form(f"add_friends_{goal['id']}", border=False):
-            selected_new_friends = st.multiselect(
-                "Friends",
-                list(addable_friend_options),
-                key=f"add_friends_select_{goal['id']}",
-            )
-            add_submitted = st.form_submit_button("Add")
-            if add_submitted:
-                try:
-                    if not selected_new_friends:
-                        st.warning("Choose at least one friend to add.")
-                    else:
-                        persistence.add_goal_friends(
-                            goal_id=goal["id"],
-                            user_id=user_id,
-                            friend_user_ids=[
-                                addable_friend_options[label]
-                                for label in selected_new_friends
-                            ],
-                            now=now,
-                        )
-                        st.success("Friends added.")
-                        st.rerun()
-                except ValueError as error:
-                    st.error(str(error))
+    with st.form(f"add_friends_{goal['id']}", border=False):
+        selected_new_friends = st.multiselect(
+            "Friends",
+            list(addable_friend_options),
+            key=f"add_friends_select_{goal['id']}",
+        )
+        add_submitted = st.form_submit_button("Add")
+        if add_submitted:
+            try:
+                if not selected_new_friends:
+                    st.warning("Choose at least one friend to add.")
+                else:
+                    persistence.add_goal_friends(
+                        goal_id=goal["id"],
+                        user_id=user_id,
+                        friend_user_ids=[
+                            addable_friend_options[label]
+                            for label in selected_new_friends
+                        ],
+                        now=now,
+                    )
+                    st.success("Friends added.")
+                    st.rerun()
+            except ValueError as error:
+                st.error(str(error))
 
 
 def _render_leave_goal(
@@ -160,21 +177,22 @@ def _render_active_goal(
 ) -> None:
     participant = goal["participants"][user_id]
     with st.container(border=True):
-        _render_goal_summary(goal, participant)
-        action_cols = st.columns([1.6, 1.6, 1])
-        with action_cols[0]:
-            _render_goal_notifications(persistence, goal, user_id, participant, now)
-        with action_cols[1]:
-            _render_configure_max_value(persistence, goal, user_id, participant, now)
-        with action_cols[2]:
-            _render_leave_goal(persistence, goal, user_id, now)
-        _render_add_goal_friends(
-            persistence,
-            goal,
-            user_id,
-            _addable_friend_options(goal, friend_options),
-            now,
-        )
+        _render_goal_summary(persistence, goal, user_id, participant, now)
+        with st.expander("Show Controls", expanded=False):
+            control_cols = st.columns([1.4, 1.6, 1])
+            with control_cols[0]:
+                _render_configure_max_value(persistence, goal, user_id, participant, now)
+            with control_cols[1]:
+                _render_goal_notification_limit(persistence, goal, user_id, participant, now)
+            with control_cols[2]:
+                _render_leave_goal(persistence, goal, user_id, now)
+            _render_add_goal_friends(
+                persistence,
+                goal,
+                user_id,
+                _addable_friend_options(goal, friend_options),
+                now,
+            )
 
 
 def render_goals(persistence: Persistence, user_id: str, now: datetime | None = None) -> None:
