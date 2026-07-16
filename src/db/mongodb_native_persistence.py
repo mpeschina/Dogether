@@ -646,6 +646,8 @@ class MongoNativePersistence:
                     "period_start": period_start,
                     "completion_streak": 0,
                     "completion_notifications_enabled": True,
+                    "completion_notifications_max_per_day": 3,
+                    "completion_notification_counts": {},
                     "skipped": False,
                     "period_outcomes": {},
                     "left_at": None,
@@ -692,6 +694,8 @@ class MongoNativePersistence:
                 "period_start": period_start,
                 "completion_streak": 0,
                 "completion_notifications_enabled": True,
+                "completion_notifications_max_per_day": 3,
+                "completion_notification_counts": {},
                 "skipped": False,
                 "period_outcomes": {},
                 "left_at": None,
@@ -759,6 +763,41 @@ class MongoNativePersistence:
         )
         self._cache_clear()
         return goal
+
+    def set_goal_completion_notification_limit(self, goal_id: str, user_id: str, max_per_day: int, now: datetime | None = None) -> dict[str, Any]:
+        goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
+        if not goal or not _goal_active_for_user(goal, user_id):
+            raise ValueError("Goal is not active for this user.")
+        limit = max(1, int(max_per_day))
+        goal["participants"][user_id]["completion_notifications_max_per_day"] = limit
+        self._goals_collection().update_one(
+            {"_id": goal_id},
+            {"$set": {f"participants.{user_id}.completion_notifications_max_per_day": limit}},
+        )
+        self._cache_clear()
+        return goal
+
+    def claim_goal_completion_notification(self, goal_id: str, user_id: str, day: str, now: datetime | None = None) -> bool:
+        goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
+        if not goal or not _goal_active_for_user(goal, user_id):
+            return False
+        participant = goal["participants"][user_id]
+        if not participant.get("completion_notifications_enabled", True):
+            return False
+        max_per_day = max(1, int(participant.get("completion_notifications_max_per_day", 3) or 3))
+        counts = participant.setdefault("completion_notification_counts", {})
+        current_count = max(0, int(counts.get(day, 0) or 0))
+        if current_count >= max_per_day:
+            return False
+        counts[day] = current_count + 1
+        for count_day in sorted(counts)[:-370]:
+            del counts[count_day]
+        self._goals_collection().update_one(
+            {"_id": goal_id},
+            {"$set": {f"participants.{user_id}.completion_notification_counts": counts}},
+        )
+        self._cache_clear()
+        return True
 
     def set_health_data_workflow_target(self, goal_id: str | None, user_id: str, enabled: bool, now: datetime | None = None) -> dict[str, Any] | None:
         now_iso = _iso(now)

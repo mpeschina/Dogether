@@ -293,6 +293,12 @@ def _normalise_goal_participants(goals: dict[str, Any]) -> None:
                 participant["completion_notifications_enabled"] = bool(
                     participant.get("completion_notifications_enabled", True)
                 )
+                participant["completion_notifications_max_per_day"] = max(
+                    1,
+                    int(participant.get("completion_notifications_max_per_day", 3) or 3),
+                )
+                if not isinstance(participant.get("completion_notification_counts"), dict):
+                    participant["completion_notification_counts"] = {}
                 participant["skipped"] = bool(participant.get("skipped", False))
                 if not isinstance(participant.get("period_outcomes"), dict):
                     participant["period_outcomes"] = {}

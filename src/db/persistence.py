@@ -128,6 +128,22 @@ class Persistence(Protocol):
         now: datetime | None = None,
     ) -> dict[str, Any]: ...
 
+    def set_goal_completion_notification_limit(
+        self,
+        goal_id: str,
+        user_id: str,
+        max_per_day: int,
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
+    def claim_goal_completion_notification(
+        self,
+        goal_id: str,
+        user_id: str,
+        day: str,
+        now: datetime | None = None,
+    ) -> bool: ...
+
     def set_health_data_workflow_target(
         self,
         goal_id: str | None,

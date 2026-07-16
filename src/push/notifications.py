@@ -146,7 +146,10 @@ def update_goal_progress_with_push(
     current_value = max(0, int(completed_participant.get("current", 0)))
     target_value = max(1, int(completed_participant.get("target", 1)))
 
+    notification_day = str(event.get("day") or datetime.now().date().isoformat())
     for participant_id in participant_ids:
+        if not persistence.claim_goal_completion_notification(goal["id"], participant_id, notification_day, now=now):
+            continue
         send_push_to_user(
             push_storage,
             participant_id,

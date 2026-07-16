@@ -46,6 +46,23 @@ def _render_goal_notifications(
         )
         st.rerun()
 
+    current_limit = max(1, int(participant.get("completion_notifications_max_per_day", 3) or 3))
+    selected_limit = st.number_input(
+        "Max push notifications/day",
+        min_value=1,
+        value=current_limit,
+        step=1,
+        key=f"completion_notifications_limit_{goal['id']}",
+    )
+    if int(selected_limit) != current_limit:
+        persistence.set_goal_completion_notification_limit(
+            goal["id"],
+            user_id,
+            int(selected_limit),
+            now=now,
+        )
+        st.rerun()
+
 
 def _render_configure_max_value(
     persistence: Persistence,

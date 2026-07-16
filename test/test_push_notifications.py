@@ -294,3 +294,38 @@ def test_recipient_opted_out_goal_completion_push_does_not_send(monkeypatch, tmp
     )
 
     assert calls == []
+
+
+def test_goal_completion_pushes_are_capped_per_recipient_goal_day(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    friend_ids = ["bob", "charlie", "dave", "eve"]
+    for friend_id in friend_ids:
+        friend = persistence.upsert_user(friend_id, f"{friend_id}@example.com", friend_id.title())
+        invite = persistence.create_friend_invite("alice", alice["email"], friend["email"])
+        persistence.respond_friend_invite(invite["id"], friend_id, friend["email"], approve=True)
+
+    goal = persistence.create_goal("alice", "Daily Steps", "daily", 1, friend_ids, 10, current=0)
+    calls = []
+
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1, "removed": 0, "errors": []},
+    )
+
+    push_settings = {
+        "vapid_public_key": "public",
+        "vapid_private_key": "private",
+        "vapid_subject": "mailto:test@example.com",
+    }
+    for friend_id in friend_ids:
+        update_goal_progress_with_push(
+            persistence,
+            MemoryPushStorage(),
+            push_settings,
+            goal_id=goal["id"],
+            user_id=friend_id,
+            current=10,
+        )
+
+    assert [call[0][1] for call in calls] == ["alice", "alice", "alice"]
