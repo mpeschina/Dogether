@@ -279,6 +279,57 @@ def _record_period_outcome(
     return fulfilled
 
 
+def _correct_period_outcome(
+    goal: dict[str, Any],
+    participant: dict[str, Any],
+    period_start: datetime,
+    *,
+    current: int,
+    target: int | None = None,
+    skipped: bool = False,
+) -> list[date]:
+    schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+    corrected_start = _period_start(period_start, schedule["base"])
+    corrected_key = _period_key(corrected_start)
+    aggregate_start = _aggregate_start(corrected_start, schedule["aggregate"])
+    outcomes = _period_outcomes(participant)
+    existing_target = outcomes.get(corrected_key, {}).get("target", participant.get("target", 1))
+    corrected_target = max(1, int(existing_target if target is None else target))
+    outcomes[corrected_key] = {
+        "current": max(0, int(current)),
+        "target": corrected_target,
+        "skipped": bool(skipped),
+    }
+
+    affected_keys = {
+        outcome_key
+        for outcome_key in outcomes
+        if outcome_key >= corrected_key
+        and _aggregate_start(_now(datetime.fromisoformat(outcome_key)), schedule["aggregate"]) == aggregate_start
+    }
+    affected_days = []
+    for outcome_key in sorted(affected_keys):
+        outcome = outcomes.get(outcome_key, {})
+        if not isinstance(outcome, dict):
+            outcome = {}
+        outcome_start = _period_start(_now(datetime.fromisoformat(outcome_key)), schedule["base"])
+        _record_period_outcome(
+            goal,
+            participant,
+            outcome_start,
+            current=max(0, int(outcome.get("current", 0) or 0)),
+            target=max(1, int(outcome.get("target", participant.get("target", 1)) or 1)),
+            skipped=bool(outcome.get("skipped", False)),
+        )
+        affected_days.append(outcome_start.date())
+
+    current_period_start = _parse_dt(participant.get("period_start"))
+    if current_period_start:
+        current_period_start = _period_start(current_period_start, schedule["base"])
+        if _aggregate_start(current_period_start, schedule["aggregate"]) == aggregate_start:
+            affected_days.append(current_period_start.date())
+    return sorted(set(affected_days))
+
 def _normalise_goal_participants(goals: dict[str, Any]) -> None:
     for goal in goals.values():
         if not isinstance(goal, dict):

@@ -63,7 +63,7 @@ saved.
 
 ## App behavior
 
-The app has four primary pages:
+The app has five primary pages:
 
 - **Goals**: shows recent activity and active shared goals. The current user can
   mark a goal done, set the current progress, or increment/decrement progress.
@@ -71,6 +71,8 @@ The app has four primary pages:
   shows outgoing pending invites, and removes existing friends.
 - **Manage Goals**: creates shared goals, adds accepted friends to existing
   goals, and lets the current user leave a goal.
+- **Correct Inputs**: lets the current user correct missed or incorrect values
+  for older periods on their active goals.
 - **Account**: shows profile details, goal/friend stats, completion rate, and a
   year of activity.
 
@@ -85,8 +87,9 @@ Supported schedule classes are:
   completion is based on summed weekly progress reaching `X * target`
 
 Days start at midnight in `Europe/Berlin`, and weeks start on Monday. The app
-does not store per-period completion history; it keeps current per-goal streaks
-and compact per-user daily activity summaries for stats.
+stores compact per-participant `period_outcomes` history for recent periods so
+missed inputs can be corrected, plus compact per-user daily activity summaries
+for stats.
 
 ## Tests
 

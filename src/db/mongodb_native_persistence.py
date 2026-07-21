@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from .persistence_helpers import (
     ACTIVITY_DAYS_REPAIR_VERSION,
+    _correct_period_outcome,
     _days_using_app,
     _empty_store,
     _friendship_id,
@@ -751,6 +752,51 @@ class MongoNativePersistence:
         if notification_event:
             result["_notification_event"] = notification_event
         return result
+
+    def correct_goal_period_progress(
+        self,
+        goal_id: str,
+        user_id: str,
+        period_start: datetime,
+        current: int,
+        target: int | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        now_dt = _now(now)
+        corrected_dt = _now(period_start)
+        goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
+        if not goal or not _goal_active_for_user(goal, user_id):
+            raise ValueError("Goal is not active for this user.")
+        self._rollover_goal_participants(goal, now_dt)
+
+        schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+        corrected_start = _period_start(corrected_dt, schedule["base"])
+        current_start = _period_start(now_dt, schedule["base"])
+        if corrected_start >= current_start:
+            raise ValueError("Only older goal periods can be corrected.")
+
+        retained_periods = 0
+        cursor = corrected_start
+        while cursor < current_start:
+            retained_periods += 1
+            cursor = _next_period_start(cursor, schedule["base"])
+        if retained_periods > 370:
+            raise ValueError("That goal period is no longer retained.")
+
+        participant = goal["participants"][user_id]
+        affected_days = _correct_period_outcome(
+            goal,
+            participant,
+            corrected_start,
+            current=current,
+            target=target,
+        )
+        self._goals_collection().update_one({"_id": goal_id}, {"$set": {f"participants.{user_id}": participant}})
+        self._users_inventory_collection().update_one({"_id": user_id}, {"$set": {"last_seen_at": _iso(now)}})
+        self._cache_clear()
+        for affected_day in affected_days:
+            self._refresh_activity_day_for_user(user_id, affected_day)
+        return copy.deepcopy(goal)
 
     def set_goal_completion_notifications(self, goal_id: str, user_id: str, enabled: bool, now: datetime | None = None) -> dict[str, Any]:
         goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))

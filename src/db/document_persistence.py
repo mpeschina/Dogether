@@ -8,6 +8,7 @@ from typing import Any
 
 from .persistence_helpers import (
     _active_friendship,
+    _correct_period_outcome,
     _days_using_app,
     _find_user_by_email,
     _friendship_id,
@@ -609,6 +610,52 @@ class DocumentPersistence:
             if notification_event:
                 result["_notification_event"] = notification_event
             return result
+
+    def correct_goal_period_progress(
+        self,
+        goal_id: str,
+        user_id: str,
+        period_start: datetime,
+        current: int,
+        target: int | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        self.rollover_periods(now)
+        now_dt = _now(now)
+        corrected_dt = _now(period_start)
+        with self._lock:
+            data = self._read()
+            goal = data["goals"].get(goal_id)
+            if not goal or not _goal_active_for_user(goal, user_id):
+                raise ValueError("Goal is not active for this user.")
+
+            schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+            corrected_start = _period_start(corrected_dt, schedule["base"])
+            current_start = _period_start(now_dt, schedule["base"])
+            if corrected_start >= current_start:
+                raise ValueError("Only older goal periods can be corrected.")
+
+            retained_periods = 0
+            cursor = corrected_start
+            while cursor < current_start:
+                retained_periods += 1
+                cursor = _next_period_start(cursor, schedule["base"])
+            if retained_periods > 370:
+                raise ValueError("That goal period is no longer retained.")
+
+            participant = goal["participants"][user_id]
+            affected_days = _correct_period_outcome(
+                goal,
+                participant,
+                corrected_start,
+                current=current,
+                target=target,
+            )
+            for affected_day in affected_days:
+                _refresh_activity_day(data, user_id, affected_day)
+            self._write(data)
+            return copy.deepcopy(goal)
+
 
     def set_goal_completion_notifications(
         self,

@@ -120,6 +120,16 @@ class Persistence(Protocol):
         now: datetime | None = None,
     ) -> dict[str, Any]: ...
 
+    def correct_goal_period_progress(
+        self,
+        goal_id: str,
+        user_id: str,
+        period_start: datetime,
+        current: int,
+        target: int | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
     def set_goal_completion_notifications(
         self,
         goal_id: str,

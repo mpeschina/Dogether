@@ -756,6 +756,118 @@ def test_period_rollover_records_partial_progress_ratio(tmp_path: Path) -> None:
     }
 
 
+def test_correct_goal_period_progress_updates_missed_daily_outcome_and_activity(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Drink water",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=3,
+        current=0,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    persistence.correct_goal_period_progress(
+        goal["id"],
+        alice["user_id"],
+        at("2026-06-01T00:00:00"),
+        current=3,
+        now=at("2026-06-02T08:00:00"),
+    )
+
+    participant = persistence.raw_data()["goals"][goal["id"]]["participants"]["alice"]
+    assert participant["current"] == 0
+    assert participant["period_start"] == "2026-06-02T00:00:00+02:00"
+    assert participant["period_outcomes"]["2026-06-01"] == {
+        "completed": True,
+        "skipped": False,
+        "fulfilled": True,
+        "current": 3,
+        "target": 3,
+        "percent": 100.0,
+    }
+    assert persistence.raw_data()["user_stats"]["alice"]["activity_days"]["2026-06-01"] == {
+        "active_goals": 1,
+        "fulfilled_goals": 1,
+        "percent": 100.0,
+    }
+
+
+def test_correct_goal_period_progress_records_partial_value(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Steps",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=10,
+        current=0,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    persistence.correct_goal_period_progress(
+        goal["id"],
+        alice["user_id"],
+        at("2026-06-01T00:00:00"),
+        current=4,
+        now=at("2026-06-02T08:00:00"),
+    )
+
+    outcome = persistence.raw_data()["goals"][goal["id"]]["participants"]["alice"]["period_outcomes"]["2026-06-01"]
+    assert outcome["completed"] is False
+    assert outcome["fulfilled"] is False
+    assert outcome["current"] == 4
+    assert outcome["target"] == 10
+    assert outcome["percent"] == 40.0
+
+
+def test_correct_goal_period_progress_rejects_current_future_and_inactive_periods(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Read",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=1,
+        current=0,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    with pytest.raises(ValueError, match="Only older goal periods"):
+        persistence.correct_goal_period_progress(
+            goal["id"],
+            alice["user_id"],
+            at("2026-06-01T00:00:00"),
+            current=1,
+            now=at("2026-06-01T12:30:00"),
+        )
+    with pytest.raises(ValueError, match="Only older goal periods"):
+        persistence.correct_goal_period_progress(
+            goal["id"],
+            alice["user_id"],
+            at("2026-06-03T00:00:00"),
+            current=1,
+            now=at("2026-06-02T12:30:00"),
+        )
+
+    persistence.leave_goal(goal["id"], alice["user_id"], now=at("2026-06-02T13:00:00"))
+    with pytest.raises(ValueError, match="Goal is not active"):
+        persistence.correct_goal_period_progress(
+            goal["id"],
+            alice["user_id"],
+            at("2026-06-01T00:00:00"),
+            current=1,
+            now=at("2026-06-02T14:00:00"),
+        )
+
+
 def test_missed_daily_period_resets_streak(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
@@ -1140,6 +1252,48 @@ def test_mongodb_native_list_goals_rolls_over_shared_participants() -> None:
     stored_bob = database["goals"].documents[goal["id"]]["participants"]["bob"]
     assert stored_bob["current"] == 0
     assert "2026-06-01" in stored_bob["period_outcomes"]
+
+
+def test_mongodb_native_correct_goal_period_progress_updates_outcome_and_activity() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    goal = persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Steps",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=10,
+        current=0,
+        now=at("2026-06-01T09:04:00"),
+    )
+
+    updated = persistence.correct_goal_period_progress(
+        goal["id"],
+        alice["user_id"],
+        at("2026-06-01T00:00:00"),
+        current=10,
+        now=at("2026-06-02T08:00:00"),
+    )
+
+    outcome = updated["participants"]["alice"]["period_outcomes"]["2026-06-01"]
+    assert outcome == {
+        "completed": True,
+        "skipped": False,
+        "fulfilled": True,
+        "current": 10,
+        "target": 10,
+        "percent": 100.0,
+    }
+    stored = database["goals"].documents[goal["id"]]["participants"]["alice"]
+    assert stored["current"] == 0
+    assert stored["period_outcomes"]["2026-06-01"]["completed"] is True
+    assert database["user_stats"].documents["alice"]["activity_days"]["2026-06-01"] == {
+        "active_goals": 1,
+        "fulfilled_goals": 1,
+        "percent": 100.0,
+    }
 
 
 def test_mongodb_native_add_goal_friends_rolls_over_shared_participants() -> None:
