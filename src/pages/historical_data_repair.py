@@ -19,12 +19,13 @@ from src.pages.page_helpers import schedule_label
 LOOKBACK_PERIODS = 14
 READY_SESSION_KEY = "historical_data_repair_ready"
 READY_OPTION_SESSION_KEY = "historical_data_repair_ready_option"
+READY_STAGE_SESSION_KEY = "historical_data_repair_ready_stage"
 READINESS_GATE_OPTIONS = [
     {
         "id": "sentence_repeat",
-        "sentence1_html": "&quot;Playing around with the Histroy is dangerous.&quot;",
+        "sentence1_html": '<span style="color:#6b7280;">&quot;Playing around with the Histroy is dangerous.&quot;</span>',
         "wait1_seconds": 2,
-        "sentence2_html": "-- repeat this sentence 30 times in your head.",
+        "sentence2_html": "<strong>-- repeat this sentence 30 times in your head.</strong>",
         "wait2_seconds": 4,
         "progress_seconds": 30,
         "button_text": "I did it. I am ready!",
@@ -37,12 +38,22 @@ READINESS_GATE_OPTIONS = [
         ),
         "wait1_seconds": 2,
         "sentence2_html": (
-            "Before proceeding, repeat this sentence <strong>30 times in your head:</strong><br>"
-            "&quot;I will not accidentally invent a new past.&quot;"
+            "Before proceeding, repeat this sentence 30 times in your head:<br>"
+            "<strong>&quot;I will not accidentally invent a new past.&quot;</strong>"
         ),
         "wait2_seconds": 4,
         "progress_seconds": 60,
         "button_text": "Ready",
+    },
+    {
+        "id": "git_humor",
+        "mode": "two_step_progress",
+        "sentence1_html": 'You are about to perform a <strong>force push</strong> to history.',
+        "pre_button_text": "Force push to main. What could possibly go wrong?",
+        "progress_label_html": "Rebasing the timeline...",
+        "progress_seconds": 60,
+        "final_button_wait_seconds": 4,
+        "button_text": "Force Push History",
     },
 ]
 
@@ -154,6 +165,12 @@ def _render_readiness_gate() -> bool:
         return True
 
     option = _readiness_gate_option()
+    if option.get("mode") == "two_step_progress":
+        return _render_two_step_readiness_gate(option)
+    return _render_standard_readiness_gate(option)
+
+
+def _render_standard_readiness_gate(option: dict) -> bool:
     wait1_seconds = max(0, int(option.get("wait1_seconds", 0) or 0))
     wait2_seconds = max(0, int(option.get("wait2_seconds", 0) or 0))
     button_delay_seconds = wait1_seconds + wait2_seconds
@@ -180,6 +197,60 @@ def _render_readiness_gate() -> bool:
                 <p class="history-repair-warning">{option["sentence1_html"]}</p>
                 <p class="history-repair-task">{option["sentence2_html"]}</p>
                 {progress_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button(
+            str(option.get("button_text", "Ready")),
+            type="primary",
+            use_container_width=True,
+            key="history_repair_ready_button",
+        ):
+            st.session_state[READY_SESSION_KEY] = True
+            st.rerun()
+    return False
+
+
+def _render_two_step_readiness_gate(option: dict) -> bool:
+    stage = st.session_state.get(READY_STAGE_SESSION_KEY, "intro")
+    final_button_wait_seconds = max(0, int(option.get("final_button_wait_seconds", 0) or 0))
+    progress_seconds = max(1, int(option.get("progress_seconds", 1) or 1))
+
+    with st.container(key="history_repair_gate"):
+        st.markdown(
+            f"""
+            <style>
+            div[class*="st-key-history_repair_gate"] {{
+                --history-repair-wait-1: 0s;
+                --history-repair-button-delay: {final_button_wait_seconds}s;
+                --history-repair-progress-duration: {progress_seconds}s;
+            }}
+            </style>
+            <div class="history-repair-game">
+                <p class="history-repair-warning">{option["sentence1_html"]}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if stage != "progress":
+            if st.button(
+                str(option.get("pre_button_text", "Continue")),
+                type="primary",
+                use_container_width=True,
+                key="history_repair_pre_button",
+            ):
+                st.session_state[READY_STAGE_SESSION_KEY] = "progress"
+                st.rerun()
+            return False
+
+        st.markdown(
+            f"""
+            <div class="history-repair-game">
+                <p class="history-repair-task">{option.get("progress_label_html", "Working...")}</p>
+                <div class="history-repair-progress" aria-hidden="true">
+                    <div class="history-repair-progress-fill"></div>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -236,9 +307,6 @@ def render_historical_data_repair(
             text-align: center;
             opacity: 0;
             animation: history-repair-fade-in 0.8s ease forwards;
-        }
-        .history-repair-muted {
-            color: #6b7280;
         }
         .history-repair-task {
             margin: 0 0 0.75rem;

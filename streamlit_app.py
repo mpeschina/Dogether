@@ -9,6 +9,7 @@ from src.pages.account_page import render_account
 from src.pages.historical_data_repair import (
     READY_OPTION_SESSION_KEY,
     READY_SESSION_KEY,
+    READY_STAGE_SESSION_KEY,
     render_historical_data_repair,
 )
 from src.pages.debug_page import DebugMechanics, render_debug
@@ -119,6 +120,7 @@ def mark_current_page(page_key: str) -> None:
     if page_key == "historical_data_repair" and previous_page_key != "historical_data_repair":
         st.session_state.pop(READY_SESSION_KEY, None)
         st.session_state.pop(READY_OPTION_SESSION_KEY, None)
+        st.session_state.pop(READY_STAGE_SESSION_KEY, None)
     st.session_state["current_page_key"] = page_key
 
 
