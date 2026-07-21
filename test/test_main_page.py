@@ -25,8 +25,10 @@ from src.pages.common_helpers import (
     _participant_sparkline_values,
 )
 from src.pages.main_page import (
+    participant_goal_is_completed,
     participant_name_with_progress_html,
     participant_progress_label,
+    participant_reaction_summary,
     ordered_active_participant_ids,
     visible_participant_ids,
     truncate_participant_name,
@@ -476,7 +478,7 @@ def test_main_page_uses_viewport_render_paths() -> None:
     content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
 
     assert "from src.viewport_component import viewport_info" in content
-    assert "viewport = viewport_info()" in content
+    assert "viewport = viewport_info(require_ready=False)" in content
     assert 'key="main_viewport_info"' not in content
     assert "pixel_threshold=20" not in content
     assert "debounce_ms=500" not in content
@@ -487,7 +489,7 @@ def test_main_page_uses_viewport_render_paths() -> None:
     assert "MAIN_VIEWPORT_SESSION_KEY" not in content
     assert "def main_render_path" not in content
     assert 'render_path = "widescreen"' in content
-    assert 'viewport.get("renderPath") == "mobile_portrait"' in content
+    assert 'viewport.get("renderPath") == "widescreen"' in content
     assert "def render_goal_actions(" in content
     assert "def render_participant_progress(" in content
     assert 'render_path == "mobile_portrait"' in content
@@ -508,5 +510,71 @@ def test_main_page_gates_apple_steps_import_by_viewport_device() -> None:
 def test_main_page_reads_viewport_before_loading_data() -> None:
     content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
 
-    assert content.index("viewport = viewport_info()") < content.index("persistence.account_stats")
-    assert "st.session_state" not in content
+    assert content.index("viewport = viewport_info(require_ready=False)") < content.index("persistence.account_stats")
+    assert "viewport = viewport_info(require_ready=False)" in content
+
+
+def test_participant_goal_is_completed_requires_completed_unskipped_progress() -> None:
+    assert participant_goal_is_completed({"current": 10, "target": 10, "skipped": False}) is True
+    assert participant_goal_is_completed({"current": 9, "target": 10, "skipped": False}) is False
+    assert participant_goal_is_completed({"current": 10, "target": 10, "skipped": True}) is False
+
+
+def test_participant_reaction_summary_is_empty_without_current_period_reactions() -> None:
+    participant = {"current": 10, "target": 10, "skipped": False, "period_start": "2026-06-01T00:00:00+02:00"}
+    goal = _goal("daily", participant=participant)
+
+    assert participant_reaction_summary(participant, goal, now=_at("2026-06-01T12:00:00")) == []
+
+
+def test_participant_reaction_summary_aggregates_current_period_emotes() -> None:
+    participant = {
+        "current": 10,
+        "target": 10,
+        "skipped": False,
+        "period_start": "2026-06-02T00:00:00+02:00",
+        "completion_reactions": {
+            "2026-06-01": {"dana": {"emote": "🔥"}},
+            "2026-06-02": {
+                "bob": {"emote": "👍"},
+                "charlie": {"emote": "🎉"},
+                "dana": {"emote": "👍"},
+                "ignored": {"emote": "unsupported"},
+            },
+        },
+    }
+    goal = _goal("daily", participant=participant)
+
+    assert participant_reaction_summary(participant, goal, now=_at("2026-06-02T12:00:00")) == [("👍", 2), ("🎉", 1)]
+
+
+def test_main_page_uses_slim_component_picker_for_completed_friend_rows() -> None:
+    content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
+
+    assert "participant_reaction_row(" in content
+    assert "participant_id != current_user_id" in content
+    assert "participant_goal_is_completed(participant)" in content
+    assert 'open_picker=st.session_state.get("participant_reaction_open_row") == row_id' in content
+    assert 'st.popover("React")' not in content
+    assert "set_goal_completion_reaction" in content
+
+
+def test_participant_reaction_component_build_exists_with_inline_picker() -> None:
+    content = Path("src/reaction_component/frontend/build/index.html").read_text(encoding="utf-8")
+
+    assert "streamlit:componentReady" in content
+    assert "streamlit:render" in content
+    assert "streamlit:setComponentValue" in content
+    assert "participant-reaction-line" in content
+    assert "participant-progress-meta" in content
+    assert "participant-reaction-summary" in content
+    assert "position: absolute" in content
+    assert "participant-reaction-picker" in content
+    assert "participant-reaction-more" in content
+    assert "participant-reaction-all" in content
+    assert "overflow-y: auto" in content
+    assert "standard_emotes" in content
+    assert "mini-activity-dot-current" in content
+    assert 'action: "toggle"' in content
+    assert 'action: "react"' in content
+    assert "open = Boolean(args.open_picker)" in content

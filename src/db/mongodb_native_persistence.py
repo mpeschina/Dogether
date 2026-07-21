@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from .persistence_helpers import (
     ACTIVITY_DAYS_REPAIR_VERSION,
+    _completion_reactions,
     _correct_period_outcome,
     _days_using_app,
     _empty_store,
@@ -26,6 +27,7 @@ from .persistence_helpers import (
     _refresh_activity_day,
     _repair_activity_days,
     _schedule,
+    _validate_goal_completion_reaction,
     _next_period_start,
     normalize_email,
 )
@@ -844,6 +846,42 @@ class MongoNativePersistence:
         )
         self._cache_clear()
         return True
+
+    def set_goal_completion_reaction(
+        self,
+        goal_id: str,
+        completed_user_id: str,
+        reacting_user_id: str,
+        emote: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        now_iso = _iso(now)
+        now_dt = _now(now)
+        goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
+        if not goal:
+            raise ValueError("Goal is not active for this user.")
+        self._rollover_goal_participants(goal, now_dt)
+        participant, period_key = _validate_goal_completion_reaction(
+            goal,
+            completed_user_id,
+            reacting_user_id,
+            emote,
+            now_dt,
+        )
+        reactions = _completion_reactions(participant)
+        period_reactions = reactions.setdefault(period_key, {})
+        if not isinstance(period_reactions, dict):
+            period_reactions = {}
+            reactions[period_key] = period_reactions
+        period_reactions[reacting_user_id] = {"emote": emote, "reacted_at": now_iso}
+        for reaction_period_key in sorted(reactions)[:-370]:
+            del reactions[reaction_period_key]
+        self._goals_collection().update_one(
+            {"_id": goal_id},
+            {"$set": {f"participants.{completed_user_id}.completion_reactions": reactions}},
+        )
+        self._cache_clear()
+        return copy.deepcopy(goal)
 
     def set_health_data_workflow_target(self, goal_id: str | None, user_id: str, enabled: bool, now: datetime | None = None) -> dict[str, Any] | None:
         now_iso = _iso(now)

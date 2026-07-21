@@ -153,6 +153,15 @@ class Persistence(Protocol):
         now: datetime | None = None,
     ) -> bool: ...
 
+    def set_goal_completion_reaction(
+        self,
+        goal_id: str,
+        completed_user_id: str,
+        reacting_user_id: str,
+        emote: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
     def set_health_data_workflow_target(
         self,
         goal_id: str | None,

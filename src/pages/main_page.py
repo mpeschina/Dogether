@@ -6,13 +6,13 @@ from html import escape
 import streamlit as st
 
 from src.db.persistence import Persistence
+from src.db.persistence_helpers import REACTION_EMOTES, STANDARD_REACTION_EMOTES, _participant_period_key
 from src.pages.account_page import render_activity_diagram
 from src.pages.common_helpers import (
     DONE_BUTTON_GREEN,
     DONE_BUTTON_GREEN_ACTIVE,
     DONE_BUTTON_GREEN_HOVER,
     MINI_ACTIVITY_NAME_MAX_LENGTH,
-    PARTICIPANT_PROGRESS_COLOR,
     compact_goal_activity_html,
     mini_activity_styles,
     participant_sparkline_html,
@@ -23,7 +23,8 @@ from src.pages.health_data_import_page import (
     health_data_import_settings,
     health_data_import_enabled,
 )
-from src.pages.page_helpers import participant_name, progress_bar, schedule_label
+from src.pages.page_helpers import participant_name, schedule_label
+from src.reaction_component import participant_reaction_row
 from src.push.notifications import update_goal_progress_with_push
 from src.push.storage import PushStorage
 from src.viewport_component import viewport_info
@@ -93,6 +94,32 @@ def participant_name_with_progress_html(
     )
 
 
+
+
+def participant_goal_is_completed(participant: dict) -> bool:
+    if participant.get("skipped"):
+        return False
+    current = max(0, int(participant.get("current", 0) or 0))
+    target = max(1, int(participant.get("target", 1) or 1))
+    return current >= target
+
+
+def participant_reaction_summary(participant: dict, goal: dict, now: datetime | None = None) -> list[tuple[str, int]]:
+    reactions = participant.get("completion_reactions", {})
+    if not isinstance(reactions, dict):
+        return []
+    period_key = _participant_period_key(participant, goal, now)
+    period_reactions = reactions.get(period_key, {})
+    if not isinstance(period_reactions, dict):
+        return []
+    counts = {emote: 0 for emote in REACTION_EMOTES}
+    for reaction in period_reactions.values():
+        if not isinstance(reaction, dict):
+            continue
+        emote = reaction.get("emote")
+        if emote in counts:
+            counts[emote] += 1
+    return [(emote, count) for emote, count in counts.items() if count]
 
 
 def render_goal_actions(
@@ -216,18 +243,68 @@ def render_participant_progress(
     participant: dict,
     users: dict[str, dict],
     now: datetime | None,
+    persistence: Persistence | None = None,
+    current_user_id: str | None = None,
 ) -> None:
     current = int(participant.get("current", 0))
     target = int(participant.get("target", 1))
     skipped = bool(participant.get("skipped", False))
     name = participant_name(users, participant_id)
     progress_label = participant_progress_label(current, target, skipped)
-    st.markdown(
-        participant_name_with_progress_html(name, progress_label, goal, participant, now=now),
-        unsafe_allow_html=True,
+    sparkline_html = participant_sparkline_html(goal, participant, now=now)
+    dots_html = compact_goal_activity_html(goal, participant, now=now)
+    row_id = f"{goal['id']}:{participant_id}:{_participant_period_key(participant, goal, now)}"
+    can_react = (
+        persistence is not None
+        and current_user_id is not None
+        and participant_id != current_user_id
+        and participant_goal_is_completed(participant)
     )
-    if not skipped:
-        progress_bar(current, target, show_caption=False)
+    reaction = participant_reaction_row(
+        row_id=row_id,
+        name=name,
+        name_html=escape(truncate_participant_name(name)),
+        sparkline_html=sparkline_html,
+        dots_html=dots_html,
+        progress_label=progress_label,
+        current=current,
+        target=target,
+        skipped=skipped,
+        reaction_summary=participant_reaction_summary(participant, goal, now),
+        standard_emotes=STANDARD_REACTION_EMOTES,
+        emotes=REACTION_EMOTES,
+        can_react=can_react,
+        open_picker=st.session_state.get("participant_reaction_open_row") == row_id,
+        key=f"participant_reaction_row_{goal['id']}_{participant_id}",
+    )
+    if not (can_react and isinstance(reaction, dict)):
+        return
+    action = reaction.get("action")
+    emote = reaction.get("emote")
+    nonce = reaction.get("nonce")
+    processed_key = f"participant_reaction_processed_{row_id}_{action}_{emote}_{nonce}"
+    if st.session_state.get(processed_key):
+        return
+    st.session_state[processed_key] = True
+    if action == "toggle":
+        st.session_state["participant_reaction_open_row"] = (
+            None if st.session_state.get("participant_reaction_open_row") == row_id else row_id
+        )
+        st.rerun()
+    if action == "react" and emote in REACTION_EMOTES:
+        try:
+            persistence.set_goal_completion_reaction(
+                goal["id"],
+                completed_user_id=participant_id,
+                reacting_user_id=current_user_id or "",
+                emote=emote,
+                now=now,
+            )
+        except ValueError as error:
+            st.error(str(error))
+        else:
+            st.session_state["participant_reaction_open_row"] = None
+            st.rerun()
 
 
 def render_main(
@@ -255,32 +332,6 @@ def render_main(
             background-color: {DONE_BUTTON_GREEN_ACTIVE};
             border-color: {DONE_BUTTON_GREEN_ACTIVE};
             color: #ffffff;
-        }}
-        .participant-progress-row {{
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto auto;
-            align-items: baseline;
-            column-gap: 0.4rem;
-            margin: 0.15rem 0;
-            min-width: 0;
-            white-space: nowrap;
-        }}
-        .participant-progress-name {{
-            display: inline-flex;
-            align-items: center;
-            gap: 0.45rem;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }}
-        .participant-progress-name-text {{
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }}
-        .participant-progress-count {{
-            color: {PARTICIPANT_PROGRESS_COLOR};
-            font-size: 0.875rem;
         }}
         {mini_activity_styles()}
         </style>
@@ -333,12 +384,12 @@ def render_main(
             for participant_id in participant_ids:
                 participant = goal["participants"][participant_id]
                 if render_path == "mobile_portrait":
-                    render_participant_progress(goal, participant_id, participant, users, now)
+                    render_participant_progress(goal, participant_id, participant, users, now, persistence, user_id)
                     continue
 
                 cols = st.columns([6, 2])
                 with cols[0]:
-                    render_participant_progress(goal, participant_id, participant, users, now)
+                    render_participant_progress(goal, participant_id, participant, users, now, persistence, user_id)
                 if participant_id == user_id:
                     with cols[1]:
                         render_goal_actions(

@@ -562,6 +562,85 @@ def test_goal_completion_notification_preference_is_per_participant(tmp_path: Pa
     assert completed["_notification_event"]["type"] == "goal_completed"
 
 
+def test_goal_completion_reaction_is_one_emote_per_reacting_user(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    users_and_friendship(persistence)
+    goal = persistence.create_goal(
+        "alice",
+        "Run",
+        "daily",
+        1,
+        ["bob"],
+        10,
+        current=10,
+        now=at("2026-06-01T09:00:00"),
+    )
+
+    reacted = persistence.set_goal_completion_reaction(
+        goal["id"],
+        completed_user_id="alice",
+        reacting_user_id="bob",
+        emote="👍",
+        now=at("2026-06-01T10:00:00"),
+    )
+    changed = persistence.set_goal_completion_reaction(
+        goal["id"],
+        completed_user_id="alice",
+        reacting_user_id="bob",
+        emote="🎉",
+        now=at("2026-06-01T10:05:00"),
+    )
+
+    first_reaction = reacted["participants"]["alice"]["completion_reactions"]["2026-06-01"]["bob"]
+    changed_reactions = changed["participants"]["alice"]["completion_reactions"]["2026-06-01"]
+    assert first_reaction["emote"] == "👍"
+    assert changed_reactions == {"bob": {"emote": "🎉", "reacted_at": "2026-06-01T08:05:00+00:00"}}
+
+
+def test_goal_completion_reaction_rejects_invalid_rows(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    users_and_friendship(persistence)
+    goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 10, current=10)
+
+    with pytest.raises(ValueError, match="own completed goal"):
+        persistence.set_goal_completion_reaction(goal["id"], "alice", "alice", "👍")
+
+    with pytest.raises(ValueError, match="active"):
+        persistence.set_goal_completion_reaction(goal["id"], "alice", "charlie", "👍")
+
+    incomplete = persistence.update_goal_progress(goal["id"], "alice", current=9)
+    with pytest.raises(ValueError, match="Only completed"):
+        persistence.set_goal_completion_reaction(incomplete["id"], "alice", "bob", "👍")
+
+    skipped = persistence.update_goal_progress(goal["id"], "alice", skipped=True)
+    with pytest.raises(ValueError, match="Skipped"):
+        persistence.set_goal_completion_reaction(skipped["id"], "alice", "bob", "👍")
+
+    completed = persistence.update_goal_progress(goal["id"], "alice", current=10)
+    persistence.leave_goal(goal["id"], "bob")
+    with pytest.raises(ValueError, match="active"):
+        persistence.set_goal_completion_reaction(completed["id"], "alice", "bob", "👍")
+
+
+def test_goal_completion_reaction_supports_extended_picker_emotes(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    users_and_friendship(persistence)
+    goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 10, current=10)
+
+    reacted = persistence.set_goal_completion_reaction(goal["id"], "alice", "bob", "🚀")
+
+    assert reacted["participants"]["alice"]["completion_reactions"]
+
+
+def test_goal_completion_reaction_rejects_unsupported_emotes(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    users_and_friendship(persistence)
+    goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 10, current=10)
+
+    with pytest.raises(ValueError, match="Unsupported"):
+        persistence.set_goal_completion_reaction(goal["id"], "alice", "bob", "not-an-emote")
+
+
 def test_health_data_workflow_target_is_unique_per_user(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     users_and_friendship(persistence)
@@ -1205,6 +1284,54 @@ def test_mongodb_native_list_goals_reads_matching_goal_collection_only() -> None
     assert goal_find_calls[0][1]["participant_user_ids"] == "alice"
     assert not database["users_inventory"].calls
 
+
+
+def test_mongodb_native_goal_completion_reaction_uses_targeted_update() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob", at("2026-06-01T09:01:00"))
+    invite = persistence.create_friend_invite(
+        alice["user_id"],
+        alice["email"],
+        bob["email"],
+        at("2026-06-01T09:02:00"),
+    )
+    persistence.respond_friend_invite(invite["id"], bob["user_id"], bob["email"], approve=True, now=at("2026-06-01T09:03:00"))
+    goal = persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Run",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[bob["user_id"]],
+        target=10,
+        current=10,
+        now=at("2026-06-01T09:04:00"),
+    )
+    for collection in database.collections.values():
+        collection.calls.clear()
+
+    updated = persistence.set_goal_completion_reaction(
+        goal["id"],
+        completed_user_id=alice["user_id"],
+        reacting_user_id=bob["user_id"],
+        emote="👍",
+        now=at("2026-06-01T10:00:00"),
+    )
+
+    assert updated["participants"]["alice"]["completion_reactions"]["2026-06-01"]["bob"]["emote"] == "👍"
+    goal_update_calls = [call for call in database["goals"].calls if call[0] == "update_one"]
+    assert goal_update_calls
+    assert not [call for call in database["goals"].calls if call[0] == "replace_one"]
+    assert goal_update_calls[-1][2] == {
+        "$set": {
+            "participants.alice.completion_reactions": {
+                "2026-06-01": {"bob": {"emote": "👍", "reacted_at": "2026-06-01T08:00:00+00:00"}}
+            }
+        }
+    }
+    stored_reaction = database["goals"].documents[goal["id"]]["participants"]["alice"]["completion_reactions"]["2026-06-01"]["bob"]
+    assert stored_reaction["emote"] == "👍"
 
 
 def test_mongodb_native_list_goals_rolls_over_shared_participants() -> None:

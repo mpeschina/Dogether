@@ -27,6 +27,13 @@ SCHEDULES = {
         "aggregate": "month",
     },
 }
+STANDARD_REACTION_EMOTES = ["👍", "🎉", "🔥", "👏", "💪", "❤️"]
+REACTION_EMOTES = [
+    *STANDARD_REACTION_EMOTES,
+    "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇", "🙂", "🙃", "😉", "😍", "😘", "😜", "🤩", "🥳",
+    "😎", "🥹", "😮", "😱", "😤", "😭", "🤯", "🤝", "🙌", "🫶", "👌", "✌️", "🤞", "🙏", "💯", "⭐", "✨", "⚡",
+    "☀️", "🌈", "🌟", "🏆", "🥇", "🏅", "🎯", "🚀", "💎", "🌻", "🌸", "🍀", "🍕", "🍰", "☕", "🎵", "🎁", "✅",
+]
 
 
 def _empty_store() -> dict[str, Any]:
@@ -175,6 +182,14 @@ def _period_key(period_start: datetime) -> str:
     return _now(period_start).date().isoformat()
 
 
+def _participant_period_key(participant: dict[str, Any], goal: dict[str, Any], now: datetime | None = None) -> str:
+    schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+    period_start = _parse_dt(participant.get("period_start"))
+    if period_start is None:
+        period_start = _period_start(_now(now), schedule["base"])
+    return _period_key(_period_start(period_start, schedule["base"]))
+
+
 def _aggregate_start(period_start: datetime, aggregate: str) -> date:
     local = _now(period_start)
     if aggregate == "day":
@@ -208,6 +223,38 @@ def _period_outcomes(participant: dict[str, Any]) -> dict[str, Any]:
         outcomes = {}
         participant["period_outcomes"] = outcomes
     return outcomes
+
+
+def _completion_reactions(participant: dict[str, Any]) -> dict[str, Any]:
+    reactions = participant.setdefault("completion_reactions", {})
+    if not isinstance(reactions, dict):
+        reactions = {}
+        participant["completion_reactions"] = reactions
+    return reactions
+
+
+def _validate_goal_completion_reaction(
+    goal: dict[str, Any],
+    completed_user_id: str,
+    reacting_user_id: str,
+    emote: str,
+    now: datetime | None = None,
+) -> tuple[dict[str, Any], str]:
+    if emote not in REACTION_EMOTES:
+        raise ValueError("Unsupported reaction emote.")
+    if completed_user_id == reacting_user_id:
+        raise ValueError("You cannot react to your own completed goal.")
+    if not _goal_active_for_user(goal, completed_user_id) or not _goal_active_for_user(goal, reacting_user_id):
+        raise ValueError("Goal is not active for this user.")
+
+    participant = goal["participants"][completed_user_id]
+    if participant.get("skipped"):
+        raise ValueError("Skipped goals cannot receive reactions.")
+    current = max(0, int(participant.get("current", 0) or 0))
+    target = max(1, int(participant.get("target", 1) or 1))
+    if current < target:
+        raise ValueError("Only completed goals can receive reactions.")
+    return participant, _participant_period_key(participant, goal, now)
 
 
 def _period_fulfilled(
@@ -353,6 +400,8 @@ def _normalise_goal_participants(goals: dict[str, Any]) -> None:
                 participant["skipped"] = bool(participant.get("skipped", False))
                 if not isinstance(participant.get("period_outcomes"), dict):
                     participant["period_outcomes"] = {}
+                if not isinstance(participant.get("completion_reactions"), dict):
+                    participant["completion_reactions"] = {}
 
 
 def _normalise_user_stats(user_stats: dict[str, Any]) -> None:

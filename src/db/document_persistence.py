@@ -8,6 +8,7 @@ from typing import Any
 
 from .persistence_helpers import (
     _active_friendship,
+    _completion_reactions,
     _correct_period_outcome,
     _days_using_app,
     _find_user_by_email,
@@ -25,6 +26,7 @@ from .persistence_helpers import (
     _schedule,
     _next_period_start,
     _user_stats,
+    _validate_goal_completion_reaction,
     normalize_email,
 )
 
@@ -717,6 +719,39 @@ class DocumentPersistence:
                 del counts[count_day]
             self._write(data)
             return True
+
+    def set_goal_completion_reaction(
+        self,
+        goal_id: str,
+        completed_user_id: str,
+        reacting_user_id: str,
+        emote: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        self.rollover_periods(now)
+        now_iso = _iso(now)
+        with self._lock:
+            data = self._read()
+            goal = data["goals"].get(goal_id)
+            if not goal:
+                raise ValueError("Goal is not active for this user.")
+            participant, period_key = _validate_goal_completion_reaction(
+                goal,
+                completed_user_id,
+                reacting_user_id,
+                emote,
+                now,
+            )
+            reactions = _completion_reactions(participant)
+            period_reactions = reactions.setdefault(period_key, {})
+            if not isinstance(period_reactions, dict):
+                period_reactions = {}
+                reactions[period_key] = period_reactions
+            period_reactions[reacting_user_id] = {"emote": emote, "reacted_at": now_iso}
+            for reaction_period_key in sorted(reactions)[:-370]:
+                del reactions[reaction_period_key]
+            self._write(data)
+            return copy.deepcopy(goal)
 
     def set_health_data_workflow_target(
         self,
