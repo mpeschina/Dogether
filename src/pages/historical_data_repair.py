@@ -15,6 +15,7 @@ from src.pages.page_helpers import schedule_label
 
 
 LOOKBACK_PERIODS = 14
+READY_SESSION_KEY = "historical_data_repair_ready"
 
 
 def editable_period_starts(
@@ -109,12 +110,39 @@ def _render_period_inputs(
     return values
 
 
+def _render_readiness_gate() -> bool:
+    if st.session_state.get(READY_SESSION_KEY):
+        return True
+
+    with st.container(key="history_repair_gate"):
+        st.markdown(
+            """
+            <div class="history-repair-game">
+                <p class="history-repair-warning">Playing around with the Histroy is dangerous.</p>
+                <p class="history-repair-task">-- repeat this sentence 30 times in your head.</p>
+                <div class="history-repair-progress" aria-hidden="true">
+                    <div class="history-repair-progress-fill"></div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button(
+            "I did it. I am ready!",
+            type="primary",
+            use_container_width=True,
+            key="history_repair_ready_button",
+        ):
+            st.session_state[READY_SESSION_KEY] = True
+            st.rerun()
+    return False
+
+
 def render_historical_data_repair(
     persistence: Persistence,
     user_id: str,
     now: datetime | None = None,
 ) -> None:
-    st.title("Historical Data Repair")
     st.markdown(
         """
         <style>
@@ -132,10 +160,83 @@ def render_historical_data_repair(
             background-color: #fff1f2;
             border-color: #fecdd3;
         }
+        div[class*="st-key-history_repair_gate"] {
+            min-height: 62vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .history-repair-game {
+            width: 100%;
+            max-width: 34rem;
+            margin: 0 auto;
+            background: #ffffff;
+        }
+        .history-repair-warning {
+            margin: 0 0 1rem;
+            color: #6b7280;
+            font-size: 0.92rem;
+            text-align: center;
+            opacity: 0;
+            animation: history-repair-fade-in 0.8s ease forwards;
+        }
+        .history-repair-task {
+            margin: 0 0 0.75rem;
+            color: #1f2937;
+            font-weight: 700;
+            text-align: center;
+            opacity: 0;
+            animation: history-repair-fade-in 0.6s ease 2s forwards;
+        }
+        .history-repair-progress {
+            width: 100%;
+            height: 0.55rem;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #e5e7eb;
+            box-shadow: inset 0 0 0 1px rgba(31, 41, 55, 0.08);
+            opacity: 0;
+            animation: history-repair-fade-in 0.6s ease 2s forwards;
+        }
+        .history-repair-progress-fill {
+            width: 100%;
+            height: 100%;
+            transform-origin: left center;
+            transform: scaleX(0);
+            animation: history-repair-fill 30s linear 2s forwards;
+            background: #1f2937;
+        }
+        div[class*="st-key-history_repair_ready_button"] {
+            width: 100%;
+            max-width: 34rem;
+            margin: 1rem auto 0;
+            visibility: hidden;
+            opacity: 0;
+            pointer-events: none;
+            animation: history-repair-ready-button 0.8s ease 6s forwards;
+        }
+        @keyframes history-repair-fade-in {
+            to { opacity: 1; }
+        }
+        @keyframes history-repair-fill {
+            to { transform: scaleX(1); }
+        }
+        @keyframes history-repair-ready-button {
+            to {
+                visibility: visible;
+                opacity: 1;
+                pointer-events: auto;
+            }
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
+    if not _render_readiness_gate():
+        return
+
+    st.title("Historical Data Repair")
     goals = [
         goal
         for goal in persistence.list_goals_for_user(user_id, now=now)
