@@ -180,6 +180,8 @@ def set_goal_completion_reaction_with_push(
         emote=emote,
         now=now,
     )
+    if not str(emote).strip():
+        return goal
     if not push_storage or not push_configured(push_settings):
         return goal
     if not persistence.claim_goal_reaction_notification(goal_id, completed_user_id, reacting_user_id, now=now):
@@ -188,12 +190,20 @@ def set_goal_completion_reaction_with_push(
     users = persistence.users_by_ids([reacting_user_id, completed_user_id])
     reacting_user = users.get(reacting_user_id, {})
     reacting_name = reacting_user.get("name") or reacting_user.get("email") or "A friend"
-    description = str(goal.get("description") or "your completed goal")
+    description = str(goal.get("description") or "your goal")
+    participant = goal.get("participants", {}).get(completed_user_id, {})
+    current = max(0, int(participant.get("current", 0) or 0))
+    target = max(1, int(participant.get("target", 1) or 1))
+    body = (
+        f"{reacting_name} sent {emote} to your completion of “{description}”"
+        if current >= target
+        else f"{reacting_name} sent {emote} for “{description}”"
+    )
     send_push_to_user(
         push_storage,
         completed_user_id,
         title="New goal reaction",
-        body=f"{reacting_name} sent {emote} to your completion of “{description}”",
+        body=body,
         url="/",
         vapid_private_key=push_settings["vapid_private_key"],
         vapid_subject=push_settings["vapid_subject"],

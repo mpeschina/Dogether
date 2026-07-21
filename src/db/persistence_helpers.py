@@ -27,12 +27,12 @@ SCHEDULES = {
         "aggregate": "month",
     },
 }
-STANDARD_REACTION_EMOTES = ["👍", "🎉", "🔥", "👏", "💪", "❤️"]
+STANDARD_REACTION_EMOTES = [" ", "🚀", "🔥", "👏", "💪", "❤️"]
 REACTION_EMOTES = [
     *STANDARD_REACTION_EMOTES,
-    "😀", "😄", "😁", "😆", "😅", "🤣", "😊", "😇", "😉", "😍", "😘", "🤩", "🥳",  "😎", "😮", "😱", 
+    "👍", "🎉", "😀", "😄", "😁", "😆", "😅", "🤣", "😊", "😇", "😉", "😍", "😘", "🤩", "🥳",  "😎", "😮", "😱", 
     "😤", "😭", "🤯", "😡", "🖕", "👊", "🙌", "🫶", "👌", "✌️", "🤞", "🙏", "💯", "⭐", "✨", "⚡",
-    "☀️", "🌈", "🌟", "🏆", "🏅", "🎯", "🚀", "💎", "🌻", "🌸", "🍀", "🍕", "🍰", "☕", "🎵", "🎁", "✅",
+    "☀️", "🌈", "🌟", "🏆", "🏅", "🎯", "💎", "🌻", "🌸", "🍀", "🍕", "🍰", "☕", "🎵", "🎁", "✅",
     "🍆", "🍑", "💦", "👅", "🙈", "💥",
 ]
 
@@ -244,17 +244,13 @@ def _validate_goal_completion_reaction(
     if emote not in REACTION_EMOTES:
         raise ValueError("Unsupported reaction emote.")
     if completed_user_id == reacting_user_id:
-        raise ValueError("You cannot react to your own completed goal.")
+        raise ValueError("You cannot react to your own goal.")
     if not _goal_active_for_user(goal, completed_user_id) or not _goal_active_for_user(goal, reacting_user_id):
         raise ValueError("Goal is not active for this user.")
 
     participant = goal["participants"][completed_user_id]
     if participant.get("skipped"):
         raise ValueError("Skipped goals cannot receive reactions.")
-    current = max(0, int(participant.get("current", 0) or 0))
-    target = max(1, int(participant.get("target", 1) or 1))
-    if current < target:
-        raise ValueError("Only completed goals can receive reactions.")
     return participant, _participant_period_key(participant, goal, now)
 
 

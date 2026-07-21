@@ -597,20 +597,31 @@ def test_goal_completion_reaction_is_one_emote_per_reacting_user(tmp_path: Path)
     assert changed_reactions == {"bob": {"emote": "🎉", "reacted_at": "2026-06-01T08:05:00+00:00"}}
 
 
+def test_goal_completion_reaction_blank_emote_removes_existing_reaction(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    users_and_friendship(persistence)
+    goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 10, current=10, now=at("2026-06-01T09:00:00"))
+
+    persistence.set_goal_completion_reaction(goal["id"], "alice", "bob", "👍", now=at("2026-06-01T10:00:00"))
+    updated = persistence.set_goal_completion_reaction(goal["id"], "alice", "bob", " ", now=at("2026-06-01T10:05:00"))
+
+    assert updated["participants"]["alice"].get("completion_reactions", {}) == {}
+
+
 def test_goal_completion_reaction_rejects_invalid_rows(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     users_and_friendship(persistence)
     goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 10, current=10)
 
-    with pytest.raises(ValueError, match="own completed goal"):
+    with pytest.raises(ValueError, match="own goal"):
         persistence.set_goal_completion_reaction(goal["id"], "alice", "alice", "👍")
 
     with pytest.raises(ValueError, match="active"):
         persistence.set_goal_completion_reaction(goal["id"], "alice", "charlie", "👍")
 
     incomplete = persistence.update_goal_progress(goal["id"], "alice", current=9)
-    with pytest.raises(ValueError, match="Only completed"):
-        persistence.set_goal_completion_reaction(incomplete["id"], "alice", "bob", "👍")
+    reacted = persistence.set_goal_completion_reaction(incomplete["id"], "alice", "bob", "👍")
+    assert reacted["participants"]["alice"]["completion_reactions"]
 
     skipped = persistence.update_goal_progress(goal["id"], "alice", skipped=True)
     with pytest.raises(ValueError, match="Skipped"):

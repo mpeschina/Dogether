@@ -281,7 +281,7 @@ def render_participant_progress(
         persistence is not None
         and current_user_id is not None
         and participant_id != current_user_id
-        and participant_goal_is_completed(participant)
+        and not skipped
     )
     reaction = participant_reaction_row(
         row_id=row_id,

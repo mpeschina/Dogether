@@ -747,7 +747,12 @@ class DocumentPersistence:
             if not isinstance(period_reactions, dict):
                 period_reactions = {}
                 reactions[period_key] = period_reactions
-            period_reactions[reacting_user_id] = {"emote": emote, "reacted_at": now_iso}
+            if not str(emote).strip():
+                period_reactions.pop(reacting_user_id, None)
+                if not period_reactions:
+                    reactions.pop(period_key, None)
+            else:
+                period_reactions[reacting_user_id] = {"emote": emote, "reacted_at": now_iso}
             for reaction_period_key in sorted(reactions)[:-370]:
                 del reactions[reaction_period_key]
             self._write(data)

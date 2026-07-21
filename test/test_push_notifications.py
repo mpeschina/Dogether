@@ -392,8 +392,39 @@ def test_goal_reaction_pushes_to_completed_user_once_per_two_hours_per_reacting_
 
     assert [call[0][1] for call in calls] == ["alice", "alice"]
     assert calls[0][1]["title"] == "New goal reaction"
-    assert calls[0][1]["body"] == "Bob reacted 👍 to your completed goal Daily Steps."
-    assert calls[1][1]["body"] == "Bob reacted 🔥 to your completed goal Daily Steps."
+    assert calls[0][1]["body"] == "Bob sent 👍 to your completion of “Daily Steps”"
+    assert calls[1][1]["body"] == "Bob sent 🔥 to your completion of “Daily Steps”"
+
+
+def test_goal_reaction_push_uses_incomplete_goal_message(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    invite = persistence.create_friend_invite("alice", alice["email"], bob["email"])
+    persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True)
+    goal = persistence.create_goal("alice", "Daily Steps", "daily", 1, ["bob"], 10, current=5, now=at("2026-06-01T09:00:00"))
+    calls = []
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1, "removed": 0, "errors": []},
+    )
+
+    set_goal_completion_reaction_with_push(
+        persistence,
+        MemoryPushStorage(),
+        {
+            "vapid_public_key": "public",
+            "vapid_private_key": "private",
+            "vapid_subject": "mailto:test@example.com",
+        },
+        goal_id=goal["id"],
+        completed_user_id="alice",
+        reacting_user_id="bob",
+        emote="👍",
+        now=at("2026-06-01T10:00:00"),
+    )
+
+    assert calls[0][1]["body"] == "Bob sent 👍 for “Daily Steps”"
 
 
 def test_goal_reaction_push_throttle_allows_different_reacting_users(monkeypatch, tmp_path: Path) -> None:
@@ -430,8 +461,43 @@ def test_goal_reaction_push_throttle_allows_different_reacting_users(monkeypatch
     )
 
     assert [call[0][1] for call in calls] == ["alice", "alice"]
-    assert "Bob reacted 👍" in calls[0][1]["body"]
-    assert "Charlie reacted 🎉" in calls[1][1]["body"]
+    assert "Bob sent 👍 to your completion" in calls[0][1]["body"]
+    assert "Charlie sent 🎉 to your completion" in calls[1][1]["body"]
+
+
+def test_goal_reaction_blank_emote_removes_without_push_or_throttle(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    invite = persistence.create_friend_invite("alice", alice["email"], bob["email"])
+    persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True)
+    goal = persistence.create_goal("alice", "Daily Steps", "daily", 1, ["bob"], 10, current=10, now=at("2026-06-01T09:00:00"))
+    calls = []
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1, "removed": 0, "errors": []},
+    )
+    push_settings = {
+        "vapid_public_key": "public",
+        "vapid_private_key": "private",
+        "vapid_subject": "mailto:test@example.com",
+    }
+
+    persistence.set_goal_completion_reaction(goal["id"], "alice", "bob", "👍", now=at("2026-06-01T10:00:00"))
+    updated = set_goal_completion_reaction_with_push(
+        persistence,
+        MemoryPushStorage(),
+        push_settings,
+        goal_id=goal["id"],
+        completed_user_id="alice",
+        reacting_user_id="bob",
+        emote=" ",
+        now=at("2026-06-01T10:05:00"),
+    )
+
+    assert updated["participants"]["alice"].get("completion_reactions", {}) == {}
+    assert calls == []
+    assert "reaction_notification_timestamps" not in (persistence.get_user("alice") or {})
 
 
 def test_goal_reaction_without_push_configuration_still_saves(tmp_path: Path) -> None:

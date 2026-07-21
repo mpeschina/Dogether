@@ -24,6 +24,7 @@ from src.pages.common_helpers import (
     participant_sparkline_html,
     _participant_sparkline_values,
 )
+from src.db.persistence_helpers import STANDARD_REACTION_EMOTES
 from src.pages.main_page import (
     participant_goal_is_completed,
     participant_name_with_progress_html,
@@ -35,6 +36,9 @@ from src.pages.main_page import (
     truncate_participant_name,
 )
 
+
+def test_standard_reaction_emotes_use_blank_remove_and_rocket() -> None:
+    assert STANDARD_REACTION_EMOTES == [" ", "🚀", "🔥", "👏", "💪", "❤️"]
 
 def test_ordered_active_participant_ids_pins_current_user_first() -> None:
     goal = {
@@ -578,12 +582,13 @@ def test_participant_reaction_details_include_emote_and_sender_name() -> None:
     ]
 
 
-def test_main_page_uses_slim_component_picker_for_completed_friend_rows() -> None:
+def test_main_page_uses_slim_component_picker_for_active_friend_rows() -> None:
     content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
 
     assert "participant_reaction_row(" in content
     assert "participant_id != current_user_id" in content
-    assert "participant_goal_is_completed(participant)" in content
+    assert "not skipped" in content
+    assert "participant_goal_is_completed(participant)" not in content
     assert 'open_picker=st.session_state.get("participant_reaction_open_row") == row_id' in content
     assert 'st.popover("React")' not in content
     assert "set_goal_completion_reaction" in content
@@ -599,6 +604,8 @@ def test_participant_reaction_component_build_exists_with_inline_picker() -> Non
     assert "participant-reaction-line" in content
     assert "participant-progress-meta" in content
     assert "participant-reaction-summary" in content
+    assert "--streamlit-secondary-background-color" in content
+    assert "secondaryBackgroundColor" in content
     assert "position: absolute" in content
     assert "participant-reaction-picker" in content
     assert "participant-reaction-detail-menu" in content
@@ -607,6 +614,7 @@ def test_participant_reaction_component_build_exists_with_inline_picker() -> Non
     assert "getBoundingClientRect()" in content
     assert "translateX" in content
     assert "participant-reaction-more" in content
+    assert "Remove reaction" in content
     assert "participant-reaction-all" in content
     assert "overflow-y: auto" in content
     assert "standard_emotes" in content
@@ -617,3 +625,4 @@ def test_participant_reaction_component_build_exists_with_inline_picker() -> Non
     assert 'action: "close"' in content
     assert "window.parent.document.addEventListener" in content
     assert "open = Boolean(args.open_picker)" in content
+    assert "React to this goal" in content
