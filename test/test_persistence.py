@@ -628,8 +628,10 @@ def test_goal_completion_reaction_supports_extended_picker_emotes(tmp_path: Path
     goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 10, current=10)
 
     reacted = persistence.set_goal_completion_reaction(goal["id"], "alice", "bob", "🚀")
+    updated = persistence.set_goal_completion_reaction(goal["id"], "alice", "bob", "🍆")
 
     assert reacted["participants"]["alice"]["completion_reactions"]
+    assert updated["participants"]["alice"]["completion_reactions"]
 
 
 def test_goal_completion_reaction_rejects_unsupported_emotes(tmp_path: Path) -> None:

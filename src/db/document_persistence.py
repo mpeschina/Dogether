@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import copy
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from .persistence_helpers import (
@@ -752,6 +752,32 @@ class DocumentPersistence:
                 del reactions[reaction_period_key]
             self._write(data)
             return copy.deepcopy(goal)
+
+    def claim_goal_reaction_notification(
+        self,
+        goal_id: str,
+        user_id: str,
+        reacting_user_id: str,
+        now: datetime | None = None,
+    ) -> bool:
+        self.rollover_periods(now)
+        now_dt = _now(now)
+        with self._lock:
+            data = self._read()
+            goal = data["goals"].get(goal_id)
+            user = data["users"].get(user_id)
+            if not goal or not user or not _goal_active_for_user(goal, user_id):
+                return False
+            reaction_counts = user.setdefault("reaction_notification_timestamps", {})
+            if not isinstance(reaction_counts, dict):
+                reaction_counts = {}
+                user["reaction_notification_timestamps"] = reaction_counts
+            last_sent_at = _parse_dt(reaction_counts.get(reacting_user_id))
+            if last_sent_at is not None and now_dt - last_sent_at < timedelta(hours=2):
+                return False
+            reaction_counts[reacting_user_id] = _iso(now_dt)
+            self._write(data)
+            return True
 
     def set_health_data_workflow_target(
         self,

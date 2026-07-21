@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import monotonic
 from typing import Any, Iterable
 
@@ -882,6 +882,32 @@ class MongoNativePersistence:
         )
         self._cache_clear()
         return copy.deepcopy(goal)
+
+    def claim_goal_reaction_notification(
+        self,
+        goal_id: str,
+        user_id: str,
+        reacting_user_id: str,
+        now: datetime | None = None,
+    ) -> bool:
+        now_dt = _now(now)
+        goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
+        user = self._strip_id(self._users_inventory_collection().find_one({"_id": user_id}))
+        if not goal or not user or not _goal_active_for_user(goal, user_id):
+            return False
+        timestamps = user.get("reaction_notification_timestamps")
+        timestamps = timestamps if isinstance(timestamps, dict) else {}
+        last_sent_at = _parse_dt(timestamps.get(reacting_user_id))
+        if last_sent_at is not None and now_dt - last_sent_at < timedelta(hours=2):
+            return False
+        sent_at = _iso(now_dt)
+        timestamps[reacting_user_id] = sent_at
+        self._users_inventory_collection().update_one(
+            {"_id": user_id},
+            {"$set": {"reaction_notification_timestamps": timestamps}},
+        )
+        self._cache_clear()
+        return True
 
     def set_health_data_workflow_target(self, goal_id: str | None, user_id: str, enabled: bool, now: datetime | None = None) -> dict[str, Any] | None:
         now_iso = _iso(now)

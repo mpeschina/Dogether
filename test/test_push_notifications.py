@@ -1,9 +1,18 @@
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+BERLIN = ZoneInfo("Europe/Berlin")
+
+
+def at(value: str) -> datetime:
+    return datetime.fromisoformat(value).replace(tzinfo=BERLIN)
 
 from src.db.json_persistence import JsonPersistence
 from src.push.notifications import (
     create_friend_invite_with_push,
     create_friend_suggestion_with_push,
+    set_goal_completion_reaction_with_push,
     update_goal_progress_with_push,
 )
 
@@ -329,3 +338,119 @@ def test_goal_completion_pushes_are_capped_per_recipient_goal_day(monkeypatch, t
         )
 
     assert [call[0][1] for call in calls] == ["alice", "alice", "alice"]
+
+
+def test_goal_reaction_pushes_to_completed_user_once_per_two_hours_per_reacting_user(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    invite = persistence.create_friend_invite("alice", alice["email"], bob["email"])
+    persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True)
+    goal = persistence.create_goal("alice", "Daily Steps", "daily", 1, ["bob"], 10, current=10, now=at("2026-06-01T09:00:00"))
+    calls = []
+
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1, "removed": 0, "errors": []},
+    )
+    push_settings = {
+        "vapid_public_key": "public",
+        "vapid_private_key": "private",
+        "vapid_subject": "mailto:test@example.com",
+    }
+
+    set_goal_completion_reaction_with_push(
+        persistence,
+        MemoryPushStorage(),
+        push_settings,
+        goal_id=goal["id"],
+        completed_user_id="alice",
+        reacting_user_id="bob",
+        emote="👍",
+        now=at("2026-06-01T10:00:00"),
+    )
+    set_goal_completion_reaction_with_push(
+        persistence,
+        MemoryPushStorage(),
+        push_settings,
+        goal_id=goal["id"],
+        completed_user_id="alice",
+        reacting_user_id="bob",
+        emote="🎉",
+        now=at("2026-06-01T11:59:00"),
+    )
+    set_goal_completion_reaction_with_push(
+        persistence,
+        MemoryPushStorage(),
+        push_settings,
+        goal_id=goal["id"],
+        completed_user_id="alice",
+        reacting_user_id="bob",
+        emote="🔥",
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    assert [call[0][1] for call in calls] == ["alice", "alice"]
+    assert calls[0][1]["title"] == "New goal reaction"
+    assert calls[0][1]["body"] == "Bob reacted 👍 to your completed goal Daily Steps."
+    assert calls[1][1]["body"] == "Bob reacted 🔥 to your completed goal Daily Steps."
+
+
+def test_goal_reaction_push_throttle_allows_different_reacting_users(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    charlie = persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    for friend in [bob, charlie]:
+        invite = persistence.create_friend_invite("alice", alice["email"], friend["email"])
+        persistence.respond_friend_invite(invite["id"], friend["user_id"], friend["email"], approve=True)
+    goal = persistence.create_goal("alice", "Steps", "daily", 1, ["bob", "charlie"], 10, current=10, now=at("2026-06-01T09:00:00"))
+    calls = []
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1, "removed": 0, "errors": []},
+    )
+    push_settings = {
+        "vapid_public_key": "public",
+        "vapid_private_key": "private",
+        "vapid_subject": "mailto:test@example.com",
+    }
+
+    set_goal_completion_reaction_with_push(
+        persistence, MemoryPushStorage(), push_settings,
+        goal_id=goal["id"], completed_user_id="alice", reacting_user_id="bob", emote="👍", now=at("2026-06-01T10:00:00")
+    )
+    set_goal_completion_reaction_with_push(
+        persistence, MemoryPushStorage(), push_settings,
+        goal_id=goal["id"], completed_user_id="alice", reacting_user_id="charlie", emote="🎉", now=at("2026-06-01T10:30:00")
+    )
+    set_goal_completion_reaction_with_push(
+        persistence, MemoryPushStorage(), push_settings,
+        goal_id=goal["id"], completed_user_id="alice", reacting_user_id="bob", emote="🔥", now=at("2026-06-01T11:00:00")
+    )
+
+    assert [call[0][1] for call in calls] == ["alice", "alice"]
+    assert "Bob reacted 👍" in calls[0][1]["body"]
+    assert "Charlie reacted 🎉" in calls[1][1]["body"]
+
+
+def test_goal_reaction_without_push_configuration_still_saves(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    invite = persistence.create_friend_invite("alice", alice["email"], bob["email"])
+    persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True)
+    goal = persistence.create_goal("alice", "Daily Steps", "daily", 1, ["bob"], 10, current=10)
+
+    updated = set_goal_completion_reaction_with_push(
+        persistence,
+        None,
+        {},
+        goal_id=goal["id"],
+        completed_user_id="alice",
+        reacting_user_id="bob",
+        emote="👍",
+    )
+
+    assert updated["participants"]["alice"]["completion_reactions"]
+    assert "reaction_notification_timestamps" not in (persistence.get_user("alice") or {})

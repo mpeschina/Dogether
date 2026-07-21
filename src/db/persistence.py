@@ -162,6 +162,14 @@ class Persistence(Protocol):
         now: datetime | None = None,
     ) -> dict[str, Any]: ...
 
+    def claim_goal_reaction_notification(
+        self,
+        goal_id: str,
+        user_id: str,
+        reacting_user_id: str,
+        now: datetime | None = None,
+    ) -> bool: ...
+
     def set_health_data_workflow_target(
         self,
         goal_id: str | None,

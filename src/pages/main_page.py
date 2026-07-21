@@ -25,7 +25,7 @@ from src.pages.health_data_import_page import (
 )
 from src.pages.page_helpers import participant_name, schedule_label
 from src.reaction_component import participant_reaction_row
-from src.push.notifications import update_goal_progress_with_push
+from src.push.notifications import set_goal_completion_reaction_with_push, update_goal_progress_with_push
 from src.push.storage import PushStorage
 from src.viewport_component import viewport_info
 
@@ -266,6 +266,8 @@ def render_participant_progress(
     now: datetime | None,
     persistence: Persistence | None = None,
     current_user_id: str | None = None,
+    push_storage: PushStorage | None = None,
+    push_settings: dict[str, str] | None = None,
 ) -> None:
     current = int(participant.get("current", 0))
     target = int(participant.get("target", 1))
@@ -320,8 +322,11 @@ def render_participant_progress(
         return
     if action == "react" and emote in REACTION_EMOTES:
         try:
-            persistence.set_goal_completion_reaction(
-                goal["id"],
+            set_goal_completion_reaction_with_push(
+                persistence,
+                push_storage,
+                push_settings or {},
+                goal_id=goal["id"],
                 completed_user_id=participant_id,
                 reacting_user_id=current_user_id or "",
                 emote=emote,
@@ -411,12 +416,12 @@ def render_main(
             for participant_id in participant_ids:
                 participant = goal["participants"][participant_id]
                 if render_path == "mobile_portrait":
-                    render_participant_progress(goal, participant_id, participant, users, now, persistence, user_id)
+                    render_participant_progress(goal, participant_id, participant, users, now, persistence, user_id, push_storage, push_settings)
                     continue
 
                 cols = st.columns([6, 2])
                 with cols[0]:
-                    render_participant_progress(goal, participant_id, participant, users, now, persistence, user_id)
+                    render_participant_progress(goal, participant_id, participant, users, now, persistence, user_id, push_storage, push_settings)
                 if participant_id == user_id:
                     with cols[1]:
                         render_goal_actions(
