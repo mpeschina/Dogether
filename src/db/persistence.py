@@ -8,7 +8,6 @@ import streamlit as st
 
 from .cached_document_persistence import DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS
 from .json_persistence import JsonPersistence
-from .mongodb_persistence import MongoPersistence
 from .mongodb_native_persistence import MongoNativePersistence
 from .persistence_helpers import APP_ZONE, SCHEDULES, normalize_email
 
@@ -185,13 +184,6 @@ def create_persistence(
     backend = backend.strip().lower()
     if backend == "json":
         return JsonPersistence(json_path, cache_ttl_seconds=cache_ttl_seconds)
-    if backend == "mongodb":
-        return MongoPersistence(
-            mongodb_uri,
-            database=mongodb_database,
-            collection=mongodb_collection,
-            cache_ttl_seconds=cache_ttl_seconds,
-        )
     if backend == "mongodb_native":
         return MongoNativePersistence(
             mongodb_uri,
@@ -199,7 +191,7 @@ def create_persistence(
             legacy_collection=mongodb_collection,
             cache_ttl_seconds=cache_ttl_seconds,
         )
-    raise ValueError("Unsupported persistence backend. Use 'json', 'mongodb', or 'mongodb_native'.")
+    raise ValueError("Unsupported persistence backend. Use 'json' or 'mongodb_native'.")
 
 
 def persistence_settings(secrets: Mapping[str, Any] | None = None) -> dict[str, Any]:

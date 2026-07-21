@@ -101,8 +101,8 @@ Run the pytest suite from the repository root:
 
 ## Persistence
 
-The app supports JSON persistence for local development and a document-backed
-MongoDB persistence backend for Atlas deployments. Local development defaults to
+The app supports JSON persistence for local development and native MongoDB
+persistence for Atlas deployments. Local development defaults to
 `data/users.json`, configured through `.streamlit/secrets.toml`:
 
 ```toml
@@ -112,20 +112,7 @@ json_path = "data/users.json"
 cache_ttl_seconds = 5
 ```
 
-For the legacy MongoDB Atlas backend, use:
-
-```toml
-[persistence]
-backend = "mongodb"
-mongodb_uri = "mongodb+srv://..."
-mongodb_database = "dogether"
-mongodb_collection = "users"
-cache_ttl_seconds = 5
-```
-
-The legacy MongoDB backend stores the app state in a single MongoDB document so
-it matches the JSON persistence contract. For collection-level MongoDB reads and
-writes, use the native backend:
+For MongoDB Atlas deployments, use the native backend:
 
 ```toml
 [persistence]
@@ -192,9 +179,11 @@ backend = "mongodb"
 mongodb_collection = "push_subscriptions"
 ```
 
-If `backend` is omitted, push storage follows the configured persistence backend.
-For JSON mode it writes to `data/push_subscriptions.json`; for MongoDB mode it
-writes one document per push endpoint with `_id` set to the endpoint.
+If `backend` is omitted, push storage follows the configured persistence family:
+JSON app persistence writes to `data/push_subscriptions.json`, and native MongoDB
+app persistence uses the separate push storage backend `mongodb`. The push
+`mongodb` backend is independent from app persistence and writes one document per
+push endpoint with `_id` set to the endpoint.
 
 On Streamlit Community Cloud, static files are served through Streamlit's
 rewritten static route, for example:
@@ -251,7 +240,7 @@ client_secret = "YOUR-GOOGLE-CLIENT-SECRET"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
 [persistence]
-backend = "mongodb"
+backend = "mongodb_native"
 mongodb_uri = "mongodb+srv://..."
 mongodb_database = "dogether"
 mongodb_collection = "users"

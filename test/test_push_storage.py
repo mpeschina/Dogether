@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.push.storage import JsonPushStorage, MongoPushStorage
+from src.push.storage import JsonPushStorage, MongoPushStorage, push_storage_settings
 
 BERLIN = ZoneInfo("Europe/Berlin")
 
@@ -106,3 +106,24 @@ def test_mongo_push_storage_uses_endpoint_as_document_id() -> None:
     storage.delete_subscription("https://push.example/one")
 
     assert set(collection.documents) == {"https://push.example/two"}
+
+
+def test_push_storage_defaults_to_json_with_json_persistence() -> None:
+    settings = push_storage_settings({"persistence": {"backend": "json"}})
+
+    assert settings["backend"] == "json"
+
+
+def test_push_storage_defaults_to_mongodb_with_mongodb_native_persistence() -> None:
+    settings = push_storage_settings({"persistence": {"backend": "mongodb_native"}})
+
+    assert settings["backend"] == "mongodb"
+
+
+def test_push_storage_explicit_backend_wins() -> None:
+    settings = push_storage_settings({
+        "persistence": {"backend": "mongodb_native"},
+        "push": {"backend": "json"},
+    })
+
+    assert settings["backend"] == "json"

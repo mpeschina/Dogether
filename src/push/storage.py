@@ -224,9 +224,11 @@ def push_storage_settings(secrets: Mapping[str, Any] | None = None) -> dict[str,
     secrets = st.secrets if secrets is None else secrets
     persistence = secrets.get("persistence", {})
     push = secrets.get("push", {})
+    persistence_backend = str(persistence.get("backend", "json"))
+    default_backend = "mongodb" if persistence_backend.strip().lower() == "mongodb_native" else persistence_backend
 
     return {
-        "backend": str(push.get("backend", persistence.get("backend", "json"))),
+        "backend": str(push.get("backend", default_backend)),
         "json_path": str(push.get("json_path", "data/push_subscriptions.json")),
         "mongodb_uri": str(push.get("mongodb_uri", persistence.get("mongodb_uri", ""))),
         "mongodb_database": str(push.get("mongodb_database", persistence.get("mongodb_database", "dogether"))),

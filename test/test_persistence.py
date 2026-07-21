@@ -7,7 +7,6 @@ import json
 import pytest
 
 import src.db.cached_document_persistence as cached_document_persistence
-from src.db.mongodb_persistence import MongoPersistence
 from src.db.mongodb_native_persistence import MongoNativePersistence
 from src.db.persistence import JsonPersistence, create_persistence, persistence_settings
 from src.pages.debug_page import DebugMechanics, debug_now, debug_view_enabled
@@ -17,23 +16,6 @@ BERLIN = ZoneInfo("Europe/Berlin")
 
 def at(value: str) -> datetime:
     return datetime.fromisoformat(value).replace(tzinfo=BERLIN)
-
-
-class FakeMongoCollection:
-    def __init__(self) -> None:
-        self.document = None
-        self.find_one_calls = 0
-
-    def find_one(self, query: dict) -> dict | None:
-        self.find_one_calls += 1
-        if self.document and query == {"_id": self.document["_id"]}:
-            return copy.deepcopy(self.document)
-        return None
-
-    def replace_one(self, query: dict, replacement: dict, upsert: bool = False) -> None:
-        assert query == {"_id": replacement["_id"]}
-        assert upsert is True
-        self.document = copy.deepcopy(replacement)
 
 
 class CountingJsonPersistence(JsonPersistence):
@@ -236,20 +218,6 @@ def test_json_persistence_cache_can_be_disabled(tmp_path: Path) -> None:
 
     assert persistence.get_user("alice")["name"] == "Alicia"
 
-
-def test_mongodb_document_backend_uses_cache_inside_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cached_document_persistence, "monotonic", lambda: 100.0)
-    collection = FakeMongoCollection()
-    collection.document = {
-        "_id": "app_store",
-        "data": {"users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alice"}}},
-    }
-    persistence = MongoPersistence(mongo_collection=collection, cache_ttl_seconds=5)
-
-    assert persistence.get_user("alice")["name"] == "Alice"
-    assert persistence.get_user("alice")["name"] == "Alice"
-
-    assert collection.find_one_calls == 1
 
 def test_missing_file_gets_new_app_schema(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
@@ -1508,28 +1476,14 @@ def test_factory_creates_mongodb_native_backend(monkeypatch: pytest.MonkeyPatch)
         "cache_ttl_seconds": 2.5,
     }
 
-def test_mongodb_document_backend_uses_same_store_contract() -> None:
-    collection = FakeMongoCollection()
-    persistence = MongoPersistence(mongo_collection=collection)
-
-    user = persistence.upsert_user("alice", "Alice@Example.com", "Alice", at("2026-06-01T09:00:00"))
-
-    assert user["email"] == "alice@example.com"
-    assert collection.document["_id"] == "app_store"
-    assert collection.document["data"]["users"]["alice"]["name"] == "Alice"
-    assert MongoPersistence(mongo_collection=collection).get_user("alice") == user
-
-
-def test_factory_creates_mongodb_backend() -> None:
-    persistence = create_persistence(
-        "mongodb",
-        mongodb_uri="mongodb://localhost:27017",
-        mongodb_database="dogether_test",
-        mongodb_collection="app_store",
-    )
-
-    assert isinstance(persistence, MongoPersistence)
-    persistence.close()
+def test_factory_rejects_legacy_mongodb_backend() -> None:
+    with pytest.raises(ValueError, match="Unsupported persistence backend"):
+        create_persistence(
+            "mongodb",
+            mongodb_uri="mongodb://localhost:27017",
+            mongodb_database="dogether_test",
+            mongodb_collection="app_store",
+        )
 
 
 def test_factory_rejects_unknown_backend() -> None:
@@ -1554,18 +1508,34 @@ def test_persistence_settings_accept_cache_ttl_seconds() -> None:
     assert settings["cache_ttl_seconds"] == 2.5
 
 
-def test_factory_passes_cache_ttl_to_backends(tmp_path: Path) -> None:
-    json_persistence = create_persistence(
+def test_factory_passes_cache_ttl_to_backends(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import src.db.persistence as persistence_module
+
+    created = {}
+
+    class DummyMongoNativePersistence:
+        def __init__(
+            self,
+            uri: str,
+            database: str,
+            legacy_collection: str,
+            cache_ttl_seconds: float,
+        ) -> None:
+            created["cache_ttl_seconds"] = cache_ttl_seconds
+
+    monkeypatch.setattr(persistence_module, "MongoNativePersistence", DummyMongoNativePersistence)
+
+    json_persistence = persistence_module.create_persistence(
         "json",
         json_path=str(tmp_path / "users.json"),
         cache_ttl_seconds=2,
     )
-    mongo_persistence = create_persistence(
-        "mongodb",
+    mongo_persistence = persistence_module.create_persistence(
+        "mongodb_native",
         mongodb_uri="mongodb://localhost:27017",
         cache_ttl_seconds=3,
     )
 
     assert json_persistence.cache_ttl_seconds == 2
-    assert mongo_persistence.cache_ttl_seconds == 3
-    mongo_persistence.close()
+    assert isinstance(mongo_persistence, DummyMongoNativePersistence)
+    assert created["cache_ttl_seconds"] == 3
