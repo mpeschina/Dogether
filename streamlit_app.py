@@ -167,22 +167,23 @@ def debug_page() -> None:
 goals_page_entry = st.Page(main_page, title="Goals", default=True, icon=":material/dashboard:")
 friends_page_entry = st.Page(friends_page, title="Friends", icon=":material/group:")
 manage_goals_page_entry = st.Page(goals_page, title="Manage Goals", icon=":material/flag:")
-historical_data_repair_page_entry = st.Page(historical_data_repair_page, title="H.D.R.", icon=":material/edit_calendar:")
+
 health_data_import_page_entry = st.Page(
     health_data_import_page, title="Health Data Import", icon=":material/health_and_safety:"
 )
-account_page_entry = st.Page(account_page, title="Account", icon=":material/account_circle:")
 push_notifications_page_entry = st.Page(
     push_notifications_page, title="Push Notifications", icon=":material/notifications:"
 )
+historical_data_repair_page_entry = st.Page(historical_data_repair_page, title="H.D.R.", icon=":material/edit_calendar:")
+account_page_entry = st.Page(account_page, title="Account", icon=":material/account_circle:")
 debug_page_entry = st.Page(debug_page, title="Debug", icon=":material/bug_report:")
 page_entries = [
     goals_page_entry,
     friends_page_entry,
     manage_goals_page_entry,
-    historical_data_repair_page_entry,
     health_data_import_page_entry,
     push_notifications_page_entry,
+    historical_data_repair_page_entry,
     account_page_entry,
 ]
 if debug.enabled:

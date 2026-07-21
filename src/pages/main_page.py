@@ -113,6 +113,21 @@ def participant_period_reactions(participant: dict, goal: dict, now: datetime | 
     return period_reactions if isinstance(period_reactions, dict) else {}
 
 
+def current_user_reaction_emote(
+    participant: dict,
+    goal: dict,
+    current_user_id: str | None,
+    now: datetime | None = None,
+) -> str:
+    if not current_user_id:
+        return ""
+    reaction = participant_period_reactions(participant, goal, now).get(current_user_id)
+    if not isinstance(reaction, dict):
+        return ""
+    emote = reaction.get("emote")
+    return str(emote) if emote in REACTION_EMOTES and str(emote).strip() else ""
+
+
 def participant_reaction_summary(participant: dict, goal: dict, now: datetime | None = None) -> list[tuple[str, int]]:
     counts = {emote: 0 for emote in REACTION_EMOTES}
     for reaction in participant_period_reactions(participant, goal, now).values():
@@ -297,6 +312,7 @@ def render_participant_progress(
         reaction_details=participant_reaction_details(participant, goal, users, now),
         standard_emotes=STANDARD_REACTION_EMOTES,
         emotes=REACTION_EMOTES,
+        current_user_reaction_emote=current_user_reaction_emote(participant, goal, current_user_id, now),
         can_react=can_react,
         open_picker=st.session_state.get("participant_reaction_open_row") == row_id,
         key=f"participant_reaction_row_{goal['id']}_{participant_id}",

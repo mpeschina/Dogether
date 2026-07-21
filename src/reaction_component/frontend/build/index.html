@@ -210,6 +210,13 @@
         padding: 7px 8px;
       }
 
+      .participant-reaction-remove {
+        color: #4b5563;
+        font-size: 0.78rem;
+        line-height: 1.1;
+        padding: 6px 10px;
+      }
+
       .participant-reaction-option:hover,
       .participant-reaction-option:focus-visible {
         background: #f3f4f6;
@@ -357,14 +364,19 @@
       }
 
       function emoteButtonHtml(emote) {
-        const label = String(emote || "").trim() ? `React ${escapeHtml(emote)}` : "Remove reaction";
-        return `<button class="participant-reaction-option" type="button" data-emote="${escapeHtml(emote)}" aria-label="${label}">${escapeHtml(emote)}</button>`;
+        return `<button class="participant-reaction-option" type="button" data-emote="${escapeHtml(emote)}" aria-label="React ${escapeHtml(emote)}">${escapeHtml(emote)}</button>`;
+      }
+
+      function removeButtonHtml() {
+        return args.current_user_reaction_emote
+          ? `<button class="participant-reaction-option participant-reaction-remove" type="button" data-emote=" " aria-label="Remove reaction">Remove</button>`
+          : "";
       }
 
       function pickerHtml() {
         const standardEmotes = Array.isArray(args.standard_emotes) ? args.standard_emotes : [];
-        const emotes = Array.isArray(args.emotes) ? args.emotes : [];
-        const standard = standardEmotes.map(emoteButtonHtml).join("");
+        const emotes = Array.isArray(args.emotes) ? args.emotes.filter((emote) => String(emote || "").trim()) : [];
+        const standard = `${standardEmotes.map(emoteButtonHtml).join("")}${removeButtonHtml()}`;
         const all = emotes.map(emoteButtonHtml).join("");
         return `
           <div class="participant-reaction-standard">${standard}</div>

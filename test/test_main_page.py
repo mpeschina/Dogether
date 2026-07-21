@@ -26,6 +26,7 @@ from src.pages.common_helpers import (
 )
 from src.db.persistence_helpers import STANDARD_REACTION_EMOTES
 from src.pages.main_page import (
+    current_user_reaction_emote,
     participant_goal_is_completed,
     participant_name_with_progress_html,
     participant_progress_label,
@@ -37,8 +38,8 @@ from src.pages.main_page import (
 )
 
 
-def test_standard_reaction_emotes_use_blank_remove_and_rocket() -> None:
-    assert STANDARD_REACTION_EMOTES == [" ", "🚀", "🔥", "👏", "💪", "❤️"]
+def test_standard_reaction_emotes_exclude_remove_and_include_rocket() -> None:
+    assert STANDARD_REACTION_EMOTES == ["🚀", "🔥", "👏", "💪", "❤️"]
 
 def test_ordered_active_participant_ids_pins_current_user_first() -> None:
     goal = {
@@ -553,6 +554,23 @@ def test_participant_reaction_summary_aggregates_current_period_emotes() -> None
     assert participant_reaction_summary(participant, goal, now=_at("2026-06-02T12:00:00")) == [("👍", 2), ("🎉", 1)]
 
 
+def test_current_user_reaction_emote_returns_current_period_reaction() -> None:
+    participant = {
+        "current": 10,
+        "target": 10,
+        "skipped": False,
+        "period_start": "2026-06-02T00:00:00+02:00",
+        "completion_reactions": {
+            "2026-06-01": {"bob": {"emote": "🔥"}},
+            "2026-06-02": {"bob": {"emote": "👍"}},
+        },
+    }
+    goal = _goal("daily", participant=participant)
+
+    assert current_user_reaction_emote(participant, goal, "bob", now=_at("2026-06-02T12:00:00")) == "👍"
+    assert current_user_reaction_emote(participant, goal, "charlie", now=_at("2026-06-02T12:00:00")) == ""
+
+
 def test_participant_reaction_details_include_emote_and_sender_name() -> None:
     participant = {
         "current": 10,
@@ -615,6 +633,9 @@ def test_participant_reaction_component_build_exists_with_inline_picker() -> Non
     assert "translateX" in content
     assert "participant-reaction-more" in content
     assert "Remove reaction" in content
+    assert ">Remove</button>" in content
+    assert "current_user_reaction_emote" in content
+    assert "filter((emote) => String(emote" in content
     assert "participant-reaction-all" in content
     assert "overflow-y: auto" in content
     assert "standard_emotes" in content

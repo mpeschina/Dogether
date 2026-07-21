@@ -27,8 +27,9 @@ SCHEDULES = {
         "aggregate": "month",
     },
 }
-STANDARD_REACTION_EMOTES = [" ", "🚀", "🔥", "👏", "💪", "❤️"]
+STANDARD_REACTION_EMOTES = ["🚀", "🔥", "👏", "💪", "❤️"]
 REACTION_EMOTES = [
+    " ",
     *STANDARD_REACTION_EMOTES,
     "👍", "🎉", "😀", "😄", "😁", "😆", "😅", "🤣", "😊", "😇", "😉", "😍", "😘", "🤩", "🥳",  "😎", "😮", "😱", 
     "😤", "😭", "🤯", "😡", "🖕", "👊", "🙌", "🫶", "👌", "✌️", "🤞", "🙏", "💯", "⭐", "✨", "⚡",
