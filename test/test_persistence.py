@@ -796,6 +796,33 @@ def test_correct_goal_period_progress_updates_missed_daily_outcome_and_activity(
     }
 
 
+def test_correct_goal_period_progress_does_not_create_completion_notification_event(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    goal = persistence.create_goal(
+        created_by="alice",
+        description="Drink water",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=3,
+        current=0,
+        now=at("2026-06-01T12:00:00"),
+    )
+
+    corrected = persistence.correct_goal_period_progress(
+        goal["id"],
+        alice["user_id"],
+        at("2026-06-01T00:00:00"),
+        current=3,
+        now=at("2026-06-02T08:00:00"),
+    )
+
+    participant = corrected["participants"]["alice"]
+    assert "_notification_event" not in corrected
+    assert "last_completion_notification_day" not in participant
+
+
 def test_correct_goal_period_progress_records_partial_value(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
