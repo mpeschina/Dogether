@@ -288,10 +288,10 @@ def render_main(
         unsafe_allow_html=True,
     )
 
-    viewport = viewport_info()
-    render_path = "widescreen"
-    if isinstance(viewport, dict) and viewport.get("renderPath") == "mobile_portrait":
-        render_path = "mobile_portrait"
+    viewport = viewport_info(require_ready=False) # ensure mobile first, correct on re-run, when necessary
+    render_path = "mobile_portrait"
+    if isinstance(viewport, dict) and viewport.get("renderPath") == "widescreen":
+        render_path = "widescreen"
 
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)
