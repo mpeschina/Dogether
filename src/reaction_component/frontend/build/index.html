@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dogether Participant Reaction Row</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: transparent;
+        color: #111827;
+        overflow: hidden;
+      }
+
+      .participant-reaction-row {
+        position: relative;
+        box-sizing: border-box;
+        width: 100%;
+        padding: 2px 0 3px;
+        background: transparent;
+      }
+
+      .participant-reaction-row.can-react {
+        cursor: pointer;
+      }
+
+      .participant-reaction-line {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: baseline;
+        column-gap: 0.4rem;
+        min-width: 0;
+        white-space: nowrap;
+      }
+
+      .participant-progress-name {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .participant-progress-name-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .participant-progress-meta {
+        position: relative;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.4rem;
+        min-width: 0;
+      }
+
+      .participant-progress-count {
+        color: #6b7280;
+        font-size: 0.875rem;
+      }
+
+      .participant-reaction-summary {
+        position: absolute;
+        z-index: 5;
+        left: 0;
+        top: 1.12rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.22rem;
+        min-width: 0;
+        pointer-events: none;
+      }
+
+      .participant-reaction-summary:empty {
+        display: none;
+      }
+
+      .participant-reaction-chip {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid #d1d5db;
+        border-radius: 999px;
+        background: rgba(249, 250, 251, 0.96);
+        color: #374151;
+        font-size: 0.7rem;
+        line-height: 1.1;
+        padding: 0.01rem 0.3rem;
+        white-space: nowrap;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+      }
+
+      .participant-progress-track {
+        width: 100%;
+        height: 8px;
+        margin-top: 8px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e5e7eb;
+      }
+
+      .participant-progress-fill {
+        width: var(--progress-percent, 0%);
+        height: 100%;
+        border-radius: inherit;
+        background: #1f2937;
+      }
+
+      .participant-reaction-picker {
+        position: absolute;
+        z-index: 20;
+        right: 0;
+        top: 24px;
+        display: none;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 7px;
+        min-width: 222px;
+        border: 1px solid #d1d5db;
+        border-radius: 14px;
+        background: #ffffff;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+        padding: 9px 10px;
+      }
+
+      .participant-reaction-row.open .participant-reaction-picker {
+        display: flex;
+      }
+
+      .participant-reaction-standard {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
+
+      .participant-reaction-option {
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        cursor: pointer;
+        font: inherit;
+        font-size: 1rem;
+        line-height: 1;
+        padding: 7px 8px;
+      }
+
+      .participant-reaction-option:hover,
+      .participant-reaction-option:focus-visible {
+        background: #f3f4f6;
+        outline: none;
+      }
+
+      .participant-reaction-more {
+        appearance: none;
+        border: 1px solid #e5e7eb;
+        border-radius: 999px;
+        background: #f9fafb;
+        color: #374151;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.78rem;
+        line-height: 1.1;
+        padding: 6px 10px;
+      }
+
+      .participant-reaction-more:hover,
+      .participant-reaction-more:focus-visible {
+        background: #f3f4f6;
+        outline: none;
+      }
+
+      .participant-reaction-all {
+        display: none;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 4px;
+        max-height: 184px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        border-top: 1px solid #eef2f7;
+        padding-top: 7px;
+      }
+
+      .participant-reaction-row.expanded .participant-reaction-all {
+        display: grid;
+      }
+
+      .participant-reaction-all .participant-reaction-option {
+        padding: 6px 4px;
+      }
+
+      .participant-sparkline {
+        display: inline-flex;
+        align-items: center;
+        flex: 0 0 auto;
+      }
+
+      .mini-activity-dots {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.16rem;
+        white-space: nowrap;
+      }
+
+      .mini-activity-dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 2px;
+        box-shadow: inset 0 0 0 1px rgba(27, 31, 36, 0.14);
+        flex: 0 0 auto;
+      }
+
+      .mini-activity-dot-current {
+        box-shadow: 0 0 0 1.5px rgba(31, 41, 55, 0.42);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const COMPONENT_READY = "streamlit:componentReady";
+      const RENDER_EVENT = "streamlit:render";
+      const SET_COMPONENT_VALUE = "streamlit:setComponentValue";
+      const SET_FRAME_HEIGHT = "streamlit:setFrameHeight";
+
+      let args = {};
+      let open = false;
+      let expanded = false;
+      let lastNonce = 0;
+
+      function sendMessage(type, data) {
+        window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, "*");
+      }
+
+      function setFrameHeight(height) {
+        sendMessage(SET_FRAME_HEIGHT, { height });
+      }
+
+      function setComponentValue(value) {
+        sendMessage(SET_COMPONENT_VALUE, { value });
+      }
+
+      function escapeHtml(value) {
+        const div = document.createElement("div");
+        div.textContent = value == null ? "" : String(value);
+        return div.innerHTML;
+      }
+
+      function progressPercent() {
+        const current = Math.max(0, Number(args.current || 0));
+        const target = Math.max(1, Number(args.target || 1));
+        return Math.max(0, Math.min(100, (current / target) * 100));
+      }
+
+      function reactionSummaryHtml() {
+        const summary = Array.isArray(args.reaction_summary) ? args.reaction_summary : [];
+        return summary
+          .map((entry) => {
+            const emote = escapeHtml(entry.emote || "");
+            const count = Number(entry.count || 0);
+            return count > 0 ? `<span class="participant-reaction-chip">${emote} ${count}</span>` : "";
+          })
+          .join("");
+      }
+
+      function emoteButtonHtml(emote) {
+        return `<button class="participant-reaction-option" type="button" data-emote="${escapeHtml(emote)}" aria-label="React ${escapeHtml(emote)}">${escapeHtml(emote)}</button>`;
+      }
+
+      function pickerHtml() {
+        const standardEmotes = Array.isArray(args.standard_emotes) ? args.standard_emotes : [];
+        const emotes = Array.isArray(args.emotes) ? args.emotes : [];
+        const standard = standardEmotes.map(emoteButtonHtml).join("");
+        const all = emotes.map(emoteButtonHtml).join("");
+        return `
+          <div class="participant-reaction-standard">${standard}</div>
+          <button class="participant-reaction-more" type="button" aria-expanded="${expanded ? "true" : "false"}">${expanded ? "Less" : "More"}</button>
+          <div class="participant-reaction-all" aria-label="All reactions">${all}</div>
+        `;
+      }
+
+      function reportHeight() {
+        const root = document.getElementById("root");
+        const picker = root.querySelector(".participant-reaction-picker");
+        const pickerHeight = open && picker ? Math.ceil(picker.getBoundingClientRect().height) + 12 : 2;
+        const height = Math.ceil(root.getBoundingClientRect().height) + pickerHeight;
+        setFrameHeight(height);
+      }
+
+      function closePicker() {
+        open = false;
+        render();
+      }
+
+      function render() {
+        const root = document.getElementById("root");
+        open = Boolean(args.open_picker);
+        if (!open) {
+          expanded = false;
+        }
+        const canReact = Boolean(args.can_react);
+        const skipped = Boolean(args.skipped);
+        const name = args.name || "";
+        root.innerHTML = `
+          <div class="participant-reaction-row ${canReact ? "can-react" : ""} ${open ? "open" : ""} ${expanded ? "expanded" : ""}" style="--progress-percent: ${progressPercent()}%;" title="${escapeHtml(canReact ? "React to this completed goal" : name)}">
+            <div class="participant-reaction-line">
+              <span class="participant-progress-name" title="${escapeHtml(name)}">
+                <span class="participant-progress-name-text">${args.name_html || escapeHtml(name)}</span>
+                ${args.sparkline_html || ""}
+              </span>
+              <span class="participant-progress-meta">
+                <span class="participant-progress-count">${escapeHtml(args.progress_label || "")}</span>
+                ${args.dots_html || ""}
+                <span class="participant-reaction-summary">${reactionSummaryHtml()}</span>
+              </span>
+            </div>
+            ${skipped ? "" : '<div class="participant-progress-track" aria-hidden="true"><div class="participant-progress-fill"></div></div>'}
+            <div class="participant-reaction-picker" role="menu" aria-label="Choose reaction">${pickerHtml()}</div>
+          </div>
+        `;
+
+        const row = root.querySelector(".participant-reaction-row");
+        row.addEventListener("click", (event) => {
+          const option = event.target.closest(".participant-reaction-option");
+          if (option) {
+            event.stopPropagation();
+            lastNonce += 1;
+            setComponentValue({ row_id: args.row_id, action: "react", emote: option.dataset.emote, nonce: lastNonce });
+            open = false;
+            render();
+            return;
+          }
+          const more = event.target.closest(".participant-reaction-more");
+          if (more) {
+            event.stopPropagation();
+            expanded = !expanded;
+            render();
+            return;
+          }
+          if (!canReact) {
+            return;
+          }
+          lastNonce += 1;
+          open = !open;
+          setComponentValue({ row_id: args.row_id, action: "toggle", open, nonce: lastNonce });
+          render();
+        });
+
+        window.setTimeout(reportHeight, 0);
+      }
+
+      document.addEventListener("click", (event) => {
+        const root = document.getElementById("root");
+        if (open && root && !root.contains(event.target)) {
+          closePicker();
+        }
+      });
+
+      window.addEventListener("message", (event) => {
+        if (event.data.type !== RENDER_EVENT) {
+          return;
+        }
+        args = event.data.args || {};
+        render();
+      });
+
+      sendMessage(COMPONENT_READY, { apiVersion: 1 });
+    </script>
+  </body>
+</html>
