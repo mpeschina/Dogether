@@ -193,7 +193,7 @@ def set_goal_completion_reaction_with_push(
         push_storage,
         completed_user_id,
         title="New goal reaction",
-        body=f"{reacting_name} reacted {emote} to your completed goal {description}.",
+        body=f"{reacting_name} sent {emote} to your completion of “{description}”"
         url="/",
         vapid_private_key=push_settings["vapid_private_key"],
         vapid_subject=push_settings["vapid_subject"],
