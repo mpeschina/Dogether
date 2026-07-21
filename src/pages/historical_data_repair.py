@@ -34,7 +34,7 @@ READINESS_GATE_OPTIONS = [
         "id": "timeline_paradox",
         "sentence1_html": (
             "⚠️ <strong>Historical records are about to be modified.</strong><br>"
-            "<span>(Please avoid creating timeline paradoxes.)</span>"
+            "<span style=\"font-size:0.82rem;\">(Please avoid creating timeline paradoxes.)</span>"
         ),
         "wait1_seconds": 2,
         "sentence2_html": (
@@ -54,6 +54,18 @@ READINESS_GATE_OPTIONS = [
         "progress_seconds": 60,
         "final_button_wait_seconds": 4,
         "button_text": "Force Push History",
+    },
+    {
+        "id": "bureaucratic",
+        "mode": "two_step_progress",
+        "sentence1_html": "Historical Correction Authorization Required.",
+        "wait1_seconds": 3,
+        "sentence2_html": "Please complete the mandatory cognitive safety protocol.",
+        "pre_button_text": "Past me did their best.",
+        "progress_label_html": "Processing paperwork...",
+        "progress_seconds": 20,
+        "final_button_wait_seconds": 4,
+        "button_text": "Authorized",
     },
 ]
 
@@ -216,6 +228,9 @@ def _render_two_step_readiness_gate(option: dict) -> bool:
     stage = st.session_state.get(READY_STAGE_SESSION_KEY, "intro")
     final_button_wait_seconds = max(0, int(option.get("final_button_wait_seconds", 0) or 0))
     progress_seconds = max(1, int(option.get("progress_seconds", 1) or 1))
+    intro_sentence2_html = ""
+    if option.get("sentence2_html"):
+        intro_sentence2_html = f'<p class="history-repair-task">{option["sentence2_html"]}</p>'
 
     with st.container(key="history_repair_gate"):
         st.markdown(
@@ -229,6 +244,7 @@ def _render_two_step_readiness_gate(option: dict) -> bool:
             </style>
             <div class="history-repair-game">
                 <p class="history-repair-warning">{option["sentence1_html"]}</p>
+                {intro_sentence2_html}
             </div>
             """,
             unsafe_allow_html=True,
@@ -333,7 +349,8 @@ def render_historical_data_repair(
             animation: history-repair-fill var(--history-repair-progress-duration) linear var(--history-repair-wait-1) forwards;
             background: #1f2937;
         }
-        div[class*="st-key-history_repair_ready_button"] {
+        div[class*="st-key-history_repair_ready_button"],
+        div[class*="st-key-history_repair_pre_button"] {
             width: 100%;
             max-width: 34rem;
             margin: 1rem auto 0;
