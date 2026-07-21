@@ -104,22 +104,43 @@ def participant_goal_is_completed(participant: dict) -> bool:
     return current >= target
 
 
-def participant_reaction_summary(participant: dict, goal: dict, now: datetime | None = None) -> list[tuple[str, int]]:
+def participant_period_reactions(participant: dict, goal: dict, now: datetime | None = None) -> dict:
     reactions = participant.get("completion_reactions", {})
     if not isinstance(reactions, dict):
-        return []
+        return {}
     period_key = _participant_period_key(participant, goal, now)
     period_reactions = reactions.get(period_key, {})
-    if not isinstance(period_reactions, dict):
-        return []
+    return period_reactions if isinstance(period_reactions, dict) else {}
+
+
+def participant_reaction_summary(participant: dict, goal: dict, now: datetime | None = None) -> list[tuple[str, int]]:
     counts = {emote: 0 for emote in REACTION_EMOTES}
-    for reaction in period_reactions.values():
+    for reaction in participant_period_reactions(participant, goal, now).values():
         if not isinstance(reaction, dict):
             continue
         emote = reaction.get("emote")
         if emote in counts:
             counts[emote] += 1
     return [(emote, count) for emote, count in counts.items() if count]
+
+
+def participant_reaction_details(
+    participant: dict,
+    goal: dict,
+    users: dict[str, dict],
+    now: datetime | None = None,
+) -> list[dict[str, str]]:
+    emote_order = {emote: index for index, emote in enumerate(REACTION_EMOTES)}
+    details = []
+    for reacting_user_id, reaction in participant_period_reactions(participant, goal, now).items():
+        if not isinstance(reaction, dict):
+            continue
+        emote = reaction.get("emote")
+        if emote not in emote_order:
+            continue
+        name = participant_name(users, str(reacting_user_id))
+        details.append({"emote": str(emote), "name": name})
+    return sorted(details, key=lambda detail: (emote_order.get(detail["emote"], len(emote_order)), detail["name"].lower()))
 
 
 def render_goal_actions(
@@ -271,6 +292,7 @@ def render_participant_progress(
         target=target,
         skipped=skipped,
         reaction_summary=participant_reaction_summary(participant, goal, now),
+        reaction_details=participant_reaction_details(participant, goal, users, now),
         standard_emotes=STANDARD_REACTION_EMOTES,
         emotes=REACTION_EMOTES,
         can_react=can_react,

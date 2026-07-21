@@ -75,7 +75,7 @@
         align-items: center;
         gap: 0.22rem;
         min-width: 0;
-        pointer-events: none;
+        pointer-events: auto;
       }
 
       .participant-reaction-summary:empty {
@@ -83,17 +83,75 @@
       }
 
       .participant-reaction-chip {
+        appearance: none;
         display: inline-flex;
         align-items: center;
         border: 1px solid #d1d5db;
         border-radius: 999px;
         background: rgba(249, 250, 251, 0.96);
         color: #374151;
+        cursor: pointer;
+        font: inherit;
         font-size: 0.7rem;
         line-height: 1.1;
         padding: 0.01rem 0.3rem;
         white-space: nowrap;
         box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+      }
+
+      .participant-reaction-chip:hover,
+      .participant-reaction-chip:focus-visible {
+        background: #f3f4f6;
+        outline: none;
+      }
+
+      .participant-reaction-detail-menu {
+        position: absolute;
+        z-index: 30;
+        left: 0;
+        top: 1.35rem;
+        display: none;
+        min-width: 172px;
+        max-height: 176px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        border: 1px solid #d1d5db;
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+        padding: 6px;
+      }
+
+      .participant-reaction-row.details-open .participant-reaction-detail-menu {
+        display: block;
+      }
+
+      .participant-reaction-detail-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 0.45rem;
+        border-radius: 8px;
+        color: #374151;
+        font-size: 0.78rem;
+        line-height: 1.25;
+        padding: 5px 6px;
+      }
+
+      .participant-reaction-detail-row + .participant-reaction-detail-row {
+        margin-top: 1px;
+      }
+
+      .participant-reaction-detail-emote {
+        font-size: 0.95rem;
+        line-height: 1;
+      }
+
+      .participant-reaction-detail-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .participant-progress-track {
@@ -233,6 +291,7 @@
       let args = {};
       let open = false;
       let expanded = false;
+      let detailsOpen = false;
       let lastNonce = 0;
 
       function sendMessage(type, data) {
@@ -265,9 +324,28 @@
           .map((entry) => {
             const emote = escapeHtml(entry.emote || "");
             const count = Number(entry.count || 0);
-            return count > 0 ? `<span class="participant-reaction-chip">${emote} ${count}</span>` : "";
+            return count > 0 ? `<button class="participant-reaction-chip" type="button" aria-label="Show reactions">${emote} ${count}</button>` : "";
           })
           .join("");
+      }
+
+      function reactionDetailsHtml() {
+        const details = Array.isArray(args.reaction_details) ? args.reaction_details : [];
+        if (!details.length) {
+          return "";
+        }
+        return `
+          <div class="participant-reaction-detail-menu" role="dialog" aria-label="Reaction details">
+            ${details
+              .map((detail) => `
+                <div class="participant-reaction-detail-row">
+                  <span class="participant-reaction-detail-emote">${escapeHtml(detail.emote || "")}</span>
+                  <span class="participant-reaction-detail-name" title="${escapeHtml(detail.name || "")}">${escapeHtml(detail.name || "")}</span>
+                </div>
+              `)
+              .join("")}
+          </div>
+        `;
       }
 
       function emoteButtonHtml(emote) {
@@ -289,17 +367,20 @@
       function reportHeight() {
         const root = document.getElementById("root");
         const picker = root.querySelector(".participant-reaction-picker");
+        const details = root.querySelector(".participant-reaction-detail-menu");
         const pickerHeight = open && picker ? Math.ceil(picker.getBoundingClientRect().height) + 12 : 2;
-        const height = Math.ceil(root.getBoundingClientRect().height) + pickerHeight;
+        const detailsHeight = detailsOpen && details ? Math.ceil(details.getBoundingClientRect().height) + 24 : 0;
+        const height = Math.ceil(root.getBoundingClientRect().height) + Math.max(pickerHeight, detailsHeight);
         setFrameHeight(height);
       }
 
       function closePicker({ notify = false } = {}) {
-        if (!open) {
+        if (!open && !detailsOpen) {
           return;
         }
         open = false;
         expanded = false;
+        detailsOpen = false;
         if (notify) {
           lastNonce += 1;
           setComponentValue({ row_id: args.row_id, action: "close", nonce: lastNonce });
@@ -317,7 +398,7 @@
         const skipped = Boolean(args.skipped);
         const name = args.name || "";
         root.innerHTML = `
-          <div class="participant-reaction-row ${canReact ? "can-react" : ""} ${open ? "open" : ""} ${expanded ? "expanded" : ""}" style="--progress-percent: ${progressPercent()}%;" title="${escapeHtml(canReact ? "React to this completed goal" : name)}">
+          <div class="participant-reaction-row ${canReact ? "can-react" : ""} ${open ? "open" : ""} ${expanded ? "expanded" : ""} ${detailsOpen ? "details-open" : ""}" style="--progress-percent: ${progressPercent()}%;" title="${escapeHtml(canReact ? "React to this completed goal" : name)}">
             <div class="participant-reaction-line">
               <span class="participant-progress-name" title="${escapeHtml(name)}">
                 <span class="participant-progress-name-text">${args.name_html || escapeHtml(name)}</span>
@@ -326,7 +407,7 @@
               <span class="participant-progress-meta">
                 <span class="participant-progress-count">${escapeHtml(args.progress_label || "")}</span>
                 ${args.dots_html || ""}
-                <span class="participant-reaction-summary">${reactionSummaryHtml()}</span>
+                <span class="participant-reaction-summary">${reactionSummaryHtml()}${reactionDetailsHtml()}</span>
               </span>
             </div>
             ${skipped ? "" : '<div class="participant-progress-track" aria-hidden="true"><div class="participant-progress-fill"></div></div>'}
@@ -336,6 +417,20 @@
 
         const row = root.querySelector(".participant-reaction-row");
         row.addEventListener("click", (event) => {
+          const detailChip = event.target.closest(".participant-reaction-chip");
+          if (detailChip) {
+            event.stopPropagation();
+            open = false;
+            expanded = false;
+            detailsOpen = !detailsOpen;
+            render();
+            return;
+          }
+          const detailMenu = event.target.closest(".participant-reaction-detail-menu");
+          if (detailMenu) {
+            event.stopPropagation();
+            return;
+          }
           const option = event.target.closest(".participant-reaction-option");
           if (option) {
             event.stopPropagation();
@@ -355,6 +450,7 @@
             return;
           }
           lastNonce += 1;
+          detailsOpen = false;
           open = !open;
           setComponentValue({ row_id: args.row_id, action: "toggle", open, nonce: lastNonce });
           render();
@@ -365,7 +461,7 @@
 
       document.addEventListener("click", (event) => {
         const root = document.getElementById("root");
-        if (open && root && !root.contains(event.target)) {
+        if (root && !root.contains(event.target)) {
           closePicker({ notify: true });
         }
       });
@@ -373,7 +469,7 @@
       try {
         if (window.parent && window.parent !== window && window.frameElement) {
           window.parent.document.addEventListener("click", (event) => {
-            if (!open) {
+            if (!open && !detailsOpen) {
               return;
             }
             if (event.target === window.frameElement || window.frameElement.contains(event.target)) {

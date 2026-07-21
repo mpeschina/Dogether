@@ -28,6 +28,7 @@ from src.pages.main_page import (
     participant_goal_is_completed,
     participant_name_with_progress_html,
     participant_progress_label,
+    participant_reaction_details,
     participant_reaction_summary,
     ordered_active_participant_ids,
     visible_participant_ids,
@@ -548,6 +549,35 @@ def test_participant_reaction_summary_aggregates_current_period_emotes() -> None
     assert participant_reaction_summary(participant, goal, now=_at("2026-06-02T12:00:00")) == [("👍", 2), ("🎉", 1)]
 
 
+def test_participant_reaction_details_include_emote_and_sender_name() -> None:
+    participant = {
+        "current": 10,
+        "target": 10,
+        "skipped": False,
+        "period_start": "2026-06-02T00:00:00+02:00",
+        "completion_reactions": {
+            "2026-06-02": {
+                "charlie": {"emote": "🎉"},
+                "bob": {"emote": "👍"},
+                "dana": {"emote": "👍"},
+                "ignored": {"emote": "unsupported"},
+            },
+        },
+    }
+    goal = _goal("daily", participant=participant)
+    users = {
+        "bob": {"name": "Bob"},
+        "charlie": {"name": "Charlie"},
+        "dana": {"email": "dana@example.com"},
+    }
+
+    assert participant_reaction_details(participant, goal, users, now=_at("2026-06-02T12:00:00")) == [
+        {"emote": "👍", "name": "Bob"},
+        {"emote": "👍", "name": "dana@example.com"},
+        {"emote": "🎉", "name": "Charlie"},
+    ]
+
+
 def test_main_page_uses_slim_component_picker_for_completed_friend_rows() -> None:
     content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
 
@@ -571,10 +601,13 @@ def test_participant_reaction_component_build_exists_with_inline_picker() -> Non
     assert "participant-reaction-summary" in content
     assert "position: absolute" in content
     assert "participant-reaction-picker" in content
+    assert "participant-reaction-detail-menu" in content
+    assert "participant-reaction-detail-row" in content
     assert "participant-reaction-more" in content
     assert "participant-reaction-all" in content
     assert "overflow-y: auto" in content
     assert "standard_emotes" in content
+    assert "reaction_details" in content
     assert "mini-activity-dot-current" in content
     assert 'action: "toggle"' in content
     assert 'action: "react"' in content

@@ -29,6 +29,7 @@ def participant_reaction_row(
     target: int,
     skipped: bool,
     reaction_summary: list[tuple[str, int]],
+    reaction_details: list[dict[str, str]],
     standard_emotes: list[str],
     emotes: list[str],
     can_react: bool,
@@ -53,6 +54,10 @@ def participant_reaction_row(
         target=max(1, int(target)),
         skipped=bool(skipped),
         reaction_summary=[{"emote": emote, "count": int(count)} for emote, count in reaction_summary],
+        reaction_details=[
+            {"emote": str(detail.get("emote", "")), "name": str(detail.get("name", ""))}
+            for detail in reaction_details
+        ],
         standard_emotes=standard_emotes,
         emotes=emotes,
         can_react=bool(can_react),
