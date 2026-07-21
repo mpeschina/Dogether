@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import random
+
 import streamlit as st
 
 from src.db.persistence import Persistence
@@ -16,6 +18,33 @@ from src.pages.page_helpers import schedule_label
 
 LOOKBACK_PERIODS = 14
 READY_SESSION_KEY = "historical_data_repair_ready"
+READY_OPTION_SESSION_KEY = "historical_data_repair_ready_option"
+READINESS_GATE_OPTIONS = [
+    {
+        "id": "sentence_repeat",
+        "sentence1_html": "Playing around with the Histroy is dangerous.",
+        "wait1_seconds": 2,
+        "sentence2_html": "-- repeat this sentence 30 times in your head.",
+        "wait2_seconds": 4,
+        "progress_seconds": 30,
+        "button_text": "I did it. I am ready!",
+    },
+    {
+        "id": "timeline_paradox",
+        "sentence1_html": (
+            "⚠️ <strong>Historical records are about to be modified.</strong><br>"
+            "<span>(Please avoid creating timeline paradoxes.)</span>"
+        ),
+        "wait1_seconds": 2,
+        "sentence2_html": (
+            "Before proceeding, repeat this sentence <strong>30 times in your head:</strong><br>"
+            "&quot;I will not accidentally invent a new past.&quot;"
+        ),
+        "wait2_seconds": 4,
+        "progress_seconds": 60,
+        "button_text": "Ready",
+    },
+]
 
 
 def editable_period_starts(
@@ -110,25 +139,53 @@ def _render_period_inputs(
     return values
 
 
+def _readiness_gate_option() -> dict:
+    option_id = st.session_state.get(READY_OPTION_SESSION_KEY)
+    options_by_id = {option["id"]: option for option in READINESS_GATE_OPTIONS}
+    if option_id not in options_by_id:
+        option = random.choice(READINESS_GATE_OPTIONS)
+        st.session_state[READY_OPTION_SESSION_KEY] = option["id"]
+        return option
+    return options_by_id[option_id]
+
+
 def _render_readiness_gate() -> bool:
     if st.session_state.get(READY_SESSION_KEY):
         return True
 
+    option = _readiness_gate_option()
+    wait1_seconds = max(0, int(option.get("wait1_seconds", 0) or 0))
+    wait2_seconds = max(0, int(option.get("wait2_seconds", 0) or 0))
+    button_delay_seconds = wait1_seconds + wait2_seconds
+    progress_seconds = option.get("progress_seconds")
+    progress_html = ""
+    if progress_seconds is not None:
+        progress_html = (
+            '<div class="history-repair-progress" aria-hidden="true">'
+            '<div class="history-repair-progress-fill"></div>'
+            '</div>'
+        )
+
     with st.container(key="history_repair_gate"):
         st.markdown(
-            """
+            f"""
+            <style>
+            div[class*="st-key-history_repair_gate"] {{
+                --history-repair-wait-1: {wait1_seconds}s;
+                --history-repair-button-delay: {button_delay_seconds}s;
+                --history-repair-progress-duration: {max(1, int(progress_seconds or 1))}s;
+            }}
+            </style>
             <div class="history-repair-game">
-                <p class="history-repair-warning">Playing around with the Histroy is dangerous.</p>
-                <p class="history-repair-task">-- repeat this sentence 30 times in your head.</p>
-                <div class="history-repair-progress" aria-hidden="true">
-                    <div class="history-repair-progress-fill"></div>
-                </div>
+                <p class="history-repair-warning">{option["sentence1_html"]}</p>
+                <p class="history-repair-task">{option["sentence2_html"]}</p>
+                {progress_html}
             </div>
             """,
             unsafe_allow_html=True,
         )
         if st.button(
-            "I did it. I am ready!",
+            str(option.get("button_text", "Ready")),
             type="primary",
             use_container_width=True,
             key="history_repair_ready_button",
@@ -187,7 +244,7 @@ def render_historical_data_repair(
             font-weight: 700;
             text-align: center;
             opacity: 0;
-            animation: history-repair-fade-in 0.6s ease 2s forwards;
+            animation: history-repair-fade-in 0.6s ease var(--history-repair-wait-1) forwards;
         }
         .history-repair-progress {
             width: 100%;
@@ -197,14 +254,14 @@ def render_historical_data_repair(
             background: #e5e7eb;
             box-shadow: inset 0 0 0 1px rgba(31, 41, 55, 0.08);
             opacity: 0;
-            animation: history-repair-fade-in 0.6s ease 2s forwards;
+            animation: history-repair-fade-in 0.6s ease var(--history-repair-wait-1) forwards;
         }
         .history-repair-progress-fill {
             width: 100%;
             height: 100%;
             transform-origin: left center;
             transform: scaleX(0);
-            animation: history-repair-fill 30s linear 2s forwards;
+            animation: history-repair-fill var(--history-repair-progress-duration) linear var(--history-repair-wait-1) forwards;
             background: #1f2937;
         }
         div[class*="st-key-history_repair_ready_button"] {
@@ -214,7 +271,7 @@ def render_historical_data_repair(
             visibility: hidden;
             opacity: 0;
             pointer-events: none;
-            animation: history-repair-ready-button 0.8s ease 6s forwards;
+            animation: history-repair-ready-button 0.8s ease var(--history-repair-button-delay) forwards;
         }
         @keyframes history-repair-fade-in {
             to { opacity: 1; }
