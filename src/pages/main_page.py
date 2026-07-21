@@ -291,6 +291,11 @@ def render_participant_progress(
             None if st.session_state.get("participant_reaction_open_row") == row_id else row_id
         )
         st.rerun()
+    if action == "close":
+        if st.session_state.get("participant_reaction_open_row") == row_id:
+            st.session_state["participant_reaction_open_row"] = None
+            st.rerun()
+        return
     if action == "react" and emote in REACTION_EMOTES:
         try:
             persistence.set_goal_completion_reaction(

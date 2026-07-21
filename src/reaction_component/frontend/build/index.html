@@ -294,8 +294,16 @@
         setFrameHeight(height);
       }
 
-      function closePicker() {
+      function closePicker({ notify = false } = {}) {
+        if (!open) {
+          return;
+        }
         open = false;
+        expanded = false;
+        if (notify) {
+          lastNonce += 1;
+          setComponentValue({ row_id: args.row_id, action: "close", nonce: lastNonce });
+        }
         render();
       }
 
@@ -333,8 +341,7 @@
             event.stopPropagation();
             lastNonce += 1;
             setComponentValue({ row_id: args.row_id, action: "react", emote: option.dataset.emote, nonce: lastNonce });
-            open = false;
-            render();
+            closePicker();
             return;
           }
           const more = event.target.closest(".participant-reaction-more");
@@ -359,9 +366,25 @@
       document.addEventListener("click", (event) => {
         const root = document.getElementById("root");
         if (open && root && !root.contains(event.target)) {
-          closePicker();
+          closePicker({ notify: true });
         }
       });
+
+      try {
+        if (window.parent && window.parent !== window && window.frameElement) {
+          window.parent.document.addEventListener("click", (event) => {
+            if (!open) {
+              return;
+            }
+            if (event.target === window.frameElement || window.frameElement.contains(event.target)) {
+              return;
+            }
+            closePicker({ notify: true });
+          }, true);
+        }
+      } catch (error) {
+        // Cross-origin parents cannot be inspected; inside-iframe clicks still close normally.
+      }
 
       window.addEventListener("message", (event) => {
         if (event.data.type !== RENDER_EVENT) {

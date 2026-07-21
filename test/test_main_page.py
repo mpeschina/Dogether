@@ -557,6 +557,7 @@ def test_main_page_uses_slim_component_picker_for_completed_friend_rows() -> Non
     assert 'open_picker=st.session_state.get("participant_reaction_open_row") == row_id' in content
     assert 'st.popover("React")' not in content
     assert "set_goal_completion_reaction" in content
+    assert 'action == "close"' in content
 
 
 def test_participant_reaction_component_build_exists_with_inline_picker() -> None:
@@ -577,4 +578,6 @@ def test_participant_reaction_component_build_exists_with_inline_picker() -> Non
     assert "mini-activity-dot-current" in content
     assert 'action: "toggle"' in content
     assert 'action: "react"' in content
+    assert 'action: "close"' in content
+    assert "window.parent.document.addEventListener" in content
     assert "open = Boolean(args.open_picker)" in content
