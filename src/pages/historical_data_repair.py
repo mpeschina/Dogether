@@ -70,6 +70,8 @@ READINESS_GATE_OPTIONS = [
         "final_button_wait_seconds": 4,
         "button_text": "Authorized",
     },
+    ## could add another one:  "You only have a short time to answer:"
+    ##  Progress bar with only 6 seconds, display a math, like "what is 3149 x 9413?"
 ]
 
 
