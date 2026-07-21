@@ -22,7 +22,7 @@ READY_OPTION_SESSION_KEY = "historical_data_repair_ready_option"
 READINESS_GATE_OPTIONS = [
     {
         "id": "sentence_repeat",
-        "sentence1_html": "Playing around with the Histroy is dangerous.",
+        "sentence1_html": "&quot;Playing around with the Histroy is dangerous.&quot;",
         "wait1_seconds": 2,
         "sentence2_html": "-- repeat this sentence 30 times in your head.",
         "wait2_seconds": 4,
@@ -232,16 +232,17 @@ def render_historical_data_repair(
         }
         .history-repair-warning {
             margin: 0 0 1rem;
-            color: #6b7280;
             font-size: 0.92rem;
             text-align: center;
             opacity: 0;
             animation: history-repair-fade-in 0.8s ease forwards;
         }
+        .history-repair-muted {
+            color: #6b7280;
+        }
         .history-repair-task {
             margin: 0 0 0.75rem;
             color: #1f2937;
-            font-weight: 700;
             text-align: center;
             opacity: 0;
             animation: history-repair-fade-in 0.6s ease var(--history-repair-wait-1) forwards;

@@ -6,7 +6,11 @@ from src.data_imports.health_data_import import handle_health_data_import
 from src.db.persistence import Persistence, get_persistence, persistence_settings
 from src.friends.alerts import pending_friend_request_alert_items
 from src.pages.account_page import render_account
-from src.pages.historical_data_repair import render_historical_data_repair
+from src.pages.historical_data_repair import (
+    READY_OPTION_SESSION_KEY,
+    READY_SESSION_KEY,
+    render_historical_data_repair,
+)
 from src.pages.debug_page import DebugMechanics, render_debug
 from src.pages.friends_page import render_friends
 from src.pages.goals_page import render_goals
@@ -112,6 +116,9 @@ def mark_current_page(page_key: str) -> None:
         st.session_state.pop("friends_pending_removals", None)
     if page_key == "friends" and previous_page_key != "friends":
         st.session_state.pop("show_invite_friend_form", None)
+    if page_key == "historical_data_repair" and previous_page_key != "historical_data_repair":
+        st.session_state.pop(READY_SESSION_KEY, None)
+        st.session_state.pop(READY_OPTION_SESSION_KEY, None)
     st.session_state["current_page_key"] = page_key
 
 
