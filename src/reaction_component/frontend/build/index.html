@@ -364,6 +364,33 @@
         `;
       }
 
+      function clampFloatingMenu(menu) {
+        if (!menu) {
+          return;
+        }
+        menu.style.transform = "";
+        const margin = 8;
+        const rect = menu.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || rect.right;
+        let shift = 0;
+
+        if (rect.right > viewportWidth - margin) {
+          shift = viewportWidth - margin - rect.right;
+        }
+        if (rect.left + shift < margin) {
+          shift += margin - (rect.left + shift);
+        }
+        if (shift !== 0) {
+          menu.style.transform = `translateX(${Math.round(shift)}px)`;
+        }
+      }
+
+      function positionFloatingMenus() {
+        if (detailsOpen) {
+          clampFloatingMenu(document.querySelector(".participant-reaction-detail-menu"));
+        }
+      }
+
       function reportHeight() {
         const root = document.getElementById("root");
         const picker = root.querySelector(".participant-reaction-picker");
@@ -456,7 +483,10 @@
           render();
         });
 
-        window.setTimeout(reportHeight, 0);
+        window.setTimeout(() => {
+          positionFloatingMenus();
+          reportHeight();
+        }, 0);
       }
 
       document.addEventListener("click", (event) => {
