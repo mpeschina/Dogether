@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from src.pages.correct_inputs_page import editable_period_starts, period_label
+from src.pages.historical_data_repair import editable_period_starts, period_label
 
 BERLIN = ZoneInfo("Europe/Berlin")
 

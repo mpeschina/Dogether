@@ -6,7 +6,7 @@ from src.data_imports.health_data_import import handle_health_data_import
 from src.db.persistence import Persistence, get_persistence, persistence_settings
 from src.friends.alerts import pending_friend_request_alert_items
 from src.pages.account_page import render_account
-from src.pages.correct_inputs_page import render_correct_inputs
+from src.pages.historical_data_repair import render_historical_data_repair
 from src.pages.debug_page import DebugMechanics, render_debug
 from src.pages.friends_page import render_friends
 from src.pages.goals_page import render_goals
@@ -130,9 +130,9 @@ def goals_page() -> None:
     render_goals(persistence, user_id, now=app_now)
 
 
-def correct_inputs_page() -> None:
-    mark_current_page("correct_inputs")
-    render_correct_inputs(persistence, user_id, now=app_now)
+def historical_data_repair_page() -> None:
+    mark_current_page("historical_data_repair")
+    render_historical_data_repair(persistence, user_id, now=app_now)
 
 
 def account_page() -> None:
@@ -158,7 +158,7 @@ def debug_page() -> None:
 goals_page_entry = st.Page(main_page, title="Goals", default=True, icon=":material/dashboard:")
 friends_page_entry = st.Page(friends_page, title="Friends", icon=":material/group:")
 manage_goals_page_entry = st.Page(goals_page, title="Manage Goals", icon=":material/flag:")
-correct_inputs_page_entry = st.Page(correct_inputs_page, title="Correct Inputs", icon=":material/edit_calendar:")
+historical_data_repair_page_entry = st.Page(historical_data_repair_page, title="Historical Data Repair", icon=":material/edit_calendar:")
 health_data_import_page_entry = st.Page(
     health_data_import_page, title="Health Data Import", icon=":material/health_and_safety:"
 )
@@ -171,7 +171,7 @@ page_entries = [
     goals_page_entry,
     friends_page_entry,
     manage_goals_page_entry,
-    correct_inputs_page_entry,
+    historical_data_repair_page_entry,
     health_data_import_page_entry,
     push_notifications_page_entry,
     account_page_entry,

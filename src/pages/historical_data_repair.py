@@ -69,7 +69,7 @@ def _render_period_row(
     target = max(1, int((outcome or {}).get("target", participant.get("target", 1)) or 1))
     current = max(0, int((outcome or {}).get("current", 0) or 0))
 
-    with st.form(f"correct_input_{goal['id']}_{period_key}", border=False):
+    with st.form(f"historical_data_repair_{goal['id']}_{period_key}", border=False):
         cols = st.columns([2.2, 1, 1.35, 1])
         cols[0].write(period_label(goal, period_start))
         cols[1].write(_status_label(outcome))
@@ -79,7 +79,7 @@ def _render_period_row(
             min_value=0,
             value=current,
             step=1,
-            key=f"correct_input_value_{goal['id']}_{period_key}",
+            key=f"historical_data_repair_value_{goal['id']}_{period_key}",
             label_visibility="collapsed",
         )
         value_cols[1].caption(f"/ {target}")
@@ -100,18 +100,18 @@ def _render_period_row(
                 st.error(str(error))
 
 
-def render_correct_inputs(
+def render_historical_data_repair(
     persistence: Persistence,
     user_id: str,
     now: datetime | None = None,
 ) -> None:
-    st.title("Correct Inputs")
+    st.title("Historical Data Repair")
     goals = persistence.list_goals_for_user(user_id, now=now)
     if not goals:
         st.info("No active goals.")
         return
 
-    st.caption(f"Edit older goal values for the last {LOOKBACK_PERIODS} completed periods.")
+    st.caption(f"Repair older goal values for the last {LOOKBACK_PERIODS} completed periods.")
     for goal in goals:
         participant = goal.get("participants", {}).get(user_id)
         if not isinstance(participant, dict):

@@ -71,7 +71,7 @@ The app has five primary pages:
   shows outgoing pending invites, and removes existing friends.
 - **Manage Goals**: creates shared goals, adds accepted friends to existing
   goals, and lets the current user leave a goal.
-- **Correct Inputs**: lets the current user correct missed or incorrect values
+- **Historical Data Repair**: lets the current user correct missed or incorrect values
   for older periods on their active goals.
 - **Account**: shows profile details, goal/friend stats, completion rate, and a
   year of activity.
