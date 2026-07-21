@@ -46,58 +46,67 @@ def period_label(goal: dict, period_start: datetime) -> str:
     return period_start.date().isoformat()
 
 
+def _outcome_fulfilled(outcome: dict | None) -> bool:
+    return isinstance(outcome, dict) and bool(outcome.get("fulfilled", outcome.get("completed", False)))
+
+
 def _status_label(outcome: dict | None) -> str:
     if not isinstance(outcome, dict):
         return "No input"
-    if outcome.get("fulfilled", outcome.get("completed", False)):
+    if _outcome_fulfilled(outcome):
         return "Fulfilled"
     if outcome.get("completed"):
         return "Complete"
     return "Missed"
 
 
-def _render_period_row(
-    persistence: Persistence,
-    goal: dict,
-    user_id: str,
-    participant: dict,
-    period_start: datetime,
-    now: datetime | None,
-) -> None:
-    period_key = period_start.date().isoformat()
-    outcome = participant.get("period_outcomes", {}).get(period_key)
-    target = max(1, int((outcome or {}).get("target", participant.get("target", 1)) or 1))
-    current = max(0, int((outcome or {}).get("current", 0) or 0))
+def _goal_option_label(goal: dict, duplicate_descriptions: set[str]) -> str:
+    description = str(goal.get("description", "Goal"))
+    label = f"{description} - {schedule_label(goal)}"
+    if description in duplicate_descriptions:
+        label = f"{label} ({str(goal.get('id', ''))[-6:]})"
+    return label
 
-    with st.form(f"historical_data_repair_{goal['id']}_{period_key}", border=False):
-        cols = st.columns([2.2, 1, 1.35, 1])
-        cols[0].write(period_label(goal, period_start))
-        cols[1].write(_status_label(outcome))
-        value_cols = cols[2].columns([1, 0.65], vertical_alignment="center")
-        corrected_current = value_cols[0].number_input(
-            "Value",
-            min_value=0,
-            value=current,
-            step=1,
-            key=f"historical_data_repair_value_{goal['id']}_{period_key}",
-            label_visibility="collapsed",
-        )
-        value_cols[1].caption(f"/ {target}")
-        submitted = cols[3].form_submit_button("Save", use_container_width=True)
-        if submitted:
-            try:
-                persistence.correct_goal_period_progress(
-                    goal["id"],
-                    user_id,
-                    period_start,
-                    int(corrected_current),
-                    target=target,
-                    now=now,
+
+def _render_period_inputs(
+    goal: dict,
+    participant: dict,
+    period_starts: list[datetime],
+) -> dict[datetime, tuple[int, int, int]]:
+    values = {}
+    header_cols = st.columns([2.2, 1, 1.35])
+    header_cols[0].caption("Period")
+    header_cols[1].caption("Status")
+    header_cols[2].caption("Value")
+    for period_start in period_starts:
+        period_key = period_start.date().isoformat()
+        outcome = participant.get("period_outcomes", {}).get(period_key)
+        target = max(1, int((outcome or {}).get("target", participant.get("target", 1)) or 1))
+        current = max(0, int((outcome or {}).get("current", 0) or 0))
+        row_state = "fulfilled" if _outcome_fulfilled(outcome) else "unfulfilled"
+        with st.container(key=f"history_repair_row_{row_state}_{goal['id']}_{period_key}"):
+            cols = st.columns([2.2, 1, 1.35])
+            cols[0].write(period_label(goal, period_start))
+            status = _status_label(outcome)
+            if row_state == "unfulfilled":
+                cols[1].markdown(
+                    f"<span class='history-repair-status-unfulfilled'>{status}</span>",
+                    unsafe_allow_html=True,
                 )
-                st.success("Input corrected.")
-                st.rerun()
-            except ValueError as error:
-                st.error(str(error))
+            else:
+                cols[1].write(status)
+            value_cols = cols[2].columns([1, 0.65], vertical_alignment="center")
+            corrected_current = value_cols[0].number_input(
+                "Value",
+                min_value=0,
+                value=current,
+                step=1,
+                key=f"history_repair_value_{row_state}_{goal['id']}_{period_key}",
+                label_visibility="collapsed",
+            )
+            value_cols[1].caption(f"/ {target}")
+        values[period_start] = (int(corrected_current), target, current)
+    return values
 
 
 def render_historical_data_repair(
@@ -106,26 +115,82 @@ def render_historical_data_repair(
     now: datetime | None = None,
 ) -> None:
     st.title("Historical Data Repair")
-    goals = persistence.list_goals_for_user(user_id, now=now)
+    st.markdown(
+        """
+        <style>
+        div[class*="st-key-history_repair_row_"] {
+            padding: 0.35rem 0.5rem;
+            margin: 0.25rem 0;
+        }
+        div[class*="st-key-history_repair_value_"] div[data-testid="InputInstructions"] {
+            display: none;
+        }
+        .history-repair-status-unfulfilled {
+            color: #be123c;
+        }
+        div[class*="st-key-history_repair_value_unfulfilled_"] input {
+            background-color: #fff1f2;
+            border-color: #fecdd3;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    goals = [
+        goal
+        for goal in persistence.list_goals_for_user(user_id, now=now)
+        if isinstance(goal.get("participants", {}).get(user_id), dict)
+    ]
     if not goals:
         st.info("No active goals.")
         return
 
     st.caption(f"Repair older goal values for the last {LOOKBACK_PERIODS} completed periods.")
-    for goal in goals:
-        participant = goal.get("participants", {}).get(user_id)
-        if not isinstance(participant, dict):
-            continue
-        expander_label = f"{goal['description']} - {schedule_label(goal)}"
-        with st.expander(expander_label, expanded=False):
-            starts = editable_period_starts(goal, now=now)
-            if not starts:
-                st.caption("No completed periods are available for this goal yet.")
-                continue
-            header_cols = st.columns([2.2, 1, 1, 1])
-            header_cols[0].caption("Period")
-            header_cols[1].caption("Status")
-            header_cols[2].caption("Value")
-            header_cols[3].caption("Action")
-            for period_start in starts:
-                _render_period_row(persistence, goal, user_id, participant, period_start, now)
+    descriptions = [str(goal.get("description", "Goal")) for goal in goals]
+    duplicate_descriptions = {description for description in descriptions if descriptions.count(description) > 1}
+    goal_options = {_goal_option_label(goal, duplicate_descriptions): goal for goal in goals}
+    placeholder = "Please select one of your goals ..."
+    selected_goal_label = st.selectbox(
+        "Goal",
+        [placeholder, *goal_options],
+        key="historical_data_repair_goal_picker",
+    )
+    if selected_goal_label == placeholder:
+        return
+
+    goal = goal_options[selected_goal_label]
+    participant = goal["participants"][user_id]
+
+    with st.container(border=True):
+        starts = editable_period_starts(goal, now=now)
+        if not starts:
+            st.caption("No completed periods are available for this goal yet.")
+            return
+        values = _render_period_inputs(goal, participant, starts)
+        changed_values = {
+            period_start: (current, target)
+            for period_start, (current, target, original_current) in values.items()
+            if current != original_current
+        }
+        submitted = st.button(
+            "Save",
+            type="primary",
+            use_container_width=True,
+            disabled=not changed_values,
+            key=f"historical_data_repair_save_{goal['id']}",
+        )
+        if submitted:
+            try:
+                for period_start, (current, target) in changed_values.items():
+                    persistence.correct_goal_period_progress(
+                        goal["id"],
+                        user_id,
+                        period_start,
+                        current,
+                        target=target,
+                        now=now,
+                    )
+                st.success("Historical data repaired.")
+                st.rerun()
+            except ValueError as error:
+                st.error(str(error))
