@@ -280,10 +280,32 @@
         border-radius: 2px;
         box-shadow: inset 0 0 0 1px rgba(27, 31, 36, 0.14);
         flex: 0 0 auto;
+        position: relative;
       }
 
       .mini-activity-dot-current {
         box-shadow: 0 0 0 1.5px rgba(31, 41, 55, 0.42);
+      }
+
+      .mini-activity-dot-skipped::before,
+      .mini-activity-dot-skipped::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 0.39rem;
+        height: 1.5px;
+        border-radius: 999px;
+        background: #1F2937;
+        transform-origin: center;
+      }
+
+      .mini-activity-dot-skipped::before {
+        transform: translate(-50%, -50%) rotate(45deg);
+      }
+
+      .mini-activity-dot-skipped::after {
+        transform: translate(-50%, -50%) rotate(-45deg);
       }
     </style>
   </head>

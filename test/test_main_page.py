@@ -18,7 +18,6 @@ from src.pages.common_helpers import (
     FUTURE_ACTIVITY_COLOR,
     PARTICIPANT_SPARKLINE_COLOR,
     PARTICIPANT_SPARKLINE_DEFAULT_DAYS,
-    STREAMLIT_PRIMARY_COLOR,
     compact_goal_activity_html,
     mini_activity_styles,
     participant_sparkline_html,
@@ -355,7 +354,7 @@ def test_compact_goal_activity_daily_x_per_week_completion_stays_green() -> None
     assert f"background:{ACTIVITY_COLORS[4]}" in html
 
 
-def test_compact_goal_activity_daily_x_per_week_valid_skip_uses_primary_color() -> None:
+def test_compact_goal_activity_daily_x_per_week_valid_skip_uses_x_marker() -> None:
     participant = {
         "current": 0,
         "target": 10,
@@ -365,18 +364,36 @@ def test_compact_goal_activity_daily_x_per_week_valid_skip_uses_primary_color() 
     goal = _goal("daily_x_per_week", required_periods=5, participant=participant)
     html = compact_goal_activity_html(goal, participant, now=_at("2026-06-03T12:00:00"))
 
-    assert html.count(f"background:{STREAMLIT_PRIMARY_COLOR}") == 2
+    assert html.count("mini-activity-dot-skipped") == 2
     assert f"background:{ACTIVITY_COLORS[4]}" not in html
 
     goal["required_periods"] = 6
     html = compact_goal_activity_html(goal, participant, now=_at("2026-06-03T12:00:00"))
 
-    assert html.count(f"background:{STREAMLIT_PRIMARY_COLOR}") == 1
-    assert html.count(f"background:{ACTIVITY_COLORS[0]}") == 2
+    assert html.count("mini-activity-dot-skipped") == 2
+    assert html.count(f"background:{ACTIVITY_COLORS[0]}") == 3
     assert html.count(f"background:{FUTURE_ACTIVITY_COLOR}") == 4
 
 
-def test_compact_goal_activity_daily_x_per_week_unfulfilled_skip_uses_grey() -> None:
+def test_compact_goal_activity_daily_x_per_week_skippable_current_day_uses_x_marker() -> None:
+    participant = {
+        "current": 0,
+        "target": 10,
+        "skipped": False,
+        "period_outcomes": {},
+    }
+    html = compact_goal_activity_html(
+        _goal("daily_x_per_week", required_periods=5, participant=participant),
+        participant,
+        now=_at("2026-06-03T12:00:00"),
+    )
+
+    current_dot = html.split("title='Wednesday'", 1)[0].rsplit("<span", 1)[1]
+    assert "mini-activity-dot-skipped" in current_dot
+    assert f"background:{ACTIVITY_COLORS[4]}" not in current_dot
+
+
+def test_compact_goal_activity_daily_x_per_week_unfulfilled_skip_uses_x_marker() -> None:
     participant = {
         "current": 0,
         "target": 10,
@@ -389,7 +406,7 @@ def test_compact_goal_activity_daily_x_per_week_unfulfilled_skip_uses_grey() -> 
         now=_at("2026-06-03T12:00:00"),
     )
 
-    assert f"background:{STREAMLIT_PRIMARY_COLOR}" not in html
+    assert "mini-activity-dot-skipped" in html
     assert f"background:{ACTIVITY_COLORS[0]}" in html
 
 
@@ -641,6 +658,9 @@ def test_participant_reaction_component_build_exists_with_inline_picker() -> Non
     assert "standard_emotes" in content
     assert "reaction_details" in content
     assert "mini-activity-dot-current" in content
+    assert "mini-activity-dot-skipped::before" in content
+    assert "mini-activity-dot-skipped::after" in content
+    assert "transform: translate(-50%, -50%) rotate(45deg)" in content
     assert 'action: "toggle"' in content
     assert 'action: "react"' in content
     assert 'action: "close"' in content

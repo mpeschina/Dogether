@@ -51,7 +51,7 @@ def compact_goal_activity_html(goal: dict, participant: dict, now: datetime | No
     current_period_start = _period_start(now_dt, schedule["base"])
     dots = [
         (
-            f"<span class='{_mini_activity_dot_class(period_start, current_period_start)}' "
+            f"<span class='{_mini_activity_dot_class(goal, participant, period_start, current_period_start, now_dt)}' "
             f"title='{escape(period_start.strftime('%A'), quote=True)}' "
             f"style='background:{_mini_activity_color(goal, participant, period_start, now_dt)};'></span>"
         )
@@ -122,9 +122,28 @@ def mini_activity_styles() -> str:
             border-radius: 2px;
             box-shadow: inset 0 0 0 1px rgba(27,31,36,0.14);
             flex: 0 0 auto;
+            position: relative;
         }}
         .mini-activity-dot-current {{
             box-shadow: 0 0 0 1.5px rgba(31,41,55,0.42);
+        }}
+        .mini-activity-dot-skipped::before,
+        .mini-activity-dot-skipped::after {{
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: calc({MINI_ACTIVITY_CELL_SIZE} * 0.78);
+            height: 1.5px;
+            border-radius: 999px;
+            background: {STREAMLIT_PRIMARY_COLOR};
+            transform-origin: center;
+        }}
+        .mini-activity-dot-skipped::before {{
+            transform: translate(-50%, -50%) rotate(45deg);
+        }}
+        .mini-activity-dot-skipped::after {{
+            transform: translate(-50%, -50%) rotate(-45deg);
         }}
         .participant-sparkline {{
             display: inline-flex;
@@ -197,10 +216,18 @@ def _sparkline_progress_value(record: dict, *, fulfilled: bool = False) -> float
     return value
 
 
-def _mini_activity_dot_class(period_start: datetime, current_period_start: datetime) -> str:
+def _mini_activity_dot_class(
+    goal: dict,
+    participant: dict,
+    period_start: datetime,
+    current_period_start: datetime,
+    now_dt: datetime,
+) -> str:
     class_name = "mini-activity-dot"
     if period_start == current_period_start:
         class_name += " mini-activity-dot-current"
+    if _mini_activity_has_skip_marker(goal, participant, period_start, now_dt):
+        class_name += " mini-activity-dot-skipped"
     return class_name
 
 
@@ -223,6 +250,8 @@ def _mini_activity_color(goal: dict, participant: dict, period_start: datetime, 
     current_period_start = _period_start(now_dt, schedule["base"])
     if period_start > current_period_start:
         return FUTURE_ACTIVITY_COLOR
+    if _mini_activity_has_skip_marker(goal, participant, period_start, now_dt):
+        return ACTIVITY_COLORS[0]
 
     outcome = participant.get("period_outcomes", {}).get(period_start.date().isoformat())
     if isinstance(outcome, dict):
@@ -232,8 +261,6 @@ def _mini_activity_color(goal: dict, participant: dict, period_start: datetime, 
         if completed:
             return ACTIVITY_COLORS[4]
         if _uses_required_period_allowance(goal):
-            if fulfilled and outcome.get("skipped"):
-                return STREAMLIT_PRIMARY_COLOR
             if not fulfilled and percent <= 0:
                 return ACTIVITY_COLORS[0]
         if fulfilled:
@@ -243,9 +270,6 @@ def _mini_activity_color(goal: dict, participant: dict, period_start: datetime, 
     if period_start == current_period_start:
         fulfilled = _period_fulfilled(goal, participant, period_start)
         skipped = bool(participant.get("skipped", False))
-        if _uses_required_period_allowance(goal):
-            if fulfilled and skipped:
-                return STREAMLIT_PRIMARY_COLOR
         if skipped and not fulfilled:
             return ACTIVITY_COLORS[0]
         if fulfilled:
@@ -255,6 +279,31 @@ def _mini_activity_color(goal: dict, participant: dict, period_start: datetime, 
         return activity_color_for_percent((current / target) * 100)
 
     return ACTIVITY_COLORS[0]
+
+
+def _mini_activity_has_skip_marker(goal: dict, participant: dict, period_start: datetime, now_dt: datetime) -> bool:
+    schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
+    current_period_start = _period_start(now_dt, schedule["base"])
+    if period_start > current_period_start:
+        return False
+
+    outcome = participant.get("period_outcomes", {}).get(period_start.date().isoformat())
+    if isinstance(outcome, dict):
+        return bool(outcome.get("skipped", False))
+
+    if period_start != current_period_start:
+        return False
+
+    if participant.get("skipped", False):
+        return True
+
+    target = max(1, int(participant.get("target", 1) or 1))
+    current = max(0, int(participant.get("current", 0) or 0))
+    return (
+        _uses_required_period_allowance(goal)
+        and current < target
+        and _period_fulfilled(goal, participant, period_start)
+    )
 
 
 def _uses_required_period_allowance(goal: dict) -> bool:
