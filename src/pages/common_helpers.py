@@ -133,10 +133,10 @@ def mini_activity_styles() -> str:
             position: absolute;
             left: 50%;
             top: 50%;
-            width: calc({MINI_ACTIVITY_CELL_SIZE} * 0.78);
-            height: 1.5px;
+            width: 100%;
+            height: 1px;
             border-radius: 999px;
-            background: {STREAMLIT_PRIMARY_COLOR};
+            background: #4B5563;
             transform-origin: center;
         }}
         .mini-activity-dot-skipped::before {{

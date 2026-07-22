@@ -660,6 +660,9 @@ def test_participant_reaction_component_build_exists_with_inline_picker() -> Non
     assert "mini-activity-dot-current" in content
     assert "mini-activity-dot-skipped::before" in content
     assert "mini-activity-dot-skipped::after" in content
+    assert "width: 0.5rem" in content
+    assert "height: 1px" in content
+    assert "background: #4B5563" in content
     assert "transform: translate(-50%, -50%) rotate(45deg)" in content
     assert 'action: "toggle"' in content
     assert 'action: "react"' in content
