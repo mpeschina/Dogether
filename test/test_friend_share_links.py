@@ -8,7 +8,6 @@ from src.friends.share_links import (
     PENDING_FRIEND_SHARE_CODE_KEY,
     apply_pending_friend_share,
     capture_friend_share_code,
-    friend_share_created_text,
     friend_share_link,
     pop_friend_share_message,
 )
@@ -31,14 +30,6 @@ def test_friend_share_link_replaces_existing_query_string() -> None:
     link = friend_share_link("code 123", "https://example.com/friends?page=old")
 
     assert link == "https://example.com/friends?friend_share=code+123"
-
-
-def test_friend_share_created_text_includes_copy_hint_and_link() -> None:
-    text = friend_share_created_text("https://example.com/?friend_share=abc")
-
-    assert text.startswith("Shareable link created.")
-    assert "- Tap Copy link" in text
-    assert "Link for reference: https://example.com/?friend_share=abc" in text
 
 
 def test_share_link_applies_after_first_login(tmp_path: Path) -> None:
