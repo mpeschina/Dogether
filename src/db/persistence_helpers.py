@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import calendar
+import secrets
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -129,6 +130,10 @@ def _parse_dt(value: str | None) -> datetime | None:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+def _new_friend_share_code() -> str:
+    return secrets.token_urlsafe(18)
 
 
 def _friendship_id(first_user_id: str, second_user_id: str) -> str:

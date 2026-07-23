@@ -14,6 +14,7 @@ from .persistence_helpers import (
     _find_user_by_email,
     _friendship_id,
     _normalise_friend_pair,
+    _new_friend_share_code,
     _goal_active_for_user,
     _iso,
     _new_id,
@@ -78,6 +79,40 @@ class DocumentPersistence:
         with self._lock:
             users = self._read()["users"]
             return {user_id: users[user_id] for user_id in user_ids if user_id in users}
+
+    def ensure_friend_share_code(self, user_id: str, now: datetime | None = None) -> str:
+        with self._lock:
+            data = self._read()
+            user = data["users"].get(user_id)
+            if not user:
+                raise ValueError("User not found.")
+            existing = str(user.get("friend_share_code") or "").strip()
+            if existing:
+                return existing
+
+            used_codes = {
+                str(candidate.get("friend_share_code"))
+                for candidate in data["users"].values()
+                if candidate.get("friend_share_code")
+            }
+            share_code = _new_friend_share_code()
+            while share_code in used_codes:
+                share_code = _new_friend_share_code()
+
+            user["friend_share_code"] = share_code
+            user["updated_at"] = _iso(now)
+            self._write(data)
+            return share_code
+
+    def find_user_by_friend_share_code(self, code: str) -> dict[str, Any] | None:
+        share_code = str(code or "").strip()
+        if not share_code:
+            return None
+        with self._lock:
+            for user in self._read()["users"].values():
+                if user.get("friend_share_code") == share_code:
+                    return user
+        return None
 
     def find_user_by_email(self, email: str) -> dict[str, Any] | None:
         normalized_email = normalize_email(email)
@@ -151,6 +186,58 @@ class DocumentPersistence:
                 "from_email": from_email,
                 "to_email": to_email,
                 "to_user_id": target_user["user_id"],
+                "status": "pending",
+                "created_at": now_iso,
+                "updated_at": now_iso,
+            }
+            data["friend_invites"][invite_id] = invite
+            self._write(data)
+            return invite
+
+    def create_friend_invite_to_user(
+        self,
+        from_user_id: str,
+        from_email: str,
+        to_user_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        from_email = normalize_email(from_email)
+        if from_user_id == to_user_id:
+            raise ValueError("You cannot invite yourself.")
+
+        now_iso = _iso(now)
+        with self._lock:
+            data = self._read()
+            target_user = data["users"].get(to_user_id)
+            if not target_user:
+                raise ValueError("No user found for that share link.")
+            if _active_friendship(data, from_user_id, to_user_id):
+                raise ValueError("You are already friends with that user.")
+
+            target_email = normalize_email(target_user.get("email", ""))
+            for invite in data["friend_invites"].values():
+                if invite.get("status") != "pending":
+                    continue
+                invite_users = {invite.get("from_user_id"), invite.get("to_user_id")}
+                direct_user_invite = invite_users == {from_user_id, to_user_id}
+                direct_email_invite = (
+                    invite.get("from_user_id") == from_user_id
+                    and normalize_email(invite.get("to_email", "")) == target_email
+                )
+                reverse_email_invite = (
+                    invite.get("from_user_id") == to_user_id
+                    and normalize_email(invite.get("to_email", "")) == from_email
+                )
+                if direct_user_invite or direct_email_invite or reverse_email_invite:
+                    return invite
+
+            invite_id = _new_id("invite")
+            invite = {
+                "id": invite_id,
+                "from_user_id": from_user_id,
+                "from_email": from_email,
+                "to_email": target_email,
+                "to_user_id": to_user_id,
                 "status": "pending",
                 "created_at": now_iso,
                 "updated_at": now_iso,

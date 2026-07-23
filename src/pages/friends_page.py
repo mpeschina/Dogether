@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 import html
 from typing import Any
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import streamlit as st
 
 from src.db.persistence import Persistence
 from src.friends.suggestions import friend_suggestion_candidates, manual_friend_suggestion_options
+from src.friends.share_links import FRIEND_SHARE_QUERY_PARAM, pop_friend_share_message
 from src.push.notifications import create_friend_invite_with_push, create_friend_suggestion_with_push
 from src.push.storage import PushStorage
 
@@ -75,6 +77,43 @@ def _friend_name_with_email(
     if details:
         return f"{name} ({', '.join(details)})"
     return name
+
+
+def _friend_share_link(share_code: str) -> str:
+    query = urlencode({FRIEND_SHARE_QUERY_PARAM: share_code})
+    current_url = getattr(st.context, "url", None)
+    if not current_url:
+        return f"?{query}"
+
+    parts = urlsplit(str(current_url))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
+
+
+def _render_friend_share_message() -> None:
+    message = pop_friend_share_message(st.session_state)
+    if not message:
+        return
+    level = message.get("level", "info")
+    text = message.get("text", "")
+    if level == "success":
+        st.success(text)
+    elif level == "warning":
+        st.warning(text)
+    elif level == "error":
+        st.error(text)
+    else:
+        st.info(text)
+
+
+def _copy_share_link_to_clipboard(share_link: str) -> None:
+    st.html(
+        f"""
+        <script>
+            navigator.clipboard.writeText({share_link!r});
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
 
 
 def _render_friend_suggestion_candidate(
@@ -157,11 +196,13 @@ def render_friends(
     _friend_request_action_styles()
 
     st.title("Friends")
+    _render_friend_share_message()
 
     #
     # Incoming Invites Section
     #
     show_invite_form = st.session_state.get("show_invite_friend_form", False)
+    share_button_clicked = False
     if show_invite_form:
         with st.form("add_friend"):
             email = st.text_input("Add friend by email")
@@ -181,10 +222,29 @@ def render_friends(
                     st.success("Friend invite created.")
                 except ValueError as error:
                     st.error(str(error))
-    elif st.button("Invite friend", type="primary"):
-        st.session_state["show_invite_friend_form"] = True
-        st.rerun()
+    else:
+        cols = st.columns([1, 1, 4])
+        if cols[0].button("Share app", icon=":material/share:", type="primary"):
+            try:
+                st.session_state["friend_share_code"] = persistence.ensure_friend_share_code(user_id, now=now)
+                share_button_clicked = True
+            except ValueError as error:
+                st.error(str(error))
+        if cols[1].button("Invite friend"):
+            st.session_state["show_invite_friend_form"] = True
+            st.rerun()
 
+    share_code = st.session_state.get("friend_share_code")
+    if share_code:
+        share_link = _friend_share_link(str(share_code))
+        if share_button_clicked:
+            _copy_share_link_to_clipboard(share_link)
+        st.success(
+            "Shareable link copied to your clipboard.\n\n"
+            "- When another user opens it, they will send you a friend invite automatically after logging in.\n"
+            f"- Link for reference: {share_link}"
+        )
+        
     incoming = persistence.incoming_friend_invites(current_user["email"], user_id)
     incoming_suggestions = persistence.incoming_friend_suggestions(user_id)
     if incoming or incoming_suggestions:

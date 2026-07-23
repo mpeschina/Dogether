@@ -352,6 +352,63 @@ def test_friend_invite_requires_existing_user(tmp_path: Path) -> None:
 
     assert persistence.raw_data()["friend_invites"] == {}
 
+
+def test_friend_share_code_is_stable_and_lookupable(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+
+    first_code = persistence.ensure_friend_share_code("alice", at("2026-06-01T09:01:00"))
+    second_code = persistence.ensure_friend_share_code("alice", at("2026-06-01T09:02:00"))
+
+    assert first_code
+    assert second_code == first_code
+    assert persistence.find_user_by_friend_share_code(first_code)["user_id"] == "alice"
+    assert persistence.find_user_by_friend_share_code("missing") is None
+    assert persistence.raw_data()["users"]["alice"]["friend_share_code"] == first_code
+
+
+def test_friend_share_invite_targets_user_id_and_prevents_duplicates(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob", at("2026-06-01T09:01:00"))
+
+    invite = persistence.create_friend_invite_to_user(
+        bob["user_id"],
+        bob["email"],
+        alice["user_id"],
+        at("2026-06-01T09:02:00"),
+    )
+    duplicate = persistence.create_friend_invite_to_user(
+        bob["user_id"],
+        bob["email"],
+        alice["user_id"],
+        at("2026-06-01T09:03:00"),
+    )
+
+    assert duplicate["id"] == invite["id"]
+    assert invite["from_user_id"] == "bob"
+    assert invite["to_user_id"] == "alice"
+    assert invite["to_email"] == "alice@example.com"
+    assert persistence.incoming_friend_invites("alice@example.com", "alice") == [invite]
+
+
+def test_friend_share_invite_rejects_self_missing_and_existing_friend(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+
+    with pytest.raises(ValueError, match="yourself"):
+        persistence.create_friend_invite_to_user("alice", alice["email"], "alice")
+    with pytest.raises(ValueError, match="No user found"):
+        persistence.create_friend_invite_to_user("alice", alice["email"], "missing")
+
+    invite = persistence.create_friend_invite_to_user("alice", alice["email"], "bob")
+    persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True)
+
+    with pytest.raises(ValueError, match="already friends"):
+        persistence.create_friend_invite_to_user("alice", alice["email"], "bob")
+
+
 def test_dismiss_friend_suggestion_pair_saves_sorted_pairs_once(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     persistence.upsert_user("alice", "alice@example.com", "Alice")
@@ -1281,6 +1338,35 @@ def test_mongodb_native_goal_progress_uses_targeted_updates() -> None:
     assert not [call for call in database["goals"].calls if call[0] == "replace_one"]
     assert [call for call in database["users_inventory"].calls if call[0] == "update_one"]
     assert database["goals"].documents[goal["id"]]["participants"]["alice"]["current"] == 4
+
+
+def test_mongodb_native_friend_share_code_and_user_id_invite() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob", at("2026-06-01T09:01:00"))
+
+    share_code = persistence.ensure_friend_share_code("alice", at("2026-06-01T09:02:00"))
+    invite = persistence.create_friend_invite_to_user(
+        bob["user_id"],
+        bob["email"],
+        alice["user_id"],
+        at("2026-06-01T09:03:00"),
+    )
+    duplicate = persistence.create_friend_invite_to_user(
+        bob["user_id"],
+        bob["email"],
+        alice["user_id"],
+        at("2026-06-01T09:04:00"),
+    )
+
+    assert share_code == database["users_inventory"].documents["alice"]["friend_share_code"]
+    assert persistence.ensure_friend_share_code("alice") == share_code
+    assert persistence.find_user_by_friend_share_code(share_code)["user_id"] == "alice"
+    assert invite["to_user_id"] == "alice"
+    assert duplicate["id"] == invite["id"]
+    assert persistence.incoming_friend_invites("alice@example.com", "alice") == [invite]
+    assert "friend_share_code" in database["users_inventory"].indexes
 
 
 def test_mongodb_native_list_goals_reads_matching_goal_collection_only() -> None:

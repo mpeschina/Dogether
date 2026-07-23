@@ -17,6 +17,10 @@ class Persistence(Protocol):
 
     def get_user(self, user_id: str) -> dict[str, Any] | None: ...
 
+    def ensure_friend_share_code(self, user_id: str, now: datetime | None = None) -> str: ...
+
+    def find_user_by_friend_share_code(self, code: str) -> dict[str, Any] | None: ...
+
     def users_by_ids(self, user_ids: list[str]) -> dict[str, dict[str, Any]]: ...
 
     def find_user_by_email(self, email: str) -> dict[str, Any] | None: ...
@@ -28,6 +32,14 @@ class Persistence(Protocol):
         from_user_id: str,
         from_email: str,
         to_email: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
+    def create_friend_invite_to_user(
+        self,
+        from_user_id: str,
+        from_email: str,
+        to_user_id: str,
         now: datetime | None = None,
     ) -> dict[str, Any]: ...
 

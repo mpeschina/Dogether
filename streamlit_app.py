@@ -5,6 +5,13 @@ import streamlit as st
 from src.data_imports.health_data_import import handle_health_data_import
 from src.db.persistence import Persistence, get_persistence, persistence_settings
 from src.friends.alerts import pending_friend_request_alert_items
+from src.friends.share_links import (
+    FRIEND_SHARE_MESSAGE_KEY,
+    FRIEND_SHARE_QUERY_PARAM,
+    PENDING_FRIEND_SHARE_CODE_KEY,
+    apply_pending_friend_share,
+    capture_friend_share_code,
+)
 from src.pages.account_page import render_account
 from src.pages.historical_data_repair import (
     READY_OPTION_SESSION_KEY,
@@ -58,6 +65,8 @@ if "is_logged_in" not in st.user and not debug_login:
     )
     st.stop()
 
+capture_friend_share_code(st.query_params, st.session_state)
+
 
 #
 # Login 
@@ -102,6 +111,8 @@ st.sidebar.caption(current_user["email"])
 if st.sidebar.button("Log out", use_container_width=True):
     debug.clear_debug_user()
     st.session_state.pop("friend_request_alert_signature", None)
+    st.session_state.pop(PENDING_FRIEND_SHARE_CODE_KEY, None)
+    st.session_state.pop(FRIEND_SHARE_MESSAGE_KEY, None)
     st.session_state.pop("goals_pending_leave_id", None)
     st.session_state.pop("friends_pending_removals", None)
     if debug_user:
@@ -192,6 +203,17 @@ if debug.enabled:
 page = st.navigation(
     page_entries
 )
+
+if apply_pending_friend_share(
+    persistence,
+    current_user,
+    user_id,
+    st.session_state,
+    now=app_now,
+):
+    if st.query_params.get(FRIEND_SHARE_QUERY_PARAM):
+        st.query_params.clear()
+    st.switch_page(friends_page_entry)
 
 
 @st.dialog("New Friend Requests")

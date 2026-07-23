@@ -16,6 +16,7 @@ from .persistence_helpers import (
     _goal_active_for_user,
     _iso,
     _new_id,
+    _new_friend_share_code,
     _normalise_friend_pair,
     _normalise_goal_participants,
     _normalise_store,
@@ -130,6 +131,7 @@ class MongoNativePersistence:
 
     def _ensure_indexes(self) -> None:
         self._users_inventory_collection().create_index("email")
+        self._users_inventory_collection().create_index("friend_share_code")
         self._friend_invites_collection().create_index([("status", 1), ("to_user_id", 1)])
         self._friend_invites_collection().create_index([("status", 1), ("to_email", 1)])
         self._friend_invites_collection().create_index([("from_user_id", 1), ("status", 1)])
@@ -314,6 +316,36 @@ class MongoNativePersistence:
 
         return self._read_cached(("user", user_id), load_user)
 
+    def ensure_friend_share_code(self, user_id: str, now: datetime | None = None) -> str:
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError("User not found.")
+        existing = str(user.get("friend_share_code") or "").strip()
+        if existing:
+            return existing
+
+        share_code = _new_friend_share_code()
+        while self.find_user_by_friend_share_code(share_code):
+            share_code = _new_friend_share_code()
+
+        self._users_inventory_collection().update_one(
+            {"_id": user_id},
+            {"$set": {"friend_share_code": share_code, "updated_at": _iso(now)}},
+        )
+        self._cache_clear()
+        return share_code
+
+    def find_user_by_friend_share_code(self, code: str) -> dict[str, Any] | None:
+        share_code = str(code or "").strip()
+        if not share_code:
+            return None
+
+        def load_user() -> dict[str, Any] | None:
+            user = self._strip_id(self._users_inventory_collection().find_one({"friend_share_code": share_code}))
+            return _normalise_user_profile(user) if user else None
+
+        return self._read_cached(("user_by_friend_share_code", share_code), load_user)
+
     def users_by_ids(self, user_ids: list[str]) -> dict[str, dict[str, Any]]:
         unique_ids = tuple(sorted(set(user_ids)))
         if not unique_ids:
@@ -394,6 +426,52 @@ class MongoNativePersistence:
             "from_email": from_email,
             "to_email": to_email,
             "to_user_id": target_user["user_id"],
+            "status": "pending",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+        self._friend_invites_collection().replace_one({"_id": invite_id}, {"_id": invite_id, **invite}, upsert=True)
+        self._cache_clear()
+        return invite
+
+    def create_friend_invite_to_user(
+        self,
+        from_user_id: str,
+        from_email: str,
+        to_user_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        from_email = normalize_email(from_email)
+        if from_user_id == to_user_id:
+            raise ValueError("You cannot invite yourself.")
+        target_user = self.get_user(to_user_id)
+        if not target_user:
+            raise ValueError("No user found for that share link.")
+        if self._active_friendship(from_user_id, to_user_id):
+            raise ValueError("You are already friends with that user.")
+
+        for query in [
+            {"from_user_id": from_user_id, "to_user_id": to_user_id, "status": "pending"},
+            {"from_user_id": to_user_id, "to_user_id": from_user_id, "status": "pending"},
+            {
+                "from_user_id": from_user_id,
+                "to_email": normalize_email(target_user.get("email", "")),
+                "status": "pending",
+            },
+            {"from_user_id": to_user_id, "to_email": from_email, "status": "pending"},
+        ]:
+            existing = self._strip_id(self._friend_invites_collection().find_one(query))
+            if existing:
+                return existing
+
+        now_iso = _iso(now)
+        invite_id = _new_id("invite")
+        invite = {
+            "id": invite_id,
+            "from_user_id": from_user_id,
+            "from_email": from_email,
+            "to_email": normalize_email(target_user.get("email", "")),
+            "to_user_id": to_user_id,
             "status": "pending",
             "created_at": now_iso,
             "updated_at": now_iso,
