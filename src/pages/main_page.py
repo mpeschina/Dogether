@@ -171,7 +171,7 @@ def render_goal_actions(
     current = int(participant.get("current", 0))
     target = int(participant.get("target", 1))
     skipped = bool(participant.get("skipped", False))
-    action_cols = st.columns([1, 1])
+    actions = st.container(horizontal=True)
     goal_is_done = current >= max(1, target)
     health_data_settings = health_data_import_settings()
     uses_health_data = health_data_import_enabled(goal, user_id)
@@ -180,7 +180,7 @@ def render_goal_actions(
         viewport,
     )
     if goal_is_done or skipped:
-        if skipped and action_cols[0].button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
+        if skipped and actions.button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
             update_goal_progress_with_push(
                 persistence,
                 push_storage,
@@ -194,13 +194,13 @@ def render_goal_actions(
             st.rerun()
     elif can_use_apple_steps_shortcut:
         shortcut_name = health_data_settings.get("apple_steps_shortcut_name", "Dogether Steps")
-        action_cols[0].link_button(
+        actions.link_button(
             "Input Data",
             apple_steps_shortcut_run_url(shortcut_name),
             type="primary",
             use_container_width=True,
         )
-    elif action_cols[0].button(
+    elif actions.button(
         "Done",
         key=f"done_{goal['id']}",
         type="primary",
@@ -217,8 +217,7 @@ def render_goal_actions(
         )
         st.rerun()
     if not skipped:
-        manage_col = action_cols[0] if goal_is_done else action_cols[1]
-        with manage_col.popover("Manage", use_container_width=True):
+        with actions.popover("Manage", use_container_width=True):
             current_key = f"current_{goal['id']}"
             current = st.number_input(
                 "Current",
