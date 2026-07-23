@@ -17,54 +17,15 @@ from src.push.notifications import create_friend_invite_with_push, create_friend
 from src.push.storage import PushStorage
 
 
-def _friend_request_action_styles() -> None:
+def _friend_list_styles() -> None:
     st.markdown(
         """
         <style>
-            div[data-testid="stElementContainer"]:has(.friend-request-actions)
-                ~ div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-of-type(2) button,
-            div[data-testid="stElementContainer"]:has(.friend-request-actions)
-                ~ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) button {
-                    background: #dc2626 !important;
-                    border-color: #dc2626 !important;
-                    color: #ffffff !important;
-            }
-
-            div[data-testid="stElementContainer"]:has(.friend-request-actions)
-                ~ div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:nth-of-type(2) button:hover,
-            div[data-testid="stElementContainer"]:has(.friend-request-actions)
-                ~ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) button:hover {
-                    background: #b91c1c !important;
-                    border-color: #b91c1c !important;
-                    color: #ffffff !important;
-            }
-
             .friends-mobile-separator {
                 display: none;
             }
 
             @media (max-width: 640px) {
-                div[data-testid="stElementContainer"]:has(.friend-share-actions)
-                    + div[data-testid="stHorizontalBlock"] {
-                        display: flex !important;
-                        flex-direction: row !important;
-                        flex-wrap: nowrap !important;
-                        gap: 0.5rem !important;
-                }
-
-                div[data-testid="stElementContainer"]:has(.friend-share-actions)
-                    + div[data-testid="stHorizontalBlock"] > div {
-                        flex: 0 1 auto !important;
-                        min-width: 0 !important;
-                        width: auto !important;
-                }
-
-                div[data-testid="stElementContainer"]:has(.friend-share-actions)
-                    + div[data-testid="stHorizontalBlock"] button {
-                        width: auto !important;
-                        white-space: nowrap !important;
-                }
-
                 .friends-mobile-separator {
                     display: block;
                     border: 0;
@@ -145,8 +106,8 @@ def _render_friend_suggestion_candidate(
             """,
             unsafe_allow_html=True,
         )
-        cols = st.columns([1, 1, 4])
-        if cols[0].button(
+        actions = st.container(horizontal=True)
+        if actions.button(
             "Suggest friendship",
             key=(
                 f"suggest_friendship_{candidate['goal_id']}"
@@ -168,7 +129,7 @@ def _render_friend_suggestion_candidate(
                 st.rerun()
             except ValueError as error:
                 st.error(str(error))
-        if cols[1].button(
+        if actions.button(
             "Dismiss",
             key=(
                 f"dismiss_friendship_{candidate['goal_id']}"
@@ -196,7 +157,7 @@ def render_friends(
     push_settings: dict[str, str] | None = None,
     now: datetime | None = None,
 ) -> None:
-    _friend_request_action_styles()
+    _friend_list_styles()
 
     st.title("Friends")
     _render_friend_share_message()
@@ -225,7 +186,6 @@ def render_friends(
                 except ValueError as error:
                     st.error(str(error))
     else:
-        st.markdown('<div class="friend-share-actions"></div>', unsafe_allow_html=True)
         container = st.container(horizontal=True)
         if container.button("Share app", icon=":material/share:", type="primary"):
             try:
@@ -264,13 +224,12 @@ def render_friends(
                     """,
                     unsafe_allow_html=True,
                 )
-                st.markdown('<div class="friend-request-actions"></div>', unsafe_allow_html=True)
-                cols = st.columns([1, 1, 5])
-                if cols[0].button("Yes", key=f"accept_{invite['id']}", type="primary"):
+                actions = st.container(horizontal=True)
+                if actions.button("Yes", key=f"accept_{invite['id']}", type="primary"):
                     persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=True, now=now)
                     st.success("Friend request accepted.")
                     st.rerun()
-                if cols[1].button("No", key=f"decline_{invite['id']}"):
+                if actions.button("No", key=f"decline_{invite['id']}"):
                     persistence.respond_friend_invite(invite["id"], user_id, current_user["email"], approve=False, now=now)
                     st.info("Friend request declined.")
                     st.rerun()
@@ -304,9 +263,8 @@ def render_friends(
                     """,
                     unsafe_allow_html=True,
                 )
-                st.markdown('<div class="friend-request-actions"></div>', unsafe_allow_html=True)
-                cols = st.columns([1, 1, 5])
-                if cols[0].button(
+                actions = st.container(horizontal=True)
+                if actions.button(
                     "Yes",
                     key=f"accept_suggestion_{suggestion['id']}",
                     type="primary",
@@ -317,7 +275,7 @@ def render_friends(
                     else:
                         st.success(f"Friend suggestion accepted. Waiting for {other_name} to accept.")
                     st.rerun()
-                if cols[1].button("No", key=f"decline_suggestion_{suggestion['id']}"):
+                if actions.button("No", key=f"decline_suggestion_{suggestion['id']}"):
                     persistence.respond_friend_suggestion(suggestion["id"], user_id, approve=False, now=now)
                     st.info("Friend suggestion declined.")
                     st.rerun()
@@ -419,10 +377,10 @@ def render_friends(
             remove_label = "Confirm Remove" if confirm_remove else "Remove"
             remove_type = "primary" if confirm_remove else "secondary"
 
-            cols = st.columns([3, 3, 1])
-            cols[0].write(friend.get("name", friend["email"]))
-            cols[1].write(friend.get("email", ""))
-            if cols[2].button(remove_label, key=f"remove_friend_{friend_id}", type=remove_type):
+            row = st.container(horizontal=True)
+            row.write(friend.get("name", friend["email"]))
+            row.write(friend.get("email", ""))
+            if row.button(remove_label, key=f"remove_friend_{friend_id}", type=remove_type):
                 if confirm_remove:
                     persistence.remove_friend(user_id, friend_id, now=now)
                     pending_removals.discard(friend_id)
