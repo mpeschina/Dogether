@@ -239,12 +239,8 @@ def render_friends(
         share_link = _friend_share_link(str(share_code))
         if share_button_clicked:
             _copy_share_link_to_clipboard(share_link)
-        st.success(
-            "Shareable link copied to your clipboard.\n\n"
-            "- When another user opens it, they will send you a friend invite automatically after logging in.\n"
-            f"- Link for reference: {share_link}"
-        )
-        
+        st.success("Shareable link copied to your clipboard.")
+
     incoming = persistence.incoming_friend_invites(current_user["email"], user_id)
     incoming_suggestions = persistence.incoming_friend_suggestions(user_id)
     if incoming or incoming_suggestions:

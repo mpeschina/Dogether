@@ -126,6 +126,9 @@ def mark_current_page(page_key: str) -> None:
         st.session_state.pop("goals_pending_leave_id", None)
     if page_key != "friends" or previous_page_key != "friends":
         st.session_state.pop("friends_pending_removals", None)
+    if previous_page_key == "friends" and page_key != "friends":
+        st.session_state.pop("friend_share_code", None)
+        st.session_state.pop("friend_share_link_display", None)
     if page_key == "friends" and previous_page_key != "friends":
         st.session_state.pop("show_invite_friend_form", None)
     if page_key == "historical_data_repair" and previous_page_key != "historical_data_repair":
