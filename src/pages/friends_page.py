@@ -44,6 +44,27 @@ def _friend_request_action_styles() -> None:
             }
 
             @media (max-width: 640px) {
+                div[data-testid="stElementContainer"]:has(.friend-share-actions)
+                    + div[data-testid="stHorizontalBlock"] {
+                        display: flex !important;
+                        flex-direction: row !important;
+                        flex-wrap: nowrap !important;
+                        gap: 0.5rem !important;
+                }
+
+                div[data-testid="stElementContainer"]:has(.friend-share-actions)
+                    + div[data-testid="stHorizontalBlock"] > div {
+                        flex: 0 1 auto !important;
+                        min-width: 0 !important;
+                        width: auto !important;
+                }
+
+                div[data-testid="stElementContainer"]:has(.friend-share-actions)
+                    + div[data-testid="stHorizontalBlock"] button {
+                        width: auto !important;
+                        white-space: nowrap !important;
+                }
+
                 .friends-mobile-separator {
                     display: block;
                     border: 0;
@@ -204,13 +225,14 @@ def render_friends(
                 except ValueError as error:
                     st.error(str(error))
     else:
-        cols = st.columns([1, 1, 4])
-        if cols[0].button("Share app", icon=":material/share:", type="primary"):
+        st.markdown('<div class="friend-share-actions"></div>', unsafe_allow_html=True)
+        container = st.container(horizontal=True)
+        if container.button("Share app", icon=":material/share:", type="primary"):
             try:
                 create_friend_share_link(persistence, user_id, st.session_state, now=now)
             except ValueError as error:
                 st.error(str(error))
-        if cols[1].button("Invite friend"):
+        if container.button("Invite friend"):
             st.session_state["show_invite_friend_form"] = True
             st.rerun()
 
