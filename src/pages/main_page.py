@@ -200,13 +200,7 @@ def render_goal_actions(
             type="primary",
             use_container_width=True,
         )
-    elif actions.button(
-        "Done",
-        key=f"done_{goal['id']}",
-        type="primary",
-        icon=":material/check_circle:",
-        use_container_width=True,
-    ):
+    elif actions.button("", key=f"done_{goal['id']}", type="primary", icon=":material/check_circle:", use_container_width=True, help="Done"):
         update_goal_progress_with_push(
             persistence,
             push_storage,
