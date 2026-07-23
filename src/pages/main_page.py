@@ -227,6 +227,17 @@ def render_goal_actions(
                 key=current_key,
             )
             manage_actions = st.container(horizontal=True)
+            if manage_actions.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
+                            update_goal_progress_with_push(
+                                persistence,
+                                push_storage,
+                                push_settings or {},
+                                goal_id=goal["id"],
+                                user_id=user_id,
+                                skipped=True,
+                                now=now,
+                            )
+                            st.rerun()
             if manage_actions.button("Save", key=f"save_{goal['id']}", type="primary", use_container_width=True):
                 update_goal_progress_with_push(
                     persistence,
@@ -235,17 +246,6 @@ def render_goal_actions(
                     goal_id=goal["id"],
                     user_id=user_id,
                     current=current,
-                    now=now,
-                )
-                st.rerun()
-            if manage_actions.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
-                update_goal_progress_with_push(
-                    persistence,
-                    push_storage,
-                    push_settings or {},
-                    goal_id=goal["id"],
-                    user_id=user_id,
-                    skipped=True,
                     now=now,
                 )
                 st.rerun()
