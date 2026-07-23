@@ -218,14 +218,15 @@ def render_goal_actions(
         st.rerun()
     if not skipped:
         with actions.popover("Manage", use_container_width=True):
-            manage_actions = st.container(horizontal=True)
+            
             current_key = f"current_{goal['id']}"
-            current = manage_actions.number_input(
+            current = st.number_input(
                 "Current",
                 min_value=0,
                 value=int(participant.get("current", 0)),
                 key=current_key,
             )
+            manage_actions = st.container(horizontal=True)
             if manage_actions.button("Save", key=f"save_{goal['id']}", type="primary", use_container_width=True):
                 update_goal_progress_with_push(
                     persistence,
