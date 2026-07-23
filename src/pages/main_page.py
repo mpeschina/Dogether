@@ -217,7 +217,7 @@ def render_goal_actions(
         )
         st.rerun()
     if not skipped:
-        with actions.popover("Manage", use_container_width=True):
+        with actions.popover("", icon=":material/edit:", help="Edit progress", use_container_width=True):
             
             current_key = f"current_{goal['id']}"
             current = st.number_input(
