@@ -204,6 +204,7 @@ def render_goal_actions(
         "Done",
         key=f"done_{goal['id']}",
         type="primary",
+        icon=":material/check_circle:",
         use_container_width=True,
     ):
         update_goal_progress_with_push(
