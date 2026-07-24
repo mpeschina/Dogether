@@ -119,11 +119,13 @@ def _render_configure_max_value(
     participant: dict,
     now: datetime | None,
 ) -> None:
+    container.write("Max Value")
     target = container.number_input(
         "Max Value",
         min_value=1,
         value=max(1, int(participant.get("target", 1))),
         key=f"max_value_{goal['id']}",
+        label_visibility="collapsed",
     )
     if container.button("Save", key=f"save_max_value_{goal['id']}"):
         persistence.update_goal_progress(
