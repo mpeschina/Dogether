@@ -28,7 +28,7 @@ def _render_goal_summary(
     summary_cols[0].write(goal["description"])
     summary_cols[1].write(schedule_label(goal))
     with summary_cols[2]:
-        _render_goal_notifications(persistence, goal, user_id, participant, now)
+        _render_configure_max_value(persistence, goal, user_id, participant, now)
 
 
 def _render_goal_notifications(
@@ -202,12 +202,12 @@ def _render_active_goal(
     with st.container(border=True):
         _render_goal_summary(persistence, goal, user_id, participant, now)
         with st.expander("Show Controls", expanded=False):
-            control_cols = st.columns([1.4, 1.6, 1])
+            control_cols = st.columns([1.6, 1.6, 1])
             with control_cols[0]:
-                _render_configure_max_value(persistence, goal, user_id, participant, now)
+                _render_goal_notifications(persistence, goal, user_id, participant, now)
+                _render_goal_reaction_notifications(persistence, goal, user_id, participant, now)
             with control_cols[1]:
                 _render_goal_notification_limit(persistence, goal, user_id, participant, now)
-                _render_goal_reaction_notifications(persistence, goal, user_id, participant, now)
             with control_cols[2]:
                 _render_leave_goal(persistence, goal, user_id, now)
             _render_add_goal_friends(
