@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
 
 import streamlit as st
 
@@ -24,11 +25,16 @@ def _render_goal_summary(
     participant: dict,
     now: datetime | None,
 ) -> None:
-    summary_cols = st.columns([3, 1.6, 1.2])
-    summary_cols[0].write(goal["description"])
-    summary_cols[1].write(schedule_label(goal))
-    with summary_cols[2]:
-        _render_configure_max_value(persistence, goal, user_id, participant, now)
+    row = st.container(horizontal=True)
+    row.markdown(
+        (
+            f"**{escape(str(goal['description']))}** "
+            f"<span style='color:#6b7280;font-size:0.875rem;'>"
+            f"({escape(schedule_label(goal))})</span>"
+        ),
+        unsafe_allow_html=True,
+    )
+    _render_configure_max_value(row, persistence, goal, user_id, participant, now)
 
 
 def _render_goal_notifications(
@@ -106,28 +112,28 @@ def _render_goal_notification_limit(
 
 
 def _render_configure_max_value(
+    container,
     persistence: Persistence,
     goal: dict,
     user_id: str,
     participant: dict,
     now: datetime | None,
 ) -> None:
-    with st.popover("Max value", use_container_width=True):
-        with st.form(f"configure_max_value_{goal['id']}"):
-            target = st.number_input(
-                "Max value",
-                min_value=1,
-                value=max(1, int(participant.get("target", 1))),
-            )
-            if st.form_submit_button("Save"):
-                persistence.update_goal_progress(
-                    goal["id"],
-                    user_id,
-                    target=int(target),
-                    now=now,
-                )
-                st.success("Max value updated.")
-                st.rerun()
+    target = container.number_input(
+        "Max Value",
+        min_value=1,
+        value=max(1, int(participant.get("target", 1))),
+        key=f"max_value_{goal['id']}",
+    )
+    if container.button("Save", key=f"save_max_value_{goal['id']}"):
+        persistence.update_goal_progress(
+            goal["id"],
+            user_id,
+            target=int(target),
+            now=now,
+        )
+        st.success("Max value updated.")
+        st.rerun()
 
 
 def _render_add_goal_friends(
