@@ -54,6 +54,29 @@ def _render_goal_notifications(
         st.rerun()
 
 
+def _render_goal_reaction_notifications(
+    persistence: Persistence,
+    goal: dict,
+    user_id: str,
+    participant: dict,
+    now: datetime | None,
+) -> None:
+    notifications_enabled = bool(participant.get("reaction_notifications_enabled", True))
+    selected_notifications_enabled = st.toggle(
+        "Notify me on emote reactions",
+        value=notifications_enabled,
+        key=f"reaction_notifications_{goal['id']}",
+    )
+    if selected_notifications_enabled != notifications_enabled:
+        persistence.set_goal_reaction_notifications(
+            goal["id"],
+            user_id,
+            selected_notifications_enabled,
+            now=now,
+        )
+        st.rerun()
+
+
 def _render_goal_notification_limit(
     persistence: Persistence,
     goal: dict,
@@ -184,6 +207,7 @@ def _render_active_goal(
                 _render_configure_max_value(persistence, goal, user_id, participant, now)
             with control_cols[1]:
                 _render_goal_notification_limit(persistence, goal, user_id, participant, now)
+                _render_goal_reaction_notifications(persistence, goal, user_id, participant, now)
             with control_cols[2]:
                 _render_leave_goal(persistence, goal, user_id, now)
             _render_add_goal_friends(

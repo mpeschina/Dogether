@@ -587,6 +587,8 @@ def test_goal_completion_notifications_default_enabled_and_once_per_day(tmp_path
 
     assert goal["participants"]["alice"]["completion_notifications_enabled"] is True
     assert goal["participants"]["bob"]["completion_notifications_enabled"] is True
+    assert goal["participants"]["alice"]["reaction_notifications_enabled"] is True
+    assert goal["participants"]["bob"]["reaction_notifications_enabled"] is True
 
     completed = persistence.update_goal_progress(
         goal["id"],
@@ -617,6 +619,63 @@ def test_goal_completion_notification_preference_is_per_participant(tmp_path: Pa
     assert updated["participants"]["bob"]["completion_notifications_enabled"] is False
     assert updated["participants"]["alice"]["completion_notifications_enabled"] is True
     assert completed["_notification_event"]["type"] == "goal_completed"
+
+
+def test_goal_reaction_notification_preference_defaults_and_is_per_participant(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    users_and_friendship(persistence)
+    goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 10, current=0)
+
+    updated = persistence.set_goal_reaction_notifications(goal["id"], "bob", False)
+
+    assert goal["participants"]["alice"]["reaction_notifications_enabled"] is True
+    assert goal["participants"]["bob"]["reaction_notifications_enabled"] is True
+    assert updated["participants"]["bob"]["reaction_notifications_enabled"] is False
+    assert updated["participants"]["alice"]["reaction_notifications_enabled"] is True
+
+
+def test_goal_reaction_notification_preference_is_normalized_for_legacy_goals(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    path.write_text(
+        json.dumps(
+            {
+                "users": {
+                    "alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alice"},
+                },
+                "goals": {
+                    "goal_legacy": {
+                        "id": "goal_legacy",
+                        "description": "Run",
+                        "schedule_class": "daily",
+                        "required_periods": 1,
+                        "created_by": "alice",
+                        "participant_user_ids": ["alice"],
+                        "participants": {
+                            "alice": {
+                                "target": 10,
+                                "current": 0,
+                                "period_start": "2026-06-01T00:00:00+02:00",
+                                "completion_streak": 0,
+                                "completion_notifications_enabled": True,
+                                "completion_notifications_max_per_day": 3,
+                                "completion_notification_counts": {},
+                                "skipped": False,
+                                "period_outcomes": {},
+                                "left_at": None,
+                            },
+                        },
+                        "created_at": "2026-06-01T07:00:00+00:00",
+                        "archived_at": None,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    persistence = JsonPersistence(path)
+
+    assert persistence.raw_data()["goals"]["goal_legacy"]["participants"]["alice"]["reaction_notifications_enabled"] is True
 
 
 def test_goal_completion_reaction_is_one_emote_per_reacting_user(tmp_path: Path) -> None:
@@ -1338,6 +1397,39 @@ def test_mongodb_native_goal_progress_uses_targeted_updates() -> None:
     assert not [call for call in database["goals"].calls if call[0] == "replace_one"]
     assert [call for call in database["users_inventory"].calls if call[0] == "update_one"]
     assert database["goals"].documents[goal["id"]]["participants"]["alice"]["current"] == 4
+
+
+def test_mongodb_native_goal_reaction_notifications_use_targeted_update() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    goal = persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Run",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=10,
+        current=0,
+        now=at("2026-06-01T09:01:00"),
+    )
+    for collection in database.collections.values():
+        collection.calls.clear()
+
+    updated = persistence.set_goal_reaction_notifications(goal["id"], alice["user_id"], False)
+
+    assert updated["participants"]["alice"]["reaction_notifications_enabled"] is False
+    goal_update_calls = [call for call in database["goals"].calls if call[0] == "update_one"]
+    assert goal_update_calls == [
+        (
+            "update_one",
+            {"_id": goal["id"]},
+            {"$set": {"participants.alice.reaction_notifications_enabled": False}},
+            False,
+        )
+    ]
+    assert not [call for call in database["goals"].calls if call[0] == "replace_one"]
+    assert database["goals"].documents[goal["id"]]["participants"]["alice"]["reaction_notifications_enabled"] is False
 
 
 def test_mongodb_native_friend_share_code_and_user_id_invite() -> None:

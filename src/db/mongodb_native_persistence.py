@@ -727,6 +727,7 @@ class MongoNativePersistence:
                     "period_start": period_start,
                     "completion_streak": 0,
                     "completion_notifications_enabled": True,
+                    "reaction_notifications_enabled": True,
                     "completion_notifications_max_per_day": 3,
                     "completion_notification_counts": {},
                     "skipped": False,
@@ -775,6 +776,7 @@ class MongoNativePersistence:
                 "period_start": period_start,
                 "completion_streak": 0,
                 "completion_notifications_enabled": True,
+                "reaction_notifications_enabled": True,
                 "completion_notifications_max_per_day": 3,
                 "completion_notification_counts": {},
                 "skipped": False,
@@ -899,6 +901,18 @@ class MongoNativePersistence:
         self._goals_collection().update_one(
             {"_id": goal_id},
             {"$set": {f"participants.{user_id}.completion_notifications_max_per_day": limit}},
+        )
+        self._cache_clear()
+        return goal
+
+    def set_goal_reaction_notifications(self, goal_id: str, user_id: str, enabled: bool, now: datetime | None = None) -> dict[str, Any]:
+        goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
+        if not goal or not _goal_active_for_user(goal, user_id):
+            raise ValueError("Goal is not active for this user.")
+        goal["participants"][user_id]["reaction_notifications_enabled"] = bool(enabled)
+        self._goals_collection().update_one(
+            {"_id": goal_id},
+            {"$set": {f"participants.{user_id}.reaction_notifications_enabled": bool(enabled)}},
         )
         self._cache_clear()
         return goal

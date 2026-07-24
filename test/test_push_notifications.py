@@ -427,6 +427,40 @@ def test_goal_reaction_push_uses_incomplete_goal_message(monkeypatch, tmp_path: 
     assert calls[0][1]["body"] == "Bob sent 👍 for “Daily Steps”"
 
 
+def test_goal_reaction_push_respects_completed_user_goal_preference(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    invite = persistence.create_friend_invite("alice", alice["email"], bob["email"])
+    persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True)
+    goal = persistence.create_goal("alice", "Daily Steps", "daily", 1, ["bob"], 10, current=10, now=at("2026-06-01T09:00:00"))
+    persistence.set_goal_reaction_notifications(goal["id"], "alice", False, now=at("2026-06-01T09:30:00"))
+    calls = []
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1, "removed": 0, "errors": []},
+    )
+
+    updated = set_goal_completion_reaction_with_push(
+        persistence,
+        MemoryPushStorage(),
+        {
+            "vapid_public_key": "public",
+            "vapid_private_key": "private",
+            "vapid_subject": "mailto:test@example.com",
+        },
+        goal_id=goal["id"],
+        completed_user_id="alice",
+        reacting_user_id="bob",
+        emote="👍",
+        now=at("2026-06-01T10:00:00"),
+    )
+
+    assert updated["participants"]["alice"]["completion_reactions"]["2026-06-01"]["bob"]["emote"] == "👍"
+    assert calls == []
+    assert "reaction_notification_timestamps" not in (persistence.get_user("alice") or {})
+
+
 def test_goal_reaction_push_throttle_allows_different_reacting_users(monkeypatch, tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")

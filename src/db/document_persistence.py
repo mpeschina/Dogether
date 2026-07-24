@@ -556,6 +556,7 @@ class DocumentPersistence:
                         "period_start": period_start,
                         "completion_streak": 0,
                         "completion_notifications_enabled": True,
+                        "reaction_notifications_enabled": True,
                         "completion_notifications_max_per_day": 3,
                         "completion_notification_counts": {},
                         "skipped": False,
@@ -621,6 +622,7 @@ class DocumentPersistence:
                     "period_start": period_start,
                     "completion_streak": 0,
                     "completion_notifications_enabled": True,
+                    "reaction_notifications_enabled": True,
                     "completion_notifications_max_per_day": 3,
                     "completion_notification_counts": {},
                     "skipped": False,
@@ -777,6 +779,23 @@ class DocumentPersistence:
             if not goal or not _goal_active_for_user(goal, user_id):
                 raise ValueError("Goal is not active for this user.")
             goal["participants"][user_id]["completion_notifications_max_per_day"] = max(1, int(max_per_day))
+            self._write(data)
+            return goal
+
+    def set_goal_reaction_notifications(
+        self,
+        goal_id: str,
+        user_id: str,
+        enabled: bool,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        self.rollover_periods(now)
+        with self._lock:
+            data = self._read()
+            goal = data["goals"].get(goal_id)
+            if not goal or not _goal_active_for_user(goal, user_id):
+                raise ValueError("Goal is not active for this user.")
+            goal["participants"][user_id]["reaction_notifications_enabled"] = bool(enabled)
             self._write(data)
             return goal
 

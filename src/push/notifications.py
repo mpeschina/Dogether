@@ -184,6 +184,9 @@ def set_goal_completion_reaction_with_push(
         return goal
     if not push_storage or not push_configured(push_settings):
         return goal
+    participant = goal.get("participants", {}).get(completed_user_id, {})
+    if not participant.get("reaction_notifications_enabled", True):
+        return goal
     if not persistence.claim_goal_reaction_notification(goal_id, completed_user_id, reacting_user_id, now=now):
         return goal
 
@@ -191,7 +194,6 @@ def set_goal_completion_reaction_with_push(
     reacting_user = users.get(reacting_user_id, {})
     reacting_name = reacting_user.get("name") or reacting_user.get("email") or "A friend"
     description = str(goal.get("description") or "your goal")
-    participant = goal.get("participants", {}).get(completed_user_id, {})
     current = max(0, int(participant.get("current", 0) or 0))
     target = max(1, int(participant.get("target", 1) or 1))
     body = (

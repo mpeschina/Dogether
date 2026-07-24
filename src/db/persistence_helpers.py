@@ -394,6 +394,9 @@ def _normalise_goal_participants(goals: dict[str, Any]) -> None:
                 participant["completion_notifications_enabled"] = bool(
                     participant.get("completion_notifications_enabled", True)
                 )
+                participant["reaction_notifications_enabled"] = bool(
+                    participant.get("reaction_notifications_enabled", True)
+                )
                 participant["completion_notifications_max_per_day"] = max(
                     1,
                     int(participant.get("completion_notifications_max_per_day", 3) or 3),

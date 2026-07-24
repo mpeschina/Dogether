@@ -157,6 +157,14 @@ class Persistence(Protocol):
         now: datetime | None = None,
     ) -> dict[str, Any]: ...
 
+    def set_goal_reaction_notifications(
+        self,
+        goal_id: str,
+        user_id: str,
+        enabled: bool,
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
     def claim_goal_completion_notification(
         self,
         goal_id: str,
