@@ -25,7 +25,11 @@ def _render_goal_summary(
     participant: dict,
     now: datetime | None,
 ) -> None:
-    row = st.container(horizontal=True)
+    row = st.container(
+        horizontal=True,
+        horizontal_alignment="distribute",
+        vertical_alignment="center",
+    )
     row.markdown(
         (
             f"**{escape(str(goal['description']))}** "
@@ -34,7 +38,13 @@ def _render_goal_summary(
         ),
         unsafe_allow_html=True,
     )
-    _render_configure_max_value(row, persistence, goal, user_id, participant, now)
+    max_value_controls = row.container(
+        horizontal=True,
+        horizontal_alignment="right",
+        vertical_alignment="center",
+        width="content",
+    )
+    _render_configure_max_value(max_value_controls, persistence, goal, user_id, participant, now)
 
 
 def _render_goal_notifications(
@@ -119,13 +129,16 @@ def _render_configure_max_value(
     participant: dict,
     now: datetime | None,
 ) -> None:
+    current_target = max(1, int(participant.get("target", 1)))
+    input_width = min(150, max(92, 76 + (len(str(current_target)) * 10)))
     container.write("Max Value")
     target = container.number_input(
         "Max Value",
         min_value=1,
-        value=max(1, int(participant.get("target", 1))),
+        value=current_target,
         key=f"max_value_{goal['id']}",
         label_visibility="collapsed",
+        width=input_width,
     )
     if container.button("Save", key=f"save_max_value_{goal['id']}"):
         persistence.update_goal_progress(
