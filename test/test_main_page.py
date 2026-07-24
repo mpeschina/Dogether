@@ -511,6 +511,10 @@ def test_main_page_uses_viewport_render_paths() -> None:
     assert "def main_viewport" not in content
     assert "MAIN_VIEWPORT_SESSION_KEY" not in content
     assert "def main_render_path" not in content
+    assert "@st.fragment" in content
+    assert "def render_goal_card(" in content
+    assert "def _current_goal_for_user(" in content
+    assert '_current_goal_for_user(persistence, goal_id, user_id, now=now)' in content
     assert 'render_path = "widescreen"' in content
     assert 'viewport.get("renderPath") == "widescreen"' in content
     assert "def render_goal_actions(" in content
@@ -535,6 +539,13 @@ def test_main_page_reads_viewport_before_loading_data() -> None:
 
     assert content.index("viewport = viewport_info(require_ready=False)") < content.index("persistence.account_stats")
     assert "viewport = viewport_info(require_ready=False)" in content
+
+
+def test_main_page_goal_actions_use_fragment_scoped_reruns() -> None:
+    content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
+
+    assert 'st.rerun(scope="fragment")' in content
+    assert "st.rerun()" not in content
 
 
 def test_participant_goal_is_completed_requires_completed_unskipped_progress() -> None:
@@ -628,6 +639,7 @@ def test_main_page_uses_slim_component_picker_for_active_friend_rows() -> None:
     assert 'st.popover("React")' not in content
     assert "set_goal_completion_reaction" in content
     assert 'action == "close"' in content
+    assert 'st.rerun(scope="fragment")' in content
 
 
 def test_participant_reaction_component_build_exists_with_inline_picker() -> None:

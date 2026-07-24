@@ -40,7 +40,7 @@ def _render_goal_notifications(
 ) -> None:
     notifications_enabled = bool(participant.get("completion_notifications_enabled", True))
     selected_notifications_enabled = st.toggle(
-        "Notify me",
+        "Notify me when others complete",
         value=notifications_enabled,
         key=f"completion_notifications_{goal['id']}",
     )
@@ -62,7 +62,7 @@ def _render_goal_notification_limit(
     now: datetime | None,
 ) -> None:
     current_limit = max(1, int(participant.get("completion_notifications_max_per_day", 3) or 3))
-    with st.popover("Max push notifications/day", use_container_width=True):
+    with st.popover("Max completion notifications/day", use_container_width=True):
         with st.form(f"configure_notification_limit_{goal['id']}"):
             selected_limit = st.number_input(
                 "Max push notifications/day",

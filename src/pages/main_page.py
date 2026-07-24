@@ -191,7 +191,7 @@ def render_goal_actions(
                 skipped=False,
                 now=now,
             )
-            st.rerun()
+            st.rerun(scope="fragment")
     elif can_use_apple_steps_shortcut:
         shortcut_name = health_data_settings.get("apple_steps_shortcut_name", "Dogether Steps")
         actions.link_button(
@@ -210,7 +210,7 @@ def render_goal_actions(
             current=max(1, target),
             now=now,
         )
-        st.rerun()
+        st.rerun(scope="fragment")
     if not skipped:
         with actions.popover("", icon=":material/edit:", help="Edit progress", use_container_width=True):
             
@@ -223,16 +223,16 @@ def render_goal_actions(
             )
             manage_actions = st.container(horizontal=True)
             if manage_actions.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
-                            update_goal_progress_with_push(
-                                persistence,
-                                push_storage,
-                                push_settings or {},
-                                goal_id=goal["id"],
-                                user_id=user_id,
-                                skipped=True,
-                                now=now,
-                            )
-                            st.rerun()
+                update_goal_progress_with_push(
+                    persistence,
+                    push_storage,
+                    push_settings or {},
+                    goal_id=goal["id"],
+                    user_id=user_id,
+                    skipped=True,
+                    now=now,
+                )
+                st.rerun(scope="fragment")
             if manage_actions.button("Save", key=f"save_{goal['id']}", type="primary", use_container_width=True):
                 update_goal_progress_with_push(
                     persistence,
@@ -243,7 +243,7 @@ def render_goal_actions(
                     current=current,
                     now=now,
                 )
-                st.rerun()
+                st.rerun(scope="fragment")
 
 
 def render_participant_progress(
@@ -303,11 +303,11 @@ def render_participant_progress(
         st.session_state["participant_reaction_open_row"] = (
             None if st.session_state.get("participant_reaction_open_row") == row_id else row_id
         )
-        st.rerun()
+        st.rerun(scope="fragment")
     if action == "close":
         if st.session_state.get("participant_reaction_open_row") == row_id:
             st.session_state["participant_reaction_open_row"] = None
-            st.rerun()
+            st.rerun(scope="fragment")
         return
     if action == "react" and emote in REACTION_EMOTES:
         try:
@@ -325,7 +325,110 @@ def render_participant_progress(
             st.error(str(error))
         else:
             st.session_state["participant_reaction_open_row"] = None
-            st.rerun()
+            st.rerun(scope="fragment")
+
+
+def _current_goal_for_user(
+    persistence: Persistence,
+    goal_id: str,
+    user_id: str,
+    now: datetime | None = None,
+) -> dict | None:
+    for goal in persistence.list_goals_for_user(user_id, now=now):
+        if goal.get("id") == goal_id:
+            return goal
+    return None
+
+
+@st.fragment
+def render_goal_card(
+    persistence: Persistence,
+    goal_id: str,
+    user_id: str,
+    push_storage: PushStorage | None = None,
+    push_settings: dict[str, str] | None = None,
+    now: datetime | None = None,
+    viewport: dict | None = None,
+) -> None:
+    goal = _current_goal_for_user(persistence, goal_id, user_id, now=now)
+    if goal is None or user_id not in goal.get("participants", {}):
+        st.info("This goal is no longer available.")
+        return
+
+    render_path = "mobile_portrait"
+    if isinstance(viewport, dict) and viewport.get("renderPath") == "widescreen":
+        render_path = "widescreen"
+
+    all_participant_ids = sorted(goal.get("participants", {}))
+    users = persistence.users_by_ids(all_participant_ids)
+    friend_ids = {friend["user_id"] for friend in persistence.list_friends(user_id)}
+
+    with st.container(border=True):
+        st.markdown(
+            (
+                "<div style='display:flex;align-items:baseline;gap:0.65rem;"
+                "flex-wrap:wrap;margin:0.15rem 0 0.65rem;'>"
+                f"<h3 style='margin:0;'>{escape(goal['description'])}</h3>"
+                "<span style='color:#6b7280;font-size:0.86rem;'>"
+                f"{escape(schedule_label(goal))}"
+                "</span>"
+                "</div>"
+            ),
+            unsafe_allow_html=True,
+        )
+        if render_path == "mobile_portrait" and user_id in goal.get("participants", {}):
+            render_goal_actions(
+                persistence,
+                goal,
+                goal["participants"][user_id],
+                user_id,
+                push_storage,
+                push_settings,
+                now,
+                viewport,
+            )
+        participant_ids = visible_participant_ids(goal, user_id, friend_ids)
+        for participant_id in participant_ids:
+            participant = goal["participants"][participant_id]
+            if render_path == "mobile_portrait":
+                render_participant_progress(
+                    goal,
+                    participant_id,
+                    participant,
+                    users,
+                    now,
+                    persistence,
+                    user_id,
+                    push_storage,
+                    push_settings,
+                )
+                continue
+
+            cols = st.columns([6, 2])
+            with cols[0]:
+                render_participant_progress(
+                    goal,
+                    participant_id,
+                    participant,
+                    users,
+                    now,
+                    persistence,
+                    user_id,
+                    push_storage,
+                    push_settings,
+                )
+            if participant_id == user_id:
+                with cols[1]:
+                    render_goal_actions(
+                        persistence,
+                        goal,
+                        participant,
+                        user_id,
+                        push_storage,
+                        push_settings,
+                        now,
+                        viewport,
+                    )
 
 
 def render_main(
@@ -361,9 +464,6 @@ def render_main(
     )
 
     viewport = viewport_info(require_ready=False) # ensure mobile first, correct on re-run, when necessary
-    render_path = "mobile_portrait"
-    if isinstance(viewport, dict) and viewport.get("renderPath") == "widescreen":
-        render_path = "widescreen"
 
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)
@@ -373,53 +473,13 @@ def render_main(
         st.info("Create a shared goal with a friend to get started.")
         return
 
-    all_participant_ids = sorted({uid for goal in goals for uid in goal.get("participants", {})})
-    users = persistence.users_by_ids(all_participant_ids)
-    friend_ids = {friend["user_id"] for friend in persistence.list_friends(user_id)}
     for goal in goals:
-        with st.container(border=True):
-            st.markdown(
-                (
-                    "<div style='display:flex;align-items:baseline;gap:0.65rem;"
-                    "flex-wrap:wrap;margin:0.15rem 0 0.65rem;'>"
-                    f"<h3 style='margin:0;'>{escape(goal['description'])}</h3>"
-                    "<span style='color:#6b7280;font-size:0.86rem;'>"
-                    f"{escape(schedule_label(goal))}"
-                    "</span>"
-                    "</div>"
-                ),
-                unsafe_allow_html=True,
-            )
-            if render_path == "mobile_portrait" and user_id in goal.get("participants", {}):
-                render_goal_actions(
-                    persistence,
-                    goal,
-                    goal["participants"][user_id],
-                    user_id,
-                    push_storage,
-                    push_settings,
-                    now,
-                    viewport,
-                )
-            participant_ids = visible_participant_ids(goal, user_id, friend_ids)
-            for participant_id in participant_ids:
-                participant = goal["participants"][participant_id]
-                if render_path == "mobile_portrait":
-                    render_participant_progress(goal, participant_id, participant, users, now, persistence, user_id, push_storage, push_settings)
-                    continue
-
-                cols = st.columns([6, 2])
-                with cols[0]:
-                    render_participant_progress(goal, participant_id, participant, users, now, persistence, user_id, push_storage, push_settings)
-                if participant_id == user_id:
-                    with cols[1]:
-                        render_goal_actions(
-                            persistence,
-                            goal,
-                            participant,
-                            user_id,
-                            push_storage,
-                            push_settings,
-                            now,
-                            viewport,
-                        )
+        render_goal_card(
+            persistence,
+            goal["id"],
+            user_id,
+            push_storage,
+            push_settings,
+            now,
+            viewport,
+        )
