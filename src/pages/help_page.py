@@ -7,6 +7,7 @@ from src.assistant.events import (
     button_test_event,
     complete_welcome_event,
     event_for_help_visit,
+    third_event,
     welcome_event,
 )
 
@@ -24,10 +25,13 @@ def render_help(previous_page_key: str | None = None) -> None:
         complete_welcome_event(st.session_state)
     elif event == "button_test":
         button_test_event(st.session_state)
+    elif event == "third_event":
+        third_event(st.session_state)
     else:
-        pass # do nothing. 
+        pass
 
-    st.chat_input("Message the assistant", disabled=True, key="help_assistant_dummy_input")
+    if event != "third_event":
+        st.chat_input("Message the assistant", disabled=True, key="help_assistant_dummy_input")
 
 
 def _render_styles() -> None:

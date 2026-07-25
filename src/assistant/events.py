@@ -16,6 +16,13 @@ WELCOME_PENDING: Final = "welcome_pending"
 WELCOME_COMPLETED: Final = "welcome_completed"
 BUTTON_TEST_ACTIVE: Final = "button_test_active"
 BUTTON_TEST_COMPLETED: Final = "button_test_completed"
+THIRD_EVENT_ACTIVE: Final = "third_event_active"
+THIRD_EVENT_COMPLETED: Final = "third_event_completed"
+THIRD_EVENT_CLICKS_KEY: Final = "help_assistant_third_event_clicks"
+
+STATUS_CLICK_COUNT: Final = 10
+PROGRESS_BAR_CLICK_COUNT: Final = 40
+PROGRESS_BAR_COUNT: Final = 3
 
 
 def event_for_help_visit(
@@ -34,6 +41,11 @@ def event_for_help_visit(
         return "button_test"
     if state == BUTTON_TEST_ACTIVE:
         return "button_test"
+    if state == BUTTON_TEST_COMPLETED and previous_page_key != HELP_PAGE_KEY:
+        session_state[HELP_STORY_STATE_KEY] = THIRD_EVENT_ACTIVE
+        return "third_event"
+    if state == THIRD_EVENT_ACTIVE:
+        return "third_event"
     return None
 
 
@@ -65,6 +77,30 @@ def button_test_event(session_state: MutableMapping[str, object]) -> None:
 
     session_state[HELP_STORY_STATE_KEY] = BUTTON_TEST_COMPLETED
     say(f"Thanks — you selected {selected_choice}.")
+    assistant_leave()
+
+
+def third_event(session_state: MutableMapping[str, object]) -> None:
+    """Run the empty-input click challenge shown after the button test."""
+
+    if _send_control_clicked():
+        session_state[THIRD_EVENT_CLICKS_KEY] = int(session_state.get(THIRD_EVENT_CLICKS_KEY, 0)) + 1
+
+    clicks = int(session_state.get(THIRD_EVENT_CLICKS_KEY, 0))
+    if clicks <= STATUS_CLICK_COUNT:
+        if clicks:
+            st.markdown(f"<div class='assistant-status'>{clicks}x</div>", unsafe_allow_html=True)
+        return
+
+    progress_clicks = clicks - STATUS_CLICK_COUNT
+    _render_progress_bars(progress_clicks)
+    if progress_clicks < PROGRESS_BAR_CLICK_COUNT * PROGRESS_BAR_COUNT:
+        return
+
+    session_state[HELP_STORY_STATE_KEY] = THIRD_EVENT_COMPLETED
+    say("Come on.")
+    typing_indicator(4)
+    say("I AM NOT HERE!")
     assistant_leave()
 
 
@@ -103,3 +139,24 @@ def choices(label: str, *options: str) -> str | None:
         if column.button(option, key=f"help_assistant_choice_{option}", use_container_width=True):
             return option
     return None
+
+
+def _send_control_clicked() -> bool:
+    """Render an enabled, text-optional Send control for the third event."""
+
+    with st.form("help_assistant_third_event_form", clear_on_submit=True):
+        st.text_input("Message the assistant", label_visibility="collapsed", placeholder="Message the assistant")
+        return st.form_submit_button("Send", use_container_width=True)
+
+
+def _render_progress_bars(progress_clicks: int) -> None:
+    bar_count = min(
+        PROGRESS_BAR_COUNT,
+        (progress_clicks + PROGRESS_BAR_CLICK_COUNT - 1) // PROGRESS_BAR_CLICK_COUNT,
+    )
+    for index in range(bar_count):
+        bar_clicks = min(
+            PROGRESS_BAR_CLICK_COUNT,
+            max(0, progress_clicks - index * PROGRESS_BAR_CLICK_COUNT),
+        )
+        st.progress(bar_clicks / PROGRESS_BAR_CLICK_COUNT, text=f"{bar_clicks} / {PROGRESS_BAR_CLICK_COUNT}")
