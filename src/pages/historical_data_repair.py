@@ -132,37 +132,56 @@ def _render_period_inputs(
     period_starts: list[datetime],
 ) -> dict[datetime, tuple[int, int, int]]:
     values = {}
-    header_cols = st.columns([2.2, 1, 1.35])
-    header_cols[0].caption("Period")
-    header_cols[1].caption("Status")
-    header_cols[2].caption("Value")
+    with st.container(
+        key="history_repair_header",
+        horizontal=True,
+        vertical_alignment="center",
+        gap="small",
+    ):
+        with st.container(width=120):  # Period
+            st.caption("Period")
+        with st.container(width=110):  # Status
+            st.caption("Status")
+        with st.container(width="stretch"):  # Value
+            st.caption("Value")
     for period_start in period_starts:
         period_key = period_start.date().isoformat()
         outcome = participant.get("period_outcomes", {}).get(period_key)
         target = max(1, int((outcome or {}).get("target", participant.get("target", 1)) or 1))
         current = max(0, int((outcome or {}).get("current", 0) or 0))
         row_state = "fulfilled" if _outcome_fulfilled(outcome) else "unfulfilled"
-        with st.container(key=f"history_repair_row_{row_state}_{goal['id']}_{period_key}"):
-            cols = st.columns([2.2, 1, 1.35])
-            cols[0].write(period_label(goal, period_start))
+        with st.container(
+            key=f"history_repair_row_{row_state}_{goal['id']}_{period_key}",
+            horizontal=True,
+            vertical_alignment="center",
+            gap="small",
+        ):
+            with st.container(width=120):  # Period
+                st.write(period_label(goal, period_start))
             status = _status_label(outcome)
-            if row_state == "unfulfilled":
-                cols[1].markdown(
-                    f"<span class='history-repair-status-unfulfilled'>{status}</span>",
-                    unsafe_allow_html=True,
+            with st.container(width=110):  # Status
+                if row_state == "unfulfilled":
+                    st.markdown(
+                        f"<span class='history-repair-status-unfulfilled'>{status}</span>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.write(status)
+            with st.container(
+                width="stretch",
+                horizontal=True,
+                vertical_alignment="center",
+                gap="xsmall",
+            ):  # Value
+                corrected_current = st.number_input(
+                    "Value",
+                    min_value=0,
+                    value=current,
+                    step=1,
+                    key=f"history_repair_value_{row_state}_{goal['id']}_{period_key}",
+                    label_visibility="collapsed",
                 )
-            else:
-                cols[1].write(status)
-            value_cols = cols[2].columns([1, 0.65], vertical_alignment="center")
-            corrected_current = value_cols[0].number_input(
-                "Value",
-                min_value=0,
-                value=current,
-                step=1,
-                key=f"history_repair_value_{row_state}_{goal['id']}_{period_key}",
-                label_visibility="collapsed",
-            )
-            value_cols[1].caption(f"/ {target}")
+                st.caption(f"/ {target}")
         values[period_start] = (int(corrected_current), target, current)
     return values
 
