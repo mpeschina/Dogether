@@ -4,7 +4,7 @@ import calendar
 from datetime import datetime, timedelta
 from html import escape
 
-import streamlit.components.v1 as components
+import streamlit as st
 
 from src.db.persistence_helpers import _now, _period_fulfilled, _period_start, _schedule
 
@@ -34,7 +34,7 @@ X_PER_SCHEDULE_CLASSES = {"daily_x_per_week", "weekly_x_per_month"}
 
 def focus_popover_number_input() -> None:
     """Focus and select this popover's number input when it is opened."""
-    components.html(
+    st.iframe(
         """
         <script>
           const popover = window.frameElement?.closest('[data-testid="stPopoverBody"]');
@@ -63,6 +63,7 @@ def focus_popover_number_input() -> None:
         </script>
         """,
         height=0,
+        tab_index=-1,
     )
 
 
