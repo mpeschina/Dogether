@@ -1,68 +1,64 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import streamlit as st
+
+
+FlowHandler = Callable[["ReadinessGate"], bool]
+
+
+def print_html(html: str, *, delay: int = 0) -> None:
+    """Render centered gate text after an optional CSS animation delay."""
+    _, text_column, _ = st.columns(3)
+    with text_column:
+        st.markdown(
+            (
+                '<p class="readiness-gate-text" '
+                f'style="--readiness-gate-element-delay: {max(0, delay)}s; text-align: center">'
+                f"{html}</p>"
+            ),
+            unsafe_allow_html=True,
+        )
+
+
+def show_progress_bar(*, delay: int = 0, duration: int) -> None:
+    """Render the shared progress bar with flow-controlled timing."""
+    st.markdown(
+        (
+            '<div class="readiness-gate-progress" aria-hidden="true" '
+            f'style="--readiness-gate-progress-delay: {max(0, delay)}s; '
+            f'--readiness-gate-progress-duration: {max(1, duration)}s">'
+            '<div class="readiness-gate-progress-fill"></div>'
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def wait_delay(seconds: int, *, target: str = "ready_button") -> None:
+    """Delay a gate button without blocking Streamlit's execution."""
+    variable = "--readiness-gate-button-delay"
+    if target == "pre_button":
+        variable = "--readiness-gate-pre-button-delay"
+    st.markdown(
+        f'<style>div[class~="st-key-readiness_gate"] {{ {variable}: {max(0, seconds)}s; }}</style>',
+        unsafe_allow_html=True,
+    )
 
 
 class ReadinessGate:
     """Render and manage a staged confirmation gate for sensitive actions."""
 
-    OPTIONS = [
-        {
-            "id": "sentence_repeat",
-            "sentence1_html": '<span style="color:#6b7280;">&quot;Playing around with the Histroy is dangerous.&quot;</span>',
-            "wait1_seconds": 2,
-            "sentence2_html": "<strong>-- repeat this sentence 30 times in your head.</strong>",
-            "wait2_seconds": 4,
-            "pre_button_text": None,
-            "progress_seconds": 30,
-            "button_text": "I did it. I am ready!",
-        },
-        {
-            "id": "timeline_paradox",
-            "sentence1_html": (
-                "⚠️ <strong>Historical records are about to be modified.</strong><br>"
-                '<span style="font-size:0.82rem;">(Please avoid creating timeline paradoxes.)</span>'
-            ),
-            "wait1_seconds": 2,
-            "sentence2_html": (
-                "Before proceeding, repeat this sentence 30 times in your head:<br>"
-                "<strong>&quot;I will not accidentally invent a new past.&quot;</strong>"
-            ),
-            "wait2_seconds": 4,
-            "pre_button_text": None,
-            "progress_seconds": 60,
-            "button_text": "Ready",
-        },
-        {
-            "id": "git_humor",
-            "sentence1_html": "You are about to perform a <strong>force push</strong> to history.",
-            "wait1_seconds": 2,
-            "sentence2_html": "",
-            "wait2_seconds": 0,
-            "pre_button_text": "Force push to main. What could possibly go wrong?",
-            "progress_label_html": "Rebasing the timeline...",
-            "progress_seconds": 60,
-            "final_button_wait_seconds": 4,
-            "button_text": "Force Push History",
-        },
-        {
-            "id": "bureaucratic",
-            "sentence1_html": "<strong>Historical Correction Authorization Required.</strong>",
-            "wait1_seconds": 3,
-            "sentence2_html": "Please complete the mandatory cognitive safety protocol.",
-            "pre_button_text": "Past me did their best.",
-            "progress_label_html": "Processing paperwork...",
-            "progress_seconds": 20,
-            "final_button_wait_seconds": 4,
-            "button_text": "Authorized",
-        },
+    FLOW_IDS = (
+        "sentence_repeat",
+        "timeline_paradox",
+        "git_humor",
+        "bureaucratic",
+    )
 
-        ## could add another one:  "You only have a short time to answer:"
-        ##  Progress bar with only 6 seconds, display a math, like "what is 3149 x 9413?"
-    ]
-
-    def __init__(self, option: dict, ready_key: str, stage_key: str) -> None:
-        self.option = option
+    def __init__(self, flow_id: str, ready_key: str, stage_key: str) -> None:
+        self.flow_id = flow_id
         self.ready_key = ready_key
         self.stage_key = stage_key
 
@@ -78,28 +74,23 @@ class ReadinessGate:
                 justify-content: center;
                 align-items: center;
             }
-            .readiness-gate-game {
+            div[class~="st-key-readiness_gate"] div[data-testid="stMarkdown"] {
+                width: 100%;
+                text-align: center;
+            }
+            .readiness-gate-text {
                 width: 100%;
                 max-width: 34rem;
-                margin: 0 auto;
-                background: #ffffff;
-            }
-            .readiness-gate-warning {
-                margin: 0 0 1rem;
-                font-size: 0.92rem;
-                text-align: center;
-                opacity: 0;
-                animation: readiness-gate-fade-in 0.8s ease forwards;
-            }
-            .readiness-gate-task {
-                margin: 0 0 0.75rem;
+                margin: 0 auto 0.75rem;
                 color: #1f2937;
                 text-align: center;
                 opacity: 0;
-                animation: readiness-gate-fade-in 0.6s ease var(--readiness-gate-wait-1) forwards;
+                animation: readiness-gate-fade-in 0.6s ease var(--readiness-gate-element-delay) forwards;
             }
             .readiness-gate-progress {
                 width: 100%;
+                max-width: 34rem;
+                margin: 0 auto;
                 height: 0.55rem;
                 overflow: hidden;
                 border-radius: 999px;
@@ -149,76 +140,116 @@ class ReadinessGate:
             unsafe_allow_html=True,
         )
 
+    def _advance_to_progress(self) -> None:
+        st.session_state[self.stage_key] = "progress"
+        st.rerun()
+
+    def _complete(self) -> None:
+        st.session_state[self.ready_key] = True
+        st.rerun()
+
+    def _render_sentence_repeat(self) -> bool:
+        print_html('<span style="color:#6b7280;">&quot;Playing around with the Histroy is dangerous.&quot;</span>')
+        print_html("<strong>-- repeat this sentence 30 times in your head.</strong>", delay=2)
+        show_progress_bar(delay=2, duration=30)
+        wait_delay(6)
+        if st.button(
+            "I did it. I am ready!",
+            type="primary",
+            use_container_width=True,
+            key="readiness_gate_ready_button",
+        ):
+            self._complete()
+        return False
+
+    def _render_timeline_paradox(self) -> bool:
+        print_html(
+            "⚠️ <strong>Historical records are about to be modified.</strong><br>"
+            '<span style="font-size:0.82rem;">(Please avoid creating timeline paradoxes.)</span>'
+        )
+        print_html(
+            "Before proceeding, repeat this sentence 30 times in your head:<br>"
+            "<strong>&quot;I will not accidentally invent a new past.&quot;</strong>",
+            delay=2,
+        )
+        show_progress_bar(delay=2, duration=60)
+        wait_delay(6)
+        if st.button(
+            "Ready",
+            type="primary",
+            use_container_width=True,
+            key="readiness_gate_ready_button",
+        ):
+            self._complete()
+        return False
+
+    def _render_git_humor(self) -> bool:
+        print_html("You are about to perform a <strong>force push</strong> to history.")
+        if st.session_state.get(self.stage_key, "intro") != "progress":
+            wait_delay(2, target="pre_button")
+            if st.button(
+                "Force push to main. What could possibly go wrong?",
+                type="primary",
+                use_container_width=True,
+                key="readiness_gate_pre_button",
+            ):
+                self._advance_to_progress()
+            return False
+
+        print_html("Rebasing the timeline...", delay=2)
+        show_progress_bar(duration=60)
+        wait_delay(4)
+        if st.button(
+            "Force Push History",
+            type="primary",
+            use_container_width=True,
+            key="readiness_gate_ready_button",
+        ):
+            self._complete()
+        return False
+
+    def _render_bureaucratic(self) -> bool:
+        print_html("<strong>Historical Correction Authorization Required.</strong>")
+        if st.session_state.get(self.stage_key, "intro") != "progress":
+            print_html("Please complete the mandatory cognitive safety protocol.", delay=3)
+            wait_delay(3, target="pre_button")
+            if st.button(
+                "Past me did their best.",
+                type="primary",
+                use_container_width=True,
+                key="readiness_gate_pre_button",
+            ):
+                self._advance_to_progress()
+            return False
+
+        print_html("Processing paperwork...", delay=3)
+        show_progress_bar(duration=20)
+        wait_delay(4)
+        if st.button(
+            "Authorized",
+            type="primary",
+            use_container_width=True,
+            key="readiness_gate_ready_button",
+        ):
+            self._complete()
+        return False
+
     def render(self) -> bool:
         if st.session_state.get(self.ready_key):
             return True
 
+        handler = FLOW_HANDLERS.get(self.flow_id)
+        if handler is None:
+            raise ValueError(f"Unknown readiness gate flow: {self.flow_id!r}")
+
         self._render_styles()
-        option = self.option
-        wait1_seconds = max(0, int(option.get("wait1_seconds", 0) or 0))
-        wait2_seconds = max(0, int(option.get("wait2_seconds", 0) or 0))
-        pre_button_delay_seconds = wait1_seconds + wait2_seconds
-        final_button_wait_seconds = max(0, int(option.get("final_button_wait_seconds", wait2_seconds) or 0))
-        progress_seconds = option.get("progress_seconds")
-        pre_button_text = option.get("pre_button_text")
-        stage = st.session_state.get(self.stage_key, "intro")
-        progress_active = pre_button_text is None or stage == "progress"
-        final_button_delay_seconds = pre_button_delay_seconds if pre_button_text is None else final_button_wait_seconds
-
-        sentence2_html = ""
-        if option.get("sentence2_html") and (not progress_active or pre_button_text is None):
-            sentence2_html = f'<p class="readiness-gate-task">{option["sentence2_html"]}</p>'
-
-        progress_label_html = ""
-        if progress_active and option.get("progress_label_html"):
-            progress_label_html = f'<p class="readiness-gate-task">{option["progress_label_html"]}</p>'
-
-        progress_html = ""
-        if progress_active and progress_seconds is not None:
-            progress_html = (
-                '<div class="readiness-gate-progress" aria-hidden="true">'
-                '<div class="readiness-gate-progress-fill"></div>'
-                "</div>"
-            )
-
         with st.container(key="readiness_gate"):
-            st.markdown(
-                (
-                    "<style>"
-                    'div[class~="st-key-readiness_gate"] {'
-                    f"--readiness-gate-wait-1: {wait1_seconds}s;"
-                    f"--readiness-gate-pre-button-delay: {pre_button_delay_seconds}s;"
-                    f"--readiness-gate-button-delay: {final_button_delay_seconds}s;"
-                    f"--readiness-gate-progress-delay: {0 if stage == 'progress' else wait1_seconds}s;"
-                    f"--readiness-gate-progress-duration: {max(1, int(progress_seconds or 1))}s;"
-                    "}"
-                    "</style>"
-                    '<div class="readiness-gate-game">'
-                    f'<p class="readiness-gate-warning">{option["sentence1_html"]}</p>'
-                    f"{sentence2_html}"
-                    f"{progress_label_html}"
-                    f"{progress_html}"
-                    "</div>"
-                ),
-                unsafe_allow_html=True,
-            )
-            if pre_button_text is not None and not progress_active:
-                if st.button(
-                    str(pre_button_text),
-                    type="primary",
-                    use_container_width=True,
-                    key="readiness_gate_pre_button",
-                ):
-                    st.session_state[self.stage_key] = "progress"
-                    st.rerun()
-                return False
+            return handler(self)
 
-            if st.button(
-                str(option.get("button_text", "Ready")),
-                type="primary",
-                use_container_width=True,
-                key="readiness_gate_ready_button",
-            ):
-                st.session_state[self.ready_key] = True
-                st.rerun()
-        return False
+
+FLOW_HANDLERS: dict[str, FlowHandler] = {
+    "sentence_repeat": ReadinessGate._render_sentence_repeat,
+    "timeline_paradox": ReadinessGate._render_timeline_paradox,
+    "git_humor": ReadinessGate._render_git_humor,
+    "bureaucratic": ReadinessGate._render_bureaucratic,
+}

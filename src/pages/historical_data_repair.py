@@ -136,19 +136,17 @@ def _render_period_inputs(
     return values
 
 
-def _readiness_gate_option() -> dict:
-    option_id = st.session_state.get(READY_OPTION_SESSION_KEY)
-    options_by_id = {option["id"]: option for option in ReadinessGate.OPTIONS}
-    if option_id not in options_by_id:
-        option = random.choice(ReadinessGate.OPTIONS)
-        st.session_state[READY_OPTION_SESSION_KEY] = option["id"]
-        return option
-    return options_by_id[option_id]
+def _readiness_gate_flow_id() -> str:
+    flow_id = st.session_state.get(READY_OPTION_SESSION_KEY)
+    if flow_id not in ReadinessGate.FLOW_IDS:
+        flow_id = random.choice(ReadinessGate.FLOW_IDS)
+        st.session_state[READY_OPTION_SESSION_KEY] = flow_id
+    return flow_id
 
 
 def _render_readiness_gate() -> bool:
     return ReadinessGate(
-        option=_readiness_gate_option(),
+        flow_id=_readiness_gate_flow_id(),
         ready_key=READY_SESSION_KEY,
         stage_key=READY_STAGE_SESSION_KEY,
     ).render()
