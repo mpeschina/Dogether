@@ -46,7 +46,7 @@ def welcome_event() -> None:
     wait(2)
     typing_indicator(3)
     say("Ok, I just let you time to arrive and organize yourself.")
-    wait(3)
+    wait(2)
     assistant_leave()
 
 
