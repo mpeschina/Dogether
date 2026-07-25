@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from html import escape
+from random import random
 
 import streamlit as st
 
@@ -29,6 +30,36 @@ from src.reaction_component import participant_reaction_row
 from src.push.notifications import set_goal_completion_reaction_with_push, update_goal_progress_with_push
 from src.push.storage import PushStorage
 from src.viewport_component import viewport_info
+
+
+BALLOON_CHANCE = 0.10
+BALLOON_GOAL_ID_SESSION_KEY = "balloon_goal_id"
+
+
+def should_render_balloons_for_goal_hit(
+    previous_participant: dict,
+    updated_participant: dict,
+    *,
+    random_value: float | None = None,
+) -> bool:
+    """Return whether an exceptional goal completion should be celebrated."""
+    previous_current = max(0, int(previous_participant.get("current", 0) or 0))
+    previous_target = max(1, int(previous_participant.get("target", 1) or 1))
+    current = max(0, int(updated_participant.get("current", 0) or 0))
+    target = max(1, int(updated_participant.get("target", 1) or 1))
+    just_completed = previous_current < previous_target and current >= target
+    more_than_double_target = current > 2 * target
+    # DEBUG: 
+    return True
+    if not (just_completed and more_than_double_target):
+        return False
+    return (random() if random_value is None else random_value) < BALLOON_CHANCE
+
+
+def queue_balloons_for_goal_hit(previous_participant: dict, updated_goal: dict, user_id: str) -> None:
+    updated_participant = updated_goal.get("participants", {}).get(user_id, {})
+    if should_render_balloons_for_goal_hit(previous_participant, updated_participant):
+        st.session_state[BALLOON_GOAL_ID_SESSION_KEY] = updated_goal.get("id")
 
 
 def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str]:
@@ -267,7 +298,7 @@ def render_goal_actions(
                 )
                 st.rerun(scope="fragment")
             if manage_actions.button("Save", key=f"save_{goal['id']}", type="primary", use_container_width=True):
-                update_goal_progress_with_push(
+                updated_goal = update_goal_progress_with_push(
                     persistence,
                     push_storage,
                     push_settings or {},
@@ -276,6 +307,7 @@ def render_goal_actions(
                     current=current,
                     now=now,
                 )
+                queue_balloons_for_goal_hit(participant, updated_goal, user_id)
                 st.rerun(scope="fragment")
 
 
@@ -387,6 +419,9 @@ def render_goal_card(
     if goal is None or user_id not in goal.get("participants", {}):
         st.info("This goal is no longer available.")
         return
+    if st.session_state.get(BALLOON_GOAL_ID_SESSION_KEY) == goal_id:
+        st.session_state.pop(BALLOON_GOAL_ID_SESSION_KEY)
+        st.balloons()
 
     render_path = "mobile_portrait"
     if isinstance(viewport, dict) and viewport.get("renderPath") == "widescreen":
