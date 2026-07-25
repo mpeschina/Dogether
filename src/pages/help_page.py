@@ -25,7 +25,7 @@ def render_help(previous_page_key: str | None = None) -> None:
     elif event == "button_test":
         button_test_event(st.session_state)
     else:
-        assistant_leave()
+        pass # do nothing. 
 
     st.chat_input("Message the assistant", disabled=True, key="help_assistant_dummy_input")
 
