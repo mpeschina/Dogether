@@ -4,6 +4,8 @@ import calendar
 from datetime import datetime, timedelta
 from html import escape
 
+import streamlit.components.v1 as components
+
 from src.db.persistence_helpers import _now, _period_fulfilled, _period_start, _schedule
 
 
@@ -28,6 +30,40 @@ PARTICIPANT_SPARKLINE_PAD = 2
 PARTICIPANT_SPARKLINE_STROKE_WIDTH = 1.2
 PARTICIPANT_SPARKLINE_DEFAULT_DAYS = 14
 X_PER_SCHEDULE_CLASSES = {"daily_x_per_week", "weekly_x_per_month"}
+
+
+def focus_popover_number_input() -> None:
+    """Focus and select this popover's number input when it is opened."""
+    components.html(
+        """
+        <script>
+          const popover = window.frameElement?.closest('[data-testid="stPopoverBody"]');
+          if (popover) {
+            let wasVisible = false;
+            const updateFocus = () => {
+              const isVisible = popover.getClientRects().length > 0;
+              if (isVisible && !wasVisible) {
+                window.setTimeout(() => {
+                  const input = popover.querySelector('input[type="number"], input');
+                  if (input) {
+                    input.focus();
+                    input.select();
+                  }
+                }, 0);
+              }
+              wasVisible = isVisible;
+            };
+            new MutationObserver(updateFocus).observe(document.body, {
+              attributes: true,
+              childList: true,
+              subtree: true,
+            });
+            updateFocus();
+          }
+        </script>
+        """,
+        height=0,
+    )
 
 
 def activity_color_for_percent(percent: float, *, active: bool = True) -> str:

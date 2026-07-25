@@ -14,6 +14,7 @@ from src.pages.common_helpers import (
     DONE_BUTTON_GREEN_HOVER,
     MINI_ACTIVITY_NAME_MAX_LENGTH,
     compact_goal_activity_html,
+    focus_popover_number_input,
     mini_activity_styles,
     participant_sparkline_html,
 )
@@ -221,6 +222,7 @@ def render_goal_actions(
                 value=int(participant.get("current", 0)),
                 key=current_key,
             )
+            focus_popover_number_input()
             manage_actions = st.container(horizontal=True)
             if manage_actions.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
                 update_goal_progress_with_push(
