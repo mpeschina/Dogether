@@ -6,7 +6,7 @@ from typing import Mapping
 
 import streamlit as st
 
-from push_component import push_subscribe
+from src.push_component import push_subscribe
 from src.push.sender import push_configured, send_push_to_user
 from src.push.storage import PushStorage
 

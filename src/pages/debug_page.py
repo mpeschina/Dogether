@@ -111,7 +111,7 @@ def render_deployment_diagnostics() -> None:
         "static/manifest.json exists": Path("static/manifest.json").exists(),
         "static/icon-192.png exists": Path("static/icon-192.png").exists(),
         "static/icon-512.png exists": Path("static/icon-512.png").exists(),
-        "push component build exists": Path("push_component/frontend/build/index.html").exists(),
+        "push component build exists": Path("src/push_component/frontend/build/index.html").exists(),
     }
     st.table([{"Check": key, "Value": value} for key, value in rows.items()])
 

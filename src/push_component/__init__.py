@@ -25,7 +25,7 @@ def push_subscribe(
     if _component_func is None:
         st.error(
             "Push notification component build is missing. "
-            "Commit push_component/frontend/build or rebuild the component before deployment."
+            "Commit src/push_component/frontend/build or rebuild the component before deployment."
         )
         return None
 
