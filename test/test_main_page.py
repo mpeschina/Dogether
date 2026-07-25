@@ -172,12 +172,13 @@ def test_participant_progress_label_uses_compact_current_target() -> None:
     assert participant_progress_label(0, 10, False) == "0/10"
 
 
-def test_balloons_debug_override_is_enabled() -> None:
+def test_balloons_are_only_eligible_for_a_new_completion_over_double_target() -> None:
     previous = {"current": 9, "target": 10}
 
     assert should_render_balloons_for_goal_hit(previous, {"current": 21, "target": 10}, random_value=0.09)
-    assert should_render_balloons_for_goal_hit(previous, {"current": 20, "target": 10}, random_value=0.01)
-    assert should_render_balloons_for_goal_hit({"current": 10, "target": 10}, {"current": 21, "target": 10}, random_value=0.10)
+    assert not should_render_balloons_for_goal_hit(previous, {"current": 20, "target": 10}, random_value=0.01)
+    assert not should_render_balloons_for_goal_hit(previous, {"current": 21, "target": 10}, random_value=0.10)
+    assert not should_render_balloons_for_goal_hit({"current": 10, "target": 10}, {"current": 21, "target": 10}, random_value=0.01)
 
 
 def test_participant_name_with_progress_keeps_progress_inline_and_escaped() -> None:

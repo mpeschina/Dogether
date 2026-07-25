@@ -49,8 +49,6 @@ def should_render_balloons_for_goal_hit(
     target = max(1, int(updated_participant.get("target", 1) or 1))
     just_completed = previous_current < previous_target and current >= target
     more_than_double_target = current > 2 * target
-    # DEBUG: 
-    return True
     if not (just_completed and more_than_double_target):
         return False
     return (random() if random_value is None else random_value) < BALLOON_CHANCE
