@@ -26,6 +26,7 @@ from src.pages.common_helpers import (
 from src.db.persistence_helpers import STANDARD_REACTION_EMOTES
 from src.pages.main_page import (
     current_user_reaction_emote,
+    display_users_for_goal,
     participant_goal_is_completed,
     participant_name_with_progress_html,
     participant_progress_label,
@@ -104,6 +105,66 @@ def test_visible_participant_ids_preserve_order_with_missing_participants() -> N
     }
 
     assert visible_participant_ids(goal, "charlie", {"alice", "bob"}) == ["charlie", "alice", "bob"]
+
+
+def test_display_users_for_goal_uses_friend_profile_for_departed_participant() -> None:
+    goal = {
+        "participants": {
+            "alice": {"left_at": None},
+            "bob": {"left_at": "2026-06-01T10:00:00+00:00"},
+        }
+    }
+
+    users = display_users_for_goal(
+        goal,
+        {"alice": {"name": "Alice"}, "bob": {"name": "Old Bob"}},
+        [{"user_id": "bob", "name": "Bob"}],
+    )
+
+    assert users["alice"] == {"name": "Alice"}
+    assert users["bob"] == {"user_id": "bob", "name": "Bob"}
+
+
+def test_display_users_for_goal_hides_departed_non_friend_identity() -> None:
+    goal = {"participants": {"bob": {"left_at": "2026-06-01T10:00:00+00:00"}}}
+
+    users = display_users_for_goal(goal, {"bob": {"name": "Bob"}}, [])
+
+    assert users["bob"] == {"name": "unknown"}
+
+
+def test_display_users_for_goal_uses_friends_for_reactions_from_removed_participants() -> None:
+    goal = {
+        "participants": {
+            "alice": {
+                "left_at": None,
+                "completion_reactions": {"2026-06-01": {"bob": {"emote": "👍"}}},
+            }
+        }
+    }
+
+    users = display_users_for_goal(
+        goal,
+        {"alice": {"name": "Alice"}},
+        [{"user_id": "bob", "name": "Bob"}],
+    )
+
+    assert users["bob"] == {"user_id": "bob", "name": "Bob"}
+
+
+def test_display_users_for_goal_hides_reactions_from_removed_non_friends() -> None:
+    goal = {
+        "participants": {
+            "alice": {
+                "left_at": None,
+                "completion_reactions": {"2026-06-01": {"bob": {"emote": "👍"}}},
+            }
+        }
+    }
+
+    users = display_users_for_goal(goal, {"alice": {"name": "Alice"}}, [])
+
+    assert users["bob"] == {"name": "unknown"}
 
 
 def test_participant_progress_label_uses_compact_current_target() -> None:

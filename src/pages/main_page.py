@@ -59,6 +59,37 @@ def visible_participant_ids(goal: dict, current_user_id: str, friend_ids: set[st
     ]
 
 
+def display_users_for_goal(
+    goal: dict,
+    users: dict[str, dict],
+    friends: list[dict],
+) -> dict[str, dict]:
+    """Return profiles safe to display for participants and reaction senders."""
+    display_users = dict(users)
+    friends_by_id = {friend["user_id"]: friend for friend in friends if friend.get("user_id")}
+    participants = goal.get("participants", {})
+    departed_user_ids = {
+        participant_id
+        for participant_id, participant in participants.items()
+        if participant.get("left_at")
+    }
+    for participant in participants.values():
+        reactions = participant.get("completion_reactions", {})
+        if not isinstance(reactions, dict):
+            continue
+        for period_reactions in reactions.values():
+            if not isinstance(period_reactions, dict):
+                continue
+            departed_user_ids.update(
+                reacting_user_id
+                for reacting_user_id in period_reactions
+                if reacting_user_id not in participants
+            )
+    for departed_user_id in departed_user_ids:
+        display_users[departed_user_id] = friends_by_id.get(departed_user_id, {"name": "unknown"})
+    return display_users
+
+
 def participant_progress_label(current: int, target: int, skipped: bool) -> str:
     if skipped:
         return "skipped"
@@ -363,7 +394,9 @@ def render_goal_card(
 
     all_participant_ids = sorted(goal.get("participants", {}))
     users = persistence.users_by_ids(all_participant_ids)
-    friend_ids = {friend["user_id"] for friend in persistence.list_friends(user_id)}
+    friends = persistence.list_friends(user_id)
+    users = display_users_for_goal(goal, users, friends)
+    friend_ids = {friend["user_id"] for friend in friends}
 
     with st.container(border=True):
         st.markdown(
