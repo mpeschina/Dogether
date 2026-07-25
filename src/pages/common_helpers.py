@@ -62,7 +62,7 @@ def focus_popover_number_input() -> None:
           }
         </script>
         """,
-        height=0,
+        height=1,
         tab_index=-1,
     )
 
