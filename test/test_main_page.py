@@ -658,6 +658,9 @@ def test_participant_reaction_component_build_exists_with_inline_picker() -> Non
     assert "participant-reaction-picker" in content
     assert "participant-reaction-detail-menu" in content
     assert "participant-reaction-detail-row" in content
+    assert "participant-reaction-summary-entry" in content
+    assert "summary.slice(0, 2)" in content
+    assert "participant-reaction-summary-more" in content
     assert "function clampFloatingMenu" in content
     assert "getBoundingClientRect()" in content
     assert "translateX" in content

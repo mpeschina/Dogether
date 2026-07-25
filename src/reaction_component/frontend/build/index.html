@@ -86,17 +86,30 @@
         appearance: none;
         display: inline-flex;
         align-items: center;
+        gap: 0.28rem;
+        min-width: 0;
         border: 0;
         border-radius: 999px;
         background: var(--streamlit-secondary-background-color, rgba(249, 250, 251, 0.96));
         color: #374151;
         cursor: pointer;
         font: inherit;
-        font-size: 0.74rem;
+        font-size: clamp(0.64rem, 2.4vw, 0.74rem);
         line-height: 1.15;
         padding: 0.08rem 0.42rem;
         white-space: nowrap;
         box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+      }
+
+      .participant-reaction-summary-entry {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.12rem;
+      }
+
+      .participant-reaction-summary-more {
+        font-weight: 600;
+        letter-spacing: 0.04em;
       }
 
       .participant-reaction-chip:hover,
@@ -356,14 +369,29 @@
       }
 
       function reactionSummaryHtml() {
-        const summary = Array.isArray(args.reaction_summary) ? args.reaction_summary : [];
-        return summary
-          .map((entry) => {
-            const emote = escapeHtml(entry.emote || "");
-            const count = Number(entry.count || 0);
-            return count > 0 ? `<button class="participant-reaction-chip" type="button" aria-label="Show reactions">${emote} ${count}</button>` : "";
-          })
-          .join("");
+        const summary = (Array.isArray(args.reaction_summary) ? args.reaction_summary : [])
+          .filter((entry) => Number(entry.count || 0) > 0 && String(entry.emote || "").trim());
+        if (!summary.length) {
+          return "";
+        }
+
+        const visibleEntries = summary.slice(0, 2);
+        const hiddenCount = summary.length - visibleEntries.length;
+        const visibleText = visibleEntries
+          .map((entry) => `${entry.emote} ${Number(entry.count || 0)}`)
+          .join(", ");
+        const ariaLabel = hiddenCount
+          ? `Show reactions: ${visibleText}, and ${hiddenCount} more type${hiddenCount === 1 ? "" : "s"}`
+          : `Show reactions: ${visibleText}`;
+
+        return `
+          <button class="participant-reaction-chip" type="button" aria-label="${escapeHtml(ariaLabel)}">
+            ${visibleEntries
+              .map((entry) => `<span class="participant-reaction-summary-entry">${escapeHtml(entry.emote || "")} ${Number(entry.count || 0)}</span>`)
+              .join("")}
+            ${hiddenCount ? '<span class="participant-reaction-summary-more" aria-hidden="true">...</span>' : ""}
+          </button>
+        `;
       }
 
       function reactionDetailsHtml() {
