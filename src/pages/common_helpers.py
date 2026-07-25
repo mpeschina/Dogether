@@ -286,6 +286,8 @@ def _mini_activity_has_skip_marker(goal: dict, participant: dict, period_start: 
     current_period_start = _period_start(now_dt, schedule["base"])
     if period_start > current_period_start:
         return False
+    if not _uses_required_period_allowance(goal):
+        return False
 
     outcome = participant.get("period_outcomes", {}).get(period_start.date().isoformat())
     if isinstance(outcome, dict):

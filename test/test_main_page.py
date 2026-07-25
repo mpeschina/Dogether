@@ -283,6 +283,7 @@ def test_compact_goal_activity_renders_daily_skipped_unfulfilled_as_grey() -> No
 
     assert f"background:{ACTIVITY_COLORS[0]}" in html
     assert f"background:{ACTIVITY_COLORS[4]}" not in html
+    assert "mini-activity-dot-skipped" not in html
 
 
 def test_compact_goal_activity_renders_stored_partial_progress_as_light_green() -> None:
