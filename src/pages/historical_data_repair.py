@@ -20,6 +20,7 @@ LOOKBACK_PERIODS = 14
 READY_SESSION_KEY = "historical_data_repair_ready"
 READY_OPTION_SESSION_KEY = "historical_data_repair_ready_option"
 READY_STAGE_SESSION_KEY = "historical_data_repair_ready_stage"
+CHANGES_TOAST_SHOWN_SESSION_KEY = "historical_data_repair_changes_toast_shown"
 READINESS_GATE_OPTIONS = [
     {
         "id": "sentence_repeat",
@@ -132,17 +133,20 @@ def _render_period_inputs(
     period_starts: list[datetime],
 ) -> dict[datetime, tuple[int, int, int]]:
     values = {}
+    period_width = 80
+    status_width = 80
+    value_width = "stretch"
     with st.container(
         key="history_repair_header",
         horizontal=True,
         vertical_alignment="center",
         gap="small",
     ):
-        with st.container(width=120):  # Period
+        with st.container(width=period_width):  # Period
             st.caption("Period")
-        with st.container(width=110):  # Status
+        with st.container(width=status_width):  # Status
             st.caption("Status")
-        with st.container(width="stretch"):  # Value
+        with st.container(width=value_width):  # Value
             st.caption("Value")
     for period_start in period_starts:
         period_key = period_start.date().isoformat()
@@ -156,10 +160,10 @@ def _render_period_inputs(
             vertical_alignment="center",
             gap="small",
         ):
-            with st.container(width=120):  # Period
+            with st.container(width=period_width):  # Period
                 st.write(period_label(goal, period_start))
             status = _status_label(outcome)
-            with st.container(width=110):  # Status
+            with st.container(width=status_width):  # Status
                 if row_state == "unfulfilled":
                     st.markdown(
                         f"<span class='history-repair-status-unfulfilled'>{status}</span>",
@@ -168,7 +172,7 @@ def _render_period_inputs(
                 else:
                     st.write(status)
             with st.container(
-                width="stretch",
+                width=value_width,
                 horizontal=True,
                 vertical_alignment="center",
                 gap="xsmall",
@@ -411,6 +415,9 @@ def render_historical_data_repair(
             for period_start, (current, target, original_current) in values.items()
             if current != original_current
         }
+        if changed_values and not st.session_state.get(CHANGES_TOAST_SHOWN_SESSION_KEY):
+            st.toast("Changes have to be saved before they are effective.")
+            st.session_state[CHANGES_TOAST_SHOWN_SESSION_KEY] = True
         submitted = st.button(
             "Save",
             type="primary",

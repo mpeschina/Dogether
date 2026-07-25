@@ -14,6 +14,7 @@ from src.friends.share_links import (
 )
 from src.pages.account_page import render_account
 from src.pages.historical_data_repair import (
+    CHANGES_TOAST_SHOWN_SESSION_KEY,
     READY_OPTION_SESSION_KEY,
     READY_SESSION_KEY,
     READY_STAGE_SESSION_KEY,
@@ -132,6 +133,7 @@ def mark_current_page(page_key: str) -> None:
     if page_key == "friends" and previous_page_key != "friends":
         st.session_state.pop("show_invite_friend_form", None)
     if page_key == "historical_data_repair" and previous_page_key != "historical_data_repair":
+        st.session_state.pop(CHANGES_TOAST_SHOWN_SESSION_KEY, None)
         st.session_state.pop(READY_SESSION_KEY, None)
         st.session_state.pop(READY_OPTION_SESSION_KEY, None)
         st.session_state.pop(READY_STAGE_SESSION_KEY, None)
