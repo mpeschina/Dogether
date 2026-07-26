@@ -30,9 +30,16 @@ def render_help(
     st.caption("Dogether Assistant")
 
     state = AssistantState.from_profile(current_user)
+    friends = persistence.list_friends(user_id)
+    goals = persistence.list_goals_for_user(user_id, now=now)
     user_state = {
-        "has_friends": bool(persistence.list_friends(user_id)),
-        "has_goals": bool(persistence.list_goals_for_user(user_id, now=now)),
+        # Counts let the assistant acknowledge a healthy profile without
+        # treating one friend or several goals as the same situation.
+        "friend_count": len(friends),
+        "goal_count": len(goals),
+        # Kept for other stories that may still use the older predicates.
+        "has_friends": bool(friends),
+        "has_goals": bool(goals),
         "push_enabled": bool(push_storage and push_storage.subscriptions_for_user(user_id)),
     }
     context = AssistantContext(

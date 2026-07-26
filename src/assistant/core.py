@@ -26,7 +26,7 @@ class AssistantContext:
     previous_page_key: str | None = None
     now: datetime | None = None
     shared_story_state_store: SharedStoryStateStore | None = None
-    user_state: Mapping[str, bool] = field(default_factory=dict)
+    user_state: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -93,6 +93,8 @@ class AssistantView(Protocol):
     def wait(self, duration_seconds: float) -> None: ...
 
     def assistant_leave(self) -> None: ...
+
+    def go_to(self, destination: str) -> None: ...
 
     def status(self, message: str) -> None: ...
 

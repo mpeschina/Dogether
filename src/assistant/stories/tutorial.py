@@ -1,34 +1,4 @@
-"""The everyday Dogether assistant story.
-
-Each event is deliberately written as a small, readable scene.  The director
-persists the flow/node returned by the scene;
-
-Core interaction style:
-    The assistant should feel like a friendly NPC.
-
-Rules:
-
-    One thought per message.
-    Usually 2-10 words.
-    Never more than ~18 words.
-    Maximum 2-3 assistant bubbles before a choice.
-    Choices are buttons.
-    Fake typing between meaningful beats.
-    Never ask open-ended questions when a button works.
-    Use known user data directly.
-    Never explain what it is checking.
-
-For example, avoid:
-“I've analyzed your profile and noticed that you currently only have one friend, which may limit your experience.”
-
-Instead:
-    “I had a look.”
-    typing…
-    “You have one friend here.”
-    “Let's fix that.”
-
-    [Invite someone] [Not now]
-"""
+"""The deliberately small, NPC-like Dogether onboarding story."""
 from __future__ import annotations
 
 from typing import Final
@@ -38,148 +8,233 @@ from src.assistant.state import AssistantCategory
 
 
 ONBOARDING_FLOW: Final = "onboarding"
-PROFILE_ANALYSIS_FLOW: Final = "profile_analysis"
+PROFILE_ANALYSIS_FLOW: Final = "onboarding_analysis"
 TOUR_FLOW: Final = "tour"
 STANDARD_FLOW: Final = "standard"
 
-WELCOME_NODE: Final = "welcome"
-FRIENDS_NODE: Final = "friends"
-GOALS_NODE: Final = "goals"
-PUSH_NODE: Final = "push_notifications"
+WELCOME_NODE: Final = "onboarding_intro"
+# These are durable resume points, not generic screen names.  For example a
+# user who leaves to create a goal returns to ``goals.offer_create``.
+FRIENDS_NODE: Final = "friends.offer_invite"
+GOALS_NODE: Final = "goals.offer_create"
+PUSH_NODE: Final = "push.offer_enable"
+ANALYSIS_COMPLETE_NODE: Final = "analysis.complete"
 TOUR_NODE: Final = "tour"
 READY_NODE: Final = "ready"
 
-PUSH_PROMPTED_KEY: Final = "assistant.push_prompted"
-ASSISTANT_DISMISSED_KEY: Final = "assistant.dismissed"
+FRIENDS_EVENT_ID: Final = "friends_check"
+GOALS_EVENT_ID: Final = "goals_check"
+PUSH_EVENT_ID: Final = "push_check"
+ASSISTANT_DISMISSED_KEY: Final = "assistant.dismissed"  # legacy compatibility
 
 
-def _paused(flow: str, node: str) -> EventOutcome:
-    return EventOutcome.pending(flow=flow, node=node, status="paused")
+def _pending(flow: str, node: str, *, continue_flow: bool = False) -> EventOutcome:
+    return EventOutcome.pending(flow=flow, node=node, status="paused", continue_flow=continue_flow)
+
+
+def _event_outcome(event_id: str, outcome: str, next_node: str, *, continue_flow: bool = True) -> EventOutcome:
+    """Record a check's reusable outcome without exposing its UI to the parent."""
+    return EventOutcome.pending(
+        event_updates={event_id: {"outcome": outcome}},
+        flow=PROFILE_ANALYSIS_FLOW,
+        node=next_node,
+        status="active",
+        continue_flow=continue_flow,
+    )
 
 
 class WelcomeEvent(AssistantEvent):
-    event_id = "onboarding.welcome"
+    event_id = "onboarding_intro"
     category = AssistantCategory.TUTORIAL
 
     def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
         choice = view.selected_choice(self.event_id, "Analyse my profile", "Give me a tour", "I'm good")
         if choice is not None:
-            return self._handle_choice(choice, view)
+            return self._choose(choice, view)
 
-        view.say("Hey. I'm here if you need me.")
-        view.typing_indicator(0.45)
-        view.say("What would you like to do?")
-        choice = view.choices(
-            self.event_id,
-            "",
-            "Analyse my profile",
-            "Give me a tour",
-            "I'm good",
-        )
-        if choice is None:
-            return _paused(ONBOARDING_FLOW, WELCOME_NODE)
-        return self._handle_choice(choice, view)
+        view.say("Hi, welcome!")
+        view.typing_indicator(1.2)
+        view.say("Great to have you here.")
+        view.typing_indicator(1.5)
+        view.say("Want some help?")
+        choice = view.choices(self.event_id, "", "Analyse my profile", "Give me a tour", "I'm good")
+        return _pending(ONBOARDING_FLOW, WELCOME_NODE) if choice is None else self._choose(choice, view)
 
-    def _handle_choice(self, choice: str, view: AssistantView) -> EventOutcome:
+    def _choose(self, choice: str, view: AssistantView) -> EventOutcome:
         if choice == "Analyse my profile":
-            view.say("Good choice.")
-            return EventOutcome.pending(
-                flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="active", continue_flow=True
-            )
+            return EventOutcome.pending(flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="active", continue_flow=True)
         if choice == "Give me a tour":
-            view.say("Nice.")
             return EventOutcome.pending(flow=TOUR_FLOW, node=TOUR_NODE, status="active", continue_flow=True)
-
-        view.say("All right.")
-        view.say("I'll leave you to it.")
+        view.say("Fair enough.")
+        view.typing_indicator(1.2)
+        view.say("Have fun in there. 👋")
         view.assistant_leave()
-        return EventOutcome.complete(
-            flow=STANDARD_FLOW,
-            node=READY_NODE,
-            status="dismissed",
-            knowledge_updates={
-                ASSISTANT_DISMISSED_KEY: True,
-                PUSH_PROMPTED_KEY: True,
-            },
-        )
+        return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="declined")
 
 
 class ResumeEvent(AssistantEvent):
-    event_id = "onboarding.resume"
-    category = AssistantCategory.STANDARD
+    event_id = "onboarding_resume"
+    category = AssistantCategory.TUTORIAL
 
     def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        choice = view.selected_choice(self.event_id, "Continue", "Start over")
+        choice = view.selected_choice(self.event_id, "Yes", "Start over")
         if choice is None:
             view.say("Hey, you're back.")
-            choice = view.choices(self.event_id, "Continue where we stopped?", "Continue", "Start over")
+            view.typing_indicator(1.2)
+            choice = view.choices(self.event_id, "Continue where we stopped?", "Yes", "Start over")
         if choice is None:
             return EventOutcome()
         if choice == "Start over":
             return EventOutcome.pending(flow=ONBOARDING_FLOW, node=WELCOME_NODE, status="active", continue_flow=True)
-        return EventOutcome.pending(
-            flow=context.state.flow,
-            node=context.state.node,
-            status="active",
-            continue_flow=True,
-        )
+        view.say("Perfect.")
+        return EventOutcome.pending(flow=context.state.flow, node=context.state.node, status="active", continue_flow=True)
 
 
-class ProfileAnalysisEvent(AssistantEvent):
-    event_id = "profile_analysis"
+class CheckFriendsEvent(AssistantEvent):
+    """Reusable friends check; its result is independent of the parent flow."""
+    event_id = FRIENDS_EVENT_ID
     category = AssistantCategory.TUTORIAL
 
     def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        node = context.state.node or FRIENDS_NODE
-
-        if node == FRIENDS_NODE:
-            if context.user_state.get("has_friends", False):
-                view.say("Friends look good.")
-                node = GOALS_NODE
+        count = int(context.user_state.get("friend_count", 0))
+        prior = context.state.events.get(self.event_id, {})
+        if count >= 2:
+            view.say("Friends look good. ✓")
+            return _event_outcome(self.event_id, "not_needed", GOALS_NODE)
+        if count == 1:
+            if prior.get("awaiting") == "invite":
+                view.say("Nice.")
+                view.typing_indicator(1.2)
+                view.say("Company acquired. ✓")
             else:
-                view.say("No friends yet.")
-                choice = view.choices(self.event_id, "Want to add one?", "Add a friend", "Later")
+                view.say("You already found someone.")
+                view.say("Good start.")
+                choice = view.choices(self.event_id, "Want another?", "Invite someone", "I'm good")
                 if choice is None:
-                    return _paused(PROFILE_ANALYSIS_FLOW, FRIENDS_NODE)
-                if choice == "Add a friend":
-                    view.say("Open Friends when you're ready.")
-                return EventOutcome.pending(flow=PROFILE_ANALYSIS_FLOW, node=GOALS_NODE, status="active", continue_flow=True)
+                    return _pending(PROFILE_ANALYSIS_FLOW, FRIENDS_NODE)
+                if choice == "Invite someone":
+                    return self._await_invite(context, view)
+            return _event_outcome(self.event_id, "completed", GOALS_NODE)
 
-        if node == GOALS_NODE:
-            if context.user_state.get("has_goals", False):
-                view.say("Goals look good.")
-                node = PUSH_NODE
-            else:
-                view.say("No goals yet.")
-                choice = view.choices(self.event_id, "Want to create one?", "Create goal", "Later")
-                if choice is None:
-                    return _paused(PROFILE_ANALYSIS_FLOW, GOALS_NODE)
-                if choice == "Create goal":
-                    view.say("Open Manage Goals when you're ready.")
-                return EventOutcome.pending(flow=PROFILE_ANALYSIS_FLOW, node=PUSH_NODE, status="active", continue_flow=True)
-
-        if context.user_state.get("push_enabled", False):
-            view.say("Push notifications are set.")
-            view.say("You're all set.")
-            view.assistant_leave()
-            return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
-
-        view.say("One thing is missing.")
-        view.say("Push notifications aren't set up.")
-        choice = view.choices(self.event_id, "Want to set them up?", "Set up push", "Later")
+        choice = view.selected_choice(self.event_id, "Invite a friend", "Later")
         if choice is None:
-            return _paused(PROFILE_ANALYSIS_FLOW, PUSH_NODE)
-        if choice == "Set up push":
-            view.say("Open Push Notifications when you're ready.")
-        else:
-            view.say("No problem.")
-        view.assistant_leave()
-        return EventOutcome.complete(
-            flow=STANDARD_FLOW,
-            node=READY_NODE,
-            status="completed",
-            knowledge_updates={PUSH_PROMPTED_KEY: True},
+            view.say("First: your people.")
+            view.typing_indicator(1.2)
+            view.say("It's quiet in here.")
+            choice = view.choices(self.event_id, "Invite someone?", "Invite a friend", "Later")
+        if choice is None:
+            return _pending(PROFILE_ANALYSIS_FLOW, FRIENDS_NODE)
+        if choice == "Invite a friend":
+            return self._await_invite(context, view)
+        return _event_outcome(self.event_id, "skipped", GOALS_NODE)
+
+    def _await_invite(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+        view.go_to("friends")
+        return EventOutcome.pending(
+            event_updates={self.event_id: {"outcome": "interrupted", "awaiting": "invite"}},
+            flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="paused", continue_flow=True,
         )
+
+
+class CheckGoalsEvent(AssistantEvent):
+    """Reusable goals check; it does not assume that more goals are better."""
+    event_id = GOALS_EVENT_ID
+    category = AssistantCategory.TUTORIAL
+
+    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+        count = int(context.user_state.get("goal_count", 0))
+        prior = context.state.events.get(self.event_id, {})
+        if count == 0:
+            choice = view.selected_choice(self.event_id, "Create a goal", "Later")
+            if choice is None:
+                view.say("Next: goals.")
+                view.typing_indicator(1.2)
+                view.say("You don't have one yet.")
+                view.say("Let's make that useful.")
+                choice = view.choices(self.event_id, "", "Create a goal", "Later")
+            if choice is None:
+                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_NODE)
+            if choice == "Create a goal":
+                view.go_to("manage_goals")
+                return EventOutcome.pending(
+                    event_updates={self.event_id: {"outcome": "interrupted", "awaiting": "create"}},
+                    flow=PROFILE_ANALYSIS_FLOW, node=GOALS_NODE, status="paused", continue_flow=True,
+                )
+            return _event_outcome(self.event_id, "skipped", PUSH_NODE)
+        if prior.get("awaiting") == "create":
+            view.say("There we go. ✓")
+        elif count == 1:
+            view.say("You have one goal.")
+            view.say("Perfect place to start. ✓")
+        else:
+            view.say("Goals are looking busy.")
+            view.say("I like it. ✓")
+        return _event_outcome(self.event_id, "completed" if prior.get("awaiting") else "not_needed", PUSH_NODE)
+
+
+class CheckPushEvent(AssistantEvent):
+    event_id = PUSH_EVENT_ID
+    category = AssistantCategory.TUTORIAL
+
+    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+        enabled = bool(context.user_state.get("push_enabled", False))
+        prior = context.state.events.get(self.event_id, {})
+        if enabled:
+            if prior.get("awaiting") == "enable":
+                view.say("Perfect. ✓")
+                view.say("I'll be gentle.")
+                outcome = "completed"
+            else:
+                view.say("Notifications are ready. ✓")
+                outcome = "not_needed"
+            return _event_outcome(self.event_id, outcome, ANALYSIS_COMPLETE_NODE)
+        choice = view.selected_choice(self.event_id, "Enable notifications", "Not now")
+        if choice is None:
+            view.say("One last thing.")
+            view.typing_indicator(1.2)
+            view.say("I can nudge you.")
+            view.say("But I need permission.")
+            choice = view.choices(self.event_id, "", "Enable notifications", "Not now")
+        if choice is None:
+            return _pending(PROFILE_ANALYSIS_FLOW, PUSH_NODE)
+        if choice == "Enable notifications":
+            view.go_to("push_notifications")
+            return EventOutcome.pending(
+                event_updates={self.event_id: {"outcome": "interrupted", "awaiting": "enable"}},
+                flow=PROFILE_ANALYSIS_FLOW, node=PUSH_NODE, status="paused", continue_flow=True,
+            )
+        return _event_outcome(self.event_id, "skipped", ANALYSIS_COMPLETE_NODE)
+
+
+class AnalysisCompleteEvent(AssistantEvent):
+    event_id = "analysis_complete"
+    category = AssistantCategory.TUTORIAL
+
+    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+        choice = view.selected_choice(self.event_id, "Thanks!")
+        if choice is None:
+            view.say("That's it.")
+            view.typing_indicator(1.2)
+            view.say("You're ready. ✓")
+            view.typing_indicator(1.2)
+            view.say("I'll get out of your way.")
+            choice = view.choices(self.event_id, "", "Thanks!")
+        if choice is None:
+            return _pending(PROFILE_ANALYSIS_FLOW, ANALYSIS_COMPLETE_NODE)
+        view.assistant_leave()
+        return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+
+
+class ProfileAnalysisEvent(AssistantEvent):
+    """Parent coordinator. It only dispatches checks; it owns no check UI."""
+    event_id = "profile_analysis"
+    category = AssistantCategory.TUTORIAL
+
+    def __init__(self) -> None:
+        self._events = {FRIENDS_NODE: CheckFriendsEvent(), GOALS_NODE: CheckGoalsEvent(), PUSH_NODE: CheckPushEvent(), ANALYSIS_COMPLETE_NODE: AnalysisCompleteEvent()}
+
+    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+        return self._events.get(context.state.node or FRIENDS_NODE, self._events[FRIENDS_NODE]).render(context, view)
 
 
 class TourEvent(AssistantEvent):
@@ -187,11 +242,24 @@ class TourEvent(AssistantEvent):
     category = AssistantCategory.TUTORIAL
 
     def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        view.say("Dogether keeps shared goals simple.")
-        view.typing_indicator(0.35)
-        view.say("Goals is where you track progress.")
-        view.say("Friends is where you bring people in.")
-        view.say("That's the tour.")
+        choice = view.selected_choice(self.event_id, "Got it")
+        if choice is None:
+            view.say("Sure.")
+            view.typing_indicator(1.2)
+            view.say("Dogether is simple.")
+            view.typing_indicator(1.2)
+            view.say("Pick something worth doing.")
+            view.typing_indicator(1.2)
+            view.say("Bring someone along.")
+            view.typing_indicator(1.2)
+            view.say("Keep each other moving.")
+            view.typing_indicator(1.2)
+            view.say("That's basically it.")
+            view.say("You'll figure out the rest.")
+            choice = view.choices(self.event_id, "", "Got it")
+        if choice is None:
+            return _pending(TOUR_FLOW, TOUR_NODE)
+        view.say("Enjoy. 👋")
         view.assistant_leave()
         return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
 
@@ -199,52 +267,27 @@ class TourEvent(AssistantEvent):
 class AssistantReadyEvent(AssistantEvent):
     event_id = "standard.ready"
     category = AssistantCategory.STANDARD
-
     def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        view.status("Assistant ready")
         return EventOutcome()
 
 
-class PushSetupReminderEvent(AssistantEvent):
+class PushSetupReminderEvent(AssistantReadyEvent):
+    """Retained as an import-compatible no-op; onboarding owns the push prompt."""
     event_id = "standard.push_setup_reminder"
-    category = AssistantCategory.STANDARD
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        view.say("One thing is missing.")
-        choice = view.choices(self.event_id, "Set up push notifications?", "Set up push", "Later")
-        if choice == "Set up push":
-            view.say("Open Push Notifications when you're ready.")
-        elif choice == "Later":
-            view.say("No problem.")
-        return EventOutcome.pending(knowledge_updates={PUSH_PROMPTED_KEY: True})
 
 
 class InitialTutorialStory:
-    """Choose one event per render; paused flows always take precedence."""
-
     story_id = "dogether_assistant"
 
     def __init__(self) -> None:
-        self._welcome = WelcomeEvent()
-        self._resume = ResumeEvent()
-        self._profile_analysis = ProfileAnalysisEvent()
-        self._tour = TourEvent()
-        self._ready = AssistantReadyEvent()
-        self._push_reminder = PushSetupReminderEvent()
+        self._welcome, self._resume = WelcomeEvent(), ResumeEvent()
+        self._profile_analysis, self._tour = ProfileAnalysisEvent(), TourEvent()
 
     def next_event(self, context: AssistantContext) -> AssistantEvent | None:
         state = context.state
-        if state.status == "dismissed" or state.knowledge.get(ASSISTANT_DISMISSED_KEY, False):
+        if state.status in {"dismissed", "declined", "completed"}:
             return None
-        # A choice button causes Streamlit to rerun while the user is still on
-        # Help.  In that case, render the paused node again so it can receive
-        # the button click.  Only offer to resume after the user has actually
-        # left Help and returned.
-        if (
-            state.status == "paused"
-            and state.flow not in (None, STANDARD_FLOW)
-            and context.previous_page_key != "help"
-        ):
+        if state.status == "paused" and state.flow not in (None, STANDARD_FLOW) and context.previous_page_key != "help":
             return self._resume
         if state.flow in (None, ONBOARDING_FLOW):
             return self._welcome
@@ -252,10 +295,4 @@ class InitialTutorialStory:
             return self._profile_analysis
         if state.flow == TOUR_FLOW:
             return self._tour
-        if (
-            not context.user_state.get("push_enabled", False)
-            and not state.knowledge.get(PUSH_PROMPTED_KEY, False)
-        ):
-            return self._push_reminder
-        # Standard mode is deliberately quiet after its one eligible event.
-        return self._ready if context.current_page_key == "help" else None
+        return None

@@ -21,6 +21,7 @@ from src.assistant.stories.special_examples import (
     WelcomeExampleEvent,
 )
 from src.assistant.stories.tutorial import (
+    ANALYSIS_COMPLETE_NODE,
     AssistantReadyEvent,
     ASSISTANT_DISMISSED_KEY,
     FRIENDS_NODE,
@@ -30,6 +31,7 @@ from src.assistant.stories.tutorial import (
     PUSH_NODE,
     READY_NODE,
     STANDARD_FLOW,
+    WELCOME_NODE,
     InitialTutorialStory,
     ProfileAnalysisEvent,
     PushSetupReminderEvent,
@@ -66,6 +68,9 @@ class RecordingView:
 
     def assistant_leave(self):
         self.calls.append(("leave",))
+
+    def go_to(self, destination):
+        self.calls.append(("go_to", destination))
 
     def status(self, message):
         self.calls.append(("status", message))
@@ -149,11 +154,11 @@ def test_first_visit_persists_a_paused_welcome_and_returning_user_can_resume() -
 
     assert isinstance(default_stories()[AssistantMode.NORMAL].next_event(context_for(state)), WelcomeEvent)
     assert updated.flow == ONBOARDING_FLOW
-    assert updated.node == "welcome"
+    assert updated.node == WELCOME_NODE
     assert updated.status == "paused"
-    assert ("say", "Hey. I'm here if you need me.") in introduction_view.calls
-    assert ("say", "What would you like to do?") in introduction_view.calls
-    assert ("choices", "onboarding.welcome", "", ("Analyse my profile", "Give me a tour", "I'm good")) in introduction_view.calls
+    assert ("say", "Hi, welcome!") in introduction_view.calls
+    assert ("say", "Want some help?") in introduction_view.calls
+    assert ("choices", "onboarding_intro", "", ("Analyse my profile", "Give me a tour", "I'm good")) in introduction_view.calls
     assert len(persistence.saved_states) == 1
 
     resume_view = RecordingView()
@@ -175,14 +180,14 @@ def test_profile_analysis_checks_real_state_in_order_and_completes() -> None:
     state = AssistantState(flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="active")
 
     friends_done = apply_event_outcome(
-        state, event.render(context_for(state, user_state={"has_friends": True}), RecordingView())
+        state, event.render(context_for(state, user_state={"friend_count": 2}), RecordingView())
     )
     assert friends_done.node == GOALS_NODE
 
     goals_done = apply_event_outcome(
         friends_done,
         event.render(
-            context_for(friends_done, user_state={"has_friends": True, "has_goals": True}),
+            context_for(friends_done, user_state={"friend_count": 2, "goal_count": 1}),
             RecordingView(),
         ),
     )
@@ -194,15 +199,15 @@ def test_profile_analysis_checks_real_state_in_order_and_completes() -> None:
         event.render(
             context_for(
                 goals_done,
-                user_state={"has_friends": True, "has_goals": True, "push_enabled": True},
+                user_state={"friend_count": 2, "goal_count": 1, "push_enabled": True},
             ),
             complete_view,
         ),
     )
-    assert completed.flow == STANDARD_FLOW
-    assert completed.node == READY_NODE
-    assert completed.status == "completed"
-    assert ("say", "You're all set.") in complete_view.calls
+    assert completed.flow == PROFILE_ANALYSIS_FLOW
+    assert completed.node == ANALYSIS_COMPLETE_NODE
+    assert completed.status == "active"
+    assert ("say", "Notifications are ready. ✓") in complete_view.calls
 
 
 def test_im_good_leaves_the_assistant_and_prevents_follow_up_events() -> None:
@@ -213,8 +218,7 @@ def test_im_good_leaves_the_assistant_and_prevents_follow_up_events() -> None:
     leaving_view = RecordingView(selected_choice="I'm good")
     dismissed = director.render(context_for(state, profile=profile), leaving_view)
 
-    assert dismissed.status == "dismissed"
-    assert dismissed.knowledge[ASSISTANT_DISMISSED_KEY] is True
+    assert dismissed.status == "declined"
     assert ("leave",) in leaving_view.calls
     assert InitialTutorialStory().next_event(context_for(dismissed)) is None
     next_visit = RecordingView()
@@ -243,27 +247,16 @@ def test_im_good_click_is_processed_after_the_welcome_rerun() -> None:
         leaving_view,
     )
 
-    assert dismissed.status == "dismissed"
+    assert dismissed.status == "declined"
     assert ("leave",) in leaving_view.calls
-    assert ("typing", 0.45) not in leaving_view.calls
     assert not any(call[0] == "choices" for call in leaving_view.calls)
     assert ("say", "Hey, you're back.") not in leaving_view.calls
 
 
-def test_standard_mode_shows_only_the_unseen_push_setup_reminder() -> None:
+def test_standard_mode_is_quiet_after_onboarding() -> None:
     state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
     story = InitialTutorialStory()
-    assert isinstance(story.next_event(context_for(state, user_state={"push_enabled": False})), PushSetupReminderEvent)
-
-    prompted = apply_event_outcome(
-        state,
-        PushSetupReminderEvent().render(context_for(state), RecordingView()),
-    )
-    assert story.next_event(context_for(prompted, user_state={"push_enabled": False})) is not None
-    assert isinstance(
-        story.next_event(context_for(prompted, user_state={"push_enabled": False})),
-        AssistantReadyEvent,
-    )
+    assert story.next_event(context_for(state, user_state={"push_enabled": False})) is None
 
 
 def test_special_story_requires_a_new_help_visit_between_events() -> None:

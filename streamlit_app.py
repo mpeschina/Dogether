@@ -221,6 +221,15 @@ page_entries = [
 if debug.enabled:
     page_entries.append(debug_page_entry)
 
+assistant_destinations = {
+    "friends": friends_page_entry,
+    "manage_goals": manage_goals_page_entry,
+    "push_notifications": push_notifications_page_entry,
+}
+assistant_destination = st.session_state.pop("assistant.destination", None)
+if isinstance(assistant_destination, str) and assistant_destination in assistant_destinations:
+    st.switch_page(assistant_destinations[assistant_destination])
+
 page = st.navigation(
     page_entries
 )

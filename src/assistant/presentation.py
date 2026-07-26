@@ -71,6 +71,10 @@ class StreamlitAssistantView:
     def assistant_leave(self) -> None:
         self.status("Assistant left the chat")
 
+    def go_to(self, destination: str) -> None:
+        """Switch screens on the next app rerun after an assistant action."""
+        st.session_state["assistant.destination"] = destination
+
     def status(self, message: str) -> None:
         self._transcript.append(("status", message))
         st.markdown(f"<div class='assistant-status'>{message}</div>", unsafe_allow_html=True)
