@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from src.assistant.core import AssistantContext
+from src.assistant.core import AssistantContext, EventOutcome
 from src.assistant.director import AssistantDirector, apply_event_outcome
 from src.assistant.presentation import (
     PERSIST_TRANSCRIPT_ACROSS_PAGE_HOPS_KEY,
@@ -34,6 +34,8 @@ from src.assistant.stories.tutorial import (
     AssistantReadyEvent,
     ASSISTANT_DISMISSED_KEY,
     FRIENDS_NODE,
+    GOALS_EXPLANATION_NODE,
+    GOALS_EXPLANATION_STEP_KEY,
     GOALS_NODE,
     ONBOARDING_FLOW,
     PROFILE_ANALYSIS_FLOW,
@@ -69,7 +71,7 @@ class RecordingView:
     def say(self, message):
         self.calls.append(("say", message))
 
-    def typing_indicator(self, duration_seconds):
+    def typing_indicator(self, duration_seconds=0):
         self.calls.append(("typing", duration_seconds))
 
     def wait(self, duration_seconds):
@@ -86,10 +88,10 @@ class RecordingView:
 
     def choices(self, event_id, label, *options):
         self.calls.append(("choices", event_id, label, options))
-        return self.choice_to_select
+        return self.choice_to_select if self.choice_to_select in options else None
 
     def selected_choice(self, event_id, *options):
-        return self.choice_to_select
+        return self.choice_to_select if self.choice_to_select in options else None
 
     def send_control(self, event_id):
         self.input_rendered = True
@@ -106,13 +108,14 @@ def context_for(
     profile: dict | None = None,
     previous_page_key: str | None = "goals",
     user_state: dict[str, bool] | None = None,
+    session_state: dict | None = None,
 ) -> AssistantContext:
     current_user = profile if profile is not None else {"user_id": "alice"}
     return AssistantContext(
         user_id="alice",
         current_user=current_user,
         state=state,
-        session_state={},
+        session_state=session_state if session_state is not None else {},
         current_page_key="help",
         previous_page_key=previous_page_key,
         user_state=user_state or {},
@@ -294,7 +297,7 @@ def test_standard_menu_starts_the_selected_tutorial() -> None:
     state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
     tutorials = (
         ("How do I add friends?", "tutorial.friends.seen", FRIENDS_NODE),
-        ("How do I create a goal?", "tutorial.goals.seen", GOALS_NODE),
+        ("How do I create a goal?", "tutorial.goals.seen", GOALS_EXPLANATION_NODE),
         ("How do notifications work?", "tutorial.notifications.seen", PUSH_NODE),
     )
 
@@ -312,7 +315,6 @@ def test_standard_menu_starts_the_selected_tutorial() -> None:
 def test_standard_tutorials_return_to_standard_without_advancing_onboarding() -> None:
     tutorials = (
         (FRIENDS_NODE, "Later", {"friend_count": 0}),
-        (GOALS_NODE, "Later", {"goal_count": 0}),
         (PUSH_NODE, "Not now", {"push_enabled": False}),
     )
     story = StandardStory()
@@ -330,6 +332,126 @@ def test_standard_tutorials_return_to_standard_without_advancing_onboarding() ->
         assert updated.node == READY_NODE
         assert updated.status == "completed"
         assert updated.flow != PROFILE_ANALYSIS_FLOW
+
+
+def test_goal_explanation_runs_linearly_in_profile_analysis_and_can_start_goal_creation() -> None:
+    event = ProfileAnalysisEvent()
+    state = AssistantState(flow=PROFILE_ANALYSIS_FLOW, node=GOALS_NODE, status="active")
+    session_state = {}
+
+    explanation = apply_event_outcome(
+        state,
+        event.render(
+            context_for(state, user_state={"goal_count": 0}, session_state=session_state),
+            RecordingView(selected_choice="Explain Goals to me"),
+        ),
+    )
+    assert explanation.node == GOALS_EXPLANATION_NODE
+    assert explanation.status == "active"
+
+    intro_view = RecordingView()
+    intro = event.render(context_for(explanation, session_state=session_state), intro_view)
+    assert ("say", "Goals are the heart of Dogether.") in intro_view.calls
+    assert ("choices", "goals_explanation.intro", "", ("How do goals work?", "Got it")) in intro_view.calls
+
+    finish = apply_event_outcome(
+        explanation,
+        event.render(context_for(explanation, session_state=session_state), RecordingView(selected_choice="Got it")),
+    )
+    goals_view = RecordingView(selected_choice="Makes sense")
+    event.render(context_for(finish, session_state=session_state), goals_view)
+    assert ("say", "Everyone tracks their own progress.") in goals_view.calls
+
+    progress_view = RecordingView(selected_choice="Nice")
+    event.render(context_for(finish, session_state=session_state), progress_view)
+    assert ("say", "This is where it gets fun.") in progress_view.calls
+
+    friends_view = RecordingView(selected_choice="And then?")
+    event.render(context_for(finish, session_state=session_state), friends_view)
+    assert ("say", "Send them a reaction.") in friends_view.calls
+
+    reactions_view = RecordingView(selected_choice="Got it")
+    event.render(context_for(finish, session_state=session_state), reactions_view)
+    assert ("say", "That’s basically goals.") in reactions_view.calls
+
+    create = apply_event_outcome(
+        finish,
+        event.render(context_for(finish, session_state=session_state), RecordingView(selected_choice="Create a goal")),
+    )
+    assert create.node == GOALS_NODE
+    assert create.status == "paused"
+    assert create.events["goals_check"]["awaiting"] == "create"
+    assert "goals_explanation" not in create.events
+
+    restarted_view = RecordingView()
+    event.render(context_for(explanation, session_state=session_state), restarted_view)
+    assert ("choices", "goals_explanation.intro", "", ("How do goals work?", "Got it")) in restarted_view.calls
+
+
+def test_goal_explanation_choices_do_not_change_the_linear_path() -> None:
+    event = ProfileAnalysisEvent()
+    state = AssistantState(flow=PROFILE_ANALYSIS_FLOW, node=GOALS_EXPLANATION_NODE, status="active")
+    session_state = {}
+
+    how_view = RecordingView(selected_choice="How do goals work?")
+    event.render(context_for(state, session_state=session_state), how_view)
+    assert ("say", "Every goal has participants.") in how_view.calls
+
+    progress_view = RecordingView(selected_choice="Makes sense")
+    event.render(context_for(state, session_state=session_state), progress_view)
+    assert ("say", "Everyone tracks their own progress.") in progress_view.calls
+
+    friends_view = RecordingView(selected_choice="Nice")
+    event.render(context_for(state, session_state=session_state), friends_view)
+    assert ("say", "This is where it gets fun.") in friends_view.calls
+
+    reactions_view = RecordingView(selected_choice="And then?")
+    event.render(context_for(state, session_state=session_state), reactions_view)
+    assert ("say", "Send them a reaction.") in reactions_view.calls
+
+
+def test_goal_explanation_returns_to_standard_flow_when_backed_out() -> None:
+    story = StandardStory()
+    session_state = {GOALS_EXPLANATION_STEP_KEY: "finish"}
+    finish_state = AssistantState(
+        flow=STANDARD_TUTORIAL_FLOW,
+        node=GOALS_EXPLANATION_NODE,
+        status="active",
+    )
+    back = apply_event_outcome(
+        finish_state,
+        story.next_event(context_for(finish_state, session_state=session_state)).render(
+            context_for(finish_state, session_state=session_state),
+            RecordingView(selected_choice="Back"),
+        ),
+    )
+    assert back.flow == STANDARD_FLOW
+    assert back.node == READY_NODE
+    assert back.status == "completed"
+
+
+def test_standard_goal_explanation_can_navigate_to_goal_creation() -> None:
+    story = StandardStory()
+    session_state = {GOALS_EXPLANATION_STEP_KEY: "finish"}
+    state = AssistantState(flow=STANDARD_TUTORIAL_FLOW, node=GOALS_EXPLANATION_NODE, status="active")
+    view = RecordingView(selected_choice="Create a goal")
+
+    outcome = story.next_event(context_for(state, session_state=session_state)).render(
+        context_for(state, session_state=session_state), view
+    )
+
+    assert outcome.flow == STANDARD_FLOW
+    assert outcome.continue_flow is True
+    assert ("go_to", "manage_goals") in view.calls
+
+
+def test_standard_goal_explanation_does_not_pause_without_a_choice() -> None:
+    story = StandardStory()
+    state = AssistantState(flow=STANDARD_TUTORIAL_FLOW, node=GOALS_EXPLANATION_NODE, status="active")
+
+    outcome = story.next_event(context_for(state)).render(context_for(state), RecordingView())
+
+    assert outcome == EventOutcome()
 
 
 def test_push_reminder_backoff_and_third_dismissal_suppression() -> None:

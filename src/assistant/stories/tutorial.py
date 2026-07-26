@@ -17,6 +17,7 @@ WELCOME_NODE: Final = "onboarding_intro"
 # user who leaves to create a goal returns to ``goals.offer_create``.
 FRIENDS_NODE: Final = "friends.offer_invite"
 GOALS_NODE: Final = "goals.offer_create"
+GOALS_EXPLANATION_NODE: Final = "goals.explain"
 PUSH_NODE: Final = "push.offer_enable"
 ANALYSIS_COMPLETE_NODE: Final = "analysis.complete"
 TOUR_NODE: Final = "tour"
@@ -26,6 +27,7 @@ FRIENDS_EVENT_ID: Final = "friends_check"
 GOALS_EVENT_ID: Final = "goals_check"
 PUSH_EVENT_ID: Final = "push_check"
 ASSISTANT_DISMISSED_KEY: Final = "assistant.dismissed"  # legacy compatibility
+GOALS_EXPLANATION_STEP_KEY: Final = "assistant.goals_explanation_step"
 
 
 def _pending(flow: str, node: str, *, continue_flow: bool = False) -> EventOutcome:
@@ -146,7 +148,7 @@ class CheckGoalsEvent(AssistantEvent):
         count = int(context.user_state.get("goal_count", 0))
         prior = context.state.events.get(self.event_id, {})
         if count == 0:
-            choice = view.selected_choice(self.event_id, "Create a goal", "Later")
+            choice = view.selected_choice(self.event_id, "Create a goal", "Explain Goals to me", "Later")
             if choice is None:
                 view.typing_indicator()
                 view.say("Next: goals.")
@@ -163,6 +165,13 @@ class CheckGoalsEvent(AssistantEvent):
                     event_updates={self.event_id: {"outcome": "interrupted", "awaiting": "create"}},
                     flow=PROFILE_ANALYSIS_FLOW, node=GOALS_NODE, status="paused", continue_flow=True,
                 )
+            if choice == "Explain Goals to me":
+                return EventOutcome.pending(
+                    flow=PROFILE_ANALYSIS_FLOW,
+                    node=GOALS_EXPLANATION_NODE,
+                    status="active",
+                    continue_flow=True,
+                )
             return _event_outcome(self.event_id, "skipped", PUSH_NODE)
         if prior.get("awaiting") == "create":
             view.typing_indicator()
@@ -178,6 +187,119 @@ class CheckGoalsEvent(AssistantEvent):
             view.typing_indicator()
             view.say("I like it. ✓")
         return _event_outcome(self.event_id, "completed" if prior.get("awaiting") else "not_needed", PUSH_NODE)
+
+
+class GoalExplanationStepEvent(AssistantEvent):
+    """The optional, transient goals explanation conversation."""
+    event_id = "goals_explanation"
+    category = AssistantCategory.TUTORIAL
+
+    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+        current_step = str(context.session_state.get(GOALS_EXPLANATION_STEP_KEY, "intro"))
+        choice_event_id = f"{self.event_id}.{current_step}"
+        if current_step == "intro":
+            choice = view.selected_choice(choice_event_id, "How do goals work?", "Got it")
+            if choice is not None:
+                current_step = "how_goals_work"
+                context.session_state[GOALS_EXPLANATION_STEP_KEY] = current_step
+                choice_event_id = f"{self.event_id}.{current_step}"
+            else:
+                view.say("Sure.")
+                view.typing_indicator()
+                view.say("Goals are the heart of Dogether.")
+                view.say("You work on them every day.")
+                view.typing_indicator()
+                view.say("And your friends help you stay on track.")
+                choice = view.choices(choice_event_id, "", "How do goals work?", "Got it")
+                if choice is None:
+                    return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+                current_step = "how_goals_work"
+                context.session_state[GOALS_EXPLANATION_STEP_KEY] = current_step
+                choice_event_id = f"{self.event_id}.{current_step}"
+
+        if current_step == "how_goals_work":
+            choice = view.selected_choice(choice_event_id, "Makes sense", "What about progress?")
+            if choice is not None:
+                context.session_state[GOALS_EXPLANATION_STEP_KEY] = "progress"
+                return self.render(context, view)
+            view.typing_indicator()
+            view.say("Every goal has participants.")
+            view.say("Anyone can invite friends.")
+            view.typing_indicator()
+            view.say("But you only see your friends.")
+            view.typing_indicator()
+            view.say("There may be others too.")
+            choice = view.choices(choice_event_id, "", "Makes sense", "What about progress?")
+            if choice is None:
+                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[GOALS_EXPLANATION_STEP_KEY] = "progress"
+            return self.render(context, view)
+
+        if current_step == "progress":
+            choice = view.selected_choice(choice_event_id, "Nice", "What do friends do?")
+            if choice is not None:
+                context.session_state[GOALS_EXPLANATION_STEP_KEY] = "friends"
+                return self.render(context, view)
+            view.typing_indicator()
+            view.say("Everyone tracks their own progress.")
+            view.typing_indicator()
+            view.say("And everyone can have their own maximum.")
+            view.typing_indicator()
+            view.say("So the goal stays personal.")
+            choice = view.choices(choice_event_id, "", "Nice", "What do friends do?")
+            if choice is None:
+                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[GOALS_EXPLANATION_STEP_KEY] = "friends"
+            return self.render(context, view)
+
+        if current_step == "friends":
+            choice = view.selected_choice(choice_event_id, "And then?")
+            if choice is not None:
+                context.session_state[GOALS_EXPLANATION_STEP_KEY] = "reactions"
+                return self.render(context, view)
+            view.typing_indicator()
+            view.say("This is where it gets fun.")
+            view.typing_indicator()
+            view.say("When a friend completes the goal…")
+            view.typing_indicator()
+            view.say("You can get a notification.")
+            choice = view.choices(choice_event_id, "", "And then?")
+            if choice is None:
+                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[GOALS_EXPLANATION_STEP_KEY] = "reactions"
+            return self.render(context, view)
+
+        if current_step == "reactions":
+            choice = view.selected_choice(choice_event_id, "Got it")
+            if choice is not None:
+                context.session_state[GOALS_EXPLANATION_STEP_KEY] = "finish"
+                return self.render(context, view)
+            view.typing_indicator()
+            view.say("Send them a reaction.")
+            view.typing_indicator()
+            view.say("A little celebration.")
+            view.say("Or some friendly pressure.")
+            choice = view.choices(choice_event_id, "", "Got it")
+            if choice is None:
+                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[GOALS_EXPLANATION_STEP_KEY] = "finish"
+            return self.render(context, view)
+
+        choice = view.selected_choice(choice_event_id, "Create a goal", "Back")
+        if choice is None:
+            view.typing_indicator()
+            view.say("That’s basically goals.")
+            choice = view.choices(choice_event_id, "", "Create a goal", "Back")
+            if choice is None:
+                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+        context.session_state.pop(GOALS_EXPLANATION_STEP_KEY, None)
+        if choice == "Create a goal":
+            view.go_to("manage_goals")
+            return EventOutcome.pending(
+                event_updates={GOALS_EVENT_ID: {"outcome": "interrupted", "awaiting": "create"}},
+                flow=PROFILE_ANALYSIS_FLOW, node=GOALS_NODE, status="paused", continue_flow=True,
+            )
+        return EventOutcome.pending(flow=PROFILE_ANALYSIS_FLOW, node=GOALS_NODE, status="active", continue_flow=True)
 
 
 class CheckPushEvent(AssistantEvent):
@@ -239,7 +361,13 @@ class ProfileAnalysisEvent(AssistantEvent):
     category = AssistantCategory.TUTORIAL
 
     def __init__(self) -> None:
-        self._events = {FRIENDS_NODE: CheckFriendsEvent(), GOALS_NODE: CheckGoalsEvent(), PUSH_NODE: CheckPushEvent(), ANALYSIS_COMPLETE_NODE: AnalysisCompleteEvent()}
+        self._events = {
+            FRIENDS_NODE: CheckFriendsEvent(),
+            GOALS_NODE: CheckGoalsEvent(),
+            GOALS_EXPLANATION_NODE: GoalExplanationStepEvent(),
+            PUSH_NODE: CheckPushEvent(),
+            ANALYSIS_COMPLETE_NODE: AnalysisCompleteEvent(),
+        }
 
     def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
         return self._events.get(context.state.node or FRIENDS_NODE, self._events[FRIENDS_NODE]).render(context, view)
