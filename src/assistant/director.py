@@ -13,7 +13,11 @@ from src.assistant.core import (
     SharedStoryStateStore,
 )
 from src.assistant.state import AssistantMode, AssistantState
-from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID, STANDARD_PUSH_FLOW
+from src.assistant.stories.standard import (
+    PUSH_PROMPT_EVENT_ID,
+    STANDARD_PUSH_FLOW,
+    STANDARD_TUTORIAL_FLOW,
+)
 from src.assistant.stories.tutorial import ONBOARDING_FLOW, PROFILE_ANALYSIS_FLOW, TOUR_FLOW
 from src.db.persistence import Persistence
 
@@ -81,6 +85,9 @@ class AssistantDirector:
         if context.state.flow == STANDARD_PUSH_FLOW:
             push_story = self.stories.get("push_reminder")
             return push_story.next_event(context) if push_story is not None else None
+        if context.state.flow == STANDARD_TUTORIAL_FLOW:
+            standard = self.stories.get(AssistantMode.NORMAL)
+            return standard.next_event(context) if standard is not None else None
 
         # 2. Fresh users are deliberately the only users sent into onboarding.
         if self._is_fully_fresh(context.state):

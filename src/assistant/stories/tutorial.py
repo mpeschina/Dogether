@@ -148,12 +148,13 @@ class CheckGoalsEvent(AssistantEvent):
         if count == 0:
             choice = view.selected_choice(self.event_id, "Create a goal", "Later")
             if choice is None:
+                view.typing_indicator()
                 view.say("Next: goals.")
                 view.typing_indicator()
                 view.say("You don't have one yet.")
                 view.typing_indicator()
                 view.say("Let's make that useful.")
-                choice = view.choices(self.event_id, "", "Create a goal", "Later")
+                choice = view.choices(self.event_id, "", "Create a goal", "Explain Goals to me", "Later")
             if choice is None:
                 return _pending(PROFILE_ANALYSIS_FLOW, GOALS_NODE)
             if choice == "Create a goal":
@@ -164,12 +165,17 @@ class CheckGoalsEvent(AssistantEvent):
                 )
             return _event_outcome(self.event_id, "skipped", PUSH_NODE)
         if prior.get("awaiting") == "create":
+            view.typing_indicator()
             view.say("There we go. ✓")
         elif count == 1:
+            view.typing_indicator()
             view.say("You have one goal.")
+            view.typing_indicator()
             view.say("Perfect place to start. ✓")
         else:
+            view.typing_indicator()
             view.say("Goals are looking busy.")
+            view.typing_indicator()
             view.say("I like it. ✓")
         return _event_outcome(self.event_id, "completed" if prior.get("awaiting") else "not_needed", PUSH_NODE)
 

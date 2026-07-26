@@ -22,7 +22,13 @@ from src.assistant.stories.special_examples import (
     WelcomeExampleEvent,
 )
 from src.assistant.stories.push_reminder import PushReminderEvent
-from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID, StandardMenuEvent
+from src.assistant.stories.standard import (
+    PUSH_PROMPT_EVENT_ID,
+    STANDARD_TUTORIAL_FLOW,
+    StandardMenuEvent,
+    StandardStory,
+    StandardTutorialEvent,
+)
 from src.assistant.stories.tutorial import (
     ANALYSIS_COMPLETE_NODE,
     AssistantReadyEvent,
@@ -283,12 +289,47 @@ def test_director_selects_one_normal_mode_event_in_priority_order() -> None:
     )
 
 
-def test_standard_menu_records_the_selected_placeholder_tutorial() -> None:
+def test_standard_menu_starts_the_selected_tutorial() -> None:
     event = StandardMenuEvent()
     state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
-    outcome = event.render(context_for(state), RecordingView(selected_choice="How do I add friends?"))
-    updated = apply_event_outcome(state, outcome)
-    assert updated.knowledge["tutorial.friends.seen"] is True
+    tutorials = (
+        ("How do I add friends?", "tutorial.friends.seen", FRIENDS_NODE),
+        ("How do I create a goal?", "tutorial.goals.seen", GOALS_NODE),
+        ("How do notifications work?", "tutorial.notifications.seen", PUSH_NODE),
+    )
+
+    for choice, knowledge_key, node in tutorials:
+        outcome = event.render(context_for(state), RecordingView(selected_choice=choice))
+        updated = apply_event_outcome(state, outcome)
+
+        assert updated.knowledge[knowledge_key] is True
+        assert updated.flow == STANDARD_TUTORIAL_FLOW
+        assert updated.node == node
+        assert updated.status == "active"
+        assert outcome.continue_flow is True
+
+
+def test_standard_tutorials_return_to_standard_without_advancing_onboarding() -> None:
+    tutorials = (
+        (FRIENDS_NODE, "Later", {"friend_count": 0}),
+        (GOALS_NODE, "Later", {"goal_count": 0}),
+        (PUSH_NODE, "Not now", {"push_enabled": False}),
+    )
+    story = StandardStory()
+
+    for node, choice, user_state in tutorials:
+        state = AssistantState(flow=STANDARD_TUTORIAL_FLOW, node=node, status="active")
+        event = story.next_event(context_for(state, user_state=user_state))
+        outcome = event.render(
+            context_for(state, user_state=user_state), RecordingView(selected_choice=choice)
+        )
+        updated = apply_event_outcome(state, outcome)
+
+        assert isinstance(event, StandardTutorialEvent)
+        assert updated.flow == STANDARD_FLOW
+        assert updated.node == READY_NODE
+        assert updated.status == "completed"
+        assert updated.flow != PROFILE_ANALYSIS_FLOW
 
 
 def test_push_reminder_backoff_and_third_dismissal_suppression() -> None:
