@@ -13,6 +13,42 @@ from src.db.persistence import Persistence
 from src.push.storage import PushStorage
 
 
+
+"""Explanation of the RPG Assistant: 
+
+Each event is deliberately written as a small, readable scene. The director module 
+persists the flow/node returned by the scene.
+
+Core interaction style:
+    The assistant should feel like a friendly NPC.
+
+Rules:
+
+    One thought per message.
+    Usually 2-10 words.
+    Never more than ~18 words.
+    Maximum 2-3 assistant bubbles before a choice.
+    Choices are buttons.
+    Fake typing between meaningful beats.
+    Never ask open-ended questions when a button works.
+    Use known user data directly.
+    Never explain what it is checking.
+
+For example, avoid:
+“I've analyzed your profile and noticed that you currently only have one friend, which may limit your experience.”
+
+Instead:
+    “I had a look.”
+    typing…
+    “You have one friend here.”
+    “Let's fix that.”
+
+    [Invite someone] [Not now]
+"""
+
+
+
+
 def render_help(
     persistence: Persistence,
     current_user: dict,
