@@ -28,6 +28,11 @@ class AssistantDirector:
         self.shared_story_state_store = shared_story_state_store
 
     def render(self, context: AssistantContext, view: AssistantView) -> AssistantState:
+        # A user who explicitly dismisses the assistant must never be advanced
+        # into another story by a later condition or mode change.
+        if context.state.status == "dismissed":
+            return context.state
+
         story = self.stories.get(context.state.mode)
         if story is None:
             return context.state

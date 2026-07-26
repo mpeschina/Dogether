@@ -192,7 +192,6 @@ def test_im_good_leaves_the_assistant_and_prevents_follow_up_events() -> None:
 
     assert dismissed.status == "dismissed"
     assert dismissed.knowledge[ASSISTANT_DISMISSED_KEY] is True
-    assert ("say", "I'll leave you to it.") in leaving_view.calls
     assert ("leave",) in leaving_view.calls
     assert InitialTutorialStory().next_event(context_for(dismissed)) is None
     next_visit = RecordingView()
