@@ -22,7 +22,7 @@ GreetingRenderer = Callable[[AssistantContext, AssistantView, AssistantEvent], E
 
 
 def render_default_greeting(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    view.say("Hello, how can I help you?")
+    view.say("Hello")
     return menu_event.render(context, view)
 
 

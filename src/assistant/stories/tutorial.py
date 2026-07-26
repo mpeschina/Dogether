@@ -290,7 +290,7 @@ class GoalExplanationStepEvent(AssistantEvent):
         current_step = str(context.session_state.get(GOALS_EXPLANATION_STEP_KEY, "intro"))
         choice_event_id = f"{self.event_id}.{current_step}"
         if current_step == "intro":
-            choice = view.selected_choice(choice_event_id, "How do goals work?", "Got it")
+            choice = view.selected_choice(choice_event_id, "Ok, whats more?", "Got it")
             if choice is not None:
                 current_step = "how_goals_work"
                 context.session_state[GOALS_EXPLANATION_STEP_KEY] = current_step
@@ -303,7 +303,7 @@ class GoalExplanationStepEvent(AssistantEvent):
                 view.say("You work on them every day.")
                 view.typing_indicator()
                 view.say("And your friends help you stay on track.")
-                choice = view.choices(choice_event_id, "", "How do goals work?", "Got it")
+                choice = view.choices(choice_event_id, "", "Ok, whats more?", "Got it")
                 if choice is None:
                     return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
                 current_step = "how_goals_work"
