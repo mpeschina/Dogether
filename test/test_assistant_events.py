@@ -4,6 +4,11 @@ from dataclasses import replace
 
 from src.assistant.core import AssistantContext
 from src.assistant.director import AssistantDirector, apply_event_outcome
+from src.assistant.presentation import (
+    PERSIST_TRANSCRIPT_ACROSS_PAGE_HOPS_KEY,
+    TRANSCRIPT_KEY,
+    clear_transcript_for_new_help_visit,
+)
 from src.assistant.state import AssistantMode, AssistantState
 from src.assistant.stories import default_stories
 from src.assistant.stories.special_examples import (
@@ -45,7 +50,7 @@ class RecordingPersistence:
 
 class RecordingView:
     def __init__(self, *, selected_choice=None, send_clicked=False) -> None:
-        self.selected_choice = selected_choice
+        self.choice_to_select = selected_choice
         self.send_clicked = send_clicked
         self.input_rendered = False
         self.calls: list[tuple] = []
@@ -67,7 +72,10 @@ class RecordingView:
 
     def choices(self, event_id, label, *options):
         self.calls.append(("choices", event_id, label, options))
-        return self.selected_choice
+        return self.choice_to_select
+
+    def selected_choice(self, event_id, *options):
+        return self.choice_to_select
 
     def send_control(self, event_id):
         self.input_rendered = True
@@ -115,6 +123,21 @@ def test_assistant_state_normalizes_missing_and_malformed_values() -> None:
     assert state.events == {"event": {"clicks": 4}}
 
 
+def test_assistant_transcript_is_cleared_after_leaving_help_unless_retained() -> None:
+    session_state = {TRANSCRIPT_KEY: [("say", "Hello")]}
+
+    clear_transcript_for_new_help_visit(session_state, "goals")
+    assert TRANSCRIPT_KEY not in session_state
+
+    retained_state = {
+        TRANSCRIPT_KEY: [("say", "Hello")],
+        PERSIST_TRANSCRIPT_ACROSS_PAGE_HOPS_KEY: True,
+    }
+    clear_transcript_for_new_help_visit(retained_state, "goals")
+    assert retained_state[TRANSCRIPT_KEY] == [("say", "Hello")]
+    assert PERSIST_TRANSCRIPT_ACROSS_PAGE_HOPS_KEY not in retained_state
+
+
 def test_first_visit_persists_a_paused_welcome_and_returning_user_can_resume() -> None:
     persistence = RecordingPersistence()
     profile = {"user_id": "alice"}
@@ -137,7 +160,7 @@ def test_first_visit_persists_a_paused_welcome_and_returning_user_can_resume() -
     ready_context = context_for(
         AssistantState.from_profile(profile),
         profile=profile,
-        previous_page_key="help",
+        previous_page_key="goals",
     )
     unchanged = director.render(ready_context, resume_view)
 
@@ -197,6 +220,34 @@ def test_im_good_leaves_the_assistant_and_prevents_follow_up_events() -> None:
     next_visit = RecordingView()
     assert director.render(context_for(dismissed, profile=profile), next_visit) == dismissed
     assert next_visit.calls == []
+
+
+def test_im_good_click_is_processed_after_the_welcome_rerun() -> None:
+    persistence = RecordingPersistence()
+    profile = {"user_id": "alice"}
+    director = AssistantDirector(persistence, default_stories())
+
+    # The initial render persists a paused welcome while its choice buttons
+    # remain on screen.  Clicking one reruns Help with Help as the previous
+    # page, so it must return to WelcomeEvent instead of showing ResumeEvent.
+    paused = director.render(context_for(AssistantState(), profile=profile), RecordingView())
+    assert paused.status == "paused"
+
+    leaving_view = RecordingView(selected_choice="I'm good")
+    dismissed = director.render(
+        context_for(
+            AssistantState.from_profile(profile),
+            profile=profile,
+            previous_page_key="help",
+        ),
+        leaving_view,
+    )
+
+    assert dismissed.status == "dismissed"
+    assert ("leave",) in leaving_view.calls
+    assert ("typing", 0.45) not in leaving_view.calls
+    assert not any(call[0] == "choices" for call in leaving_view.calls)
+    assert ("say", "Hey, you're back.") not in leaving_view.calls
 
 
 def test_standard_mode_shows_only_the_unseen_push_setup_reminder() -> None:

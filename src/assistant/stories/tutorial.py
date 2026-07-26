@@ -1,7 +1,33 @@
 """The everyday Dogether assistant story.
 
 Each event is deliberately written as a small, readable scene.  The director
-persists the flow/node returned by the scene; it never needs a chat transcript.
+persists the flow/node returned by the scene;
+
+Core interaction style:
+    The assistant should feel like a friendly NPC.
+
+Rules:
+
+    One thought per message.
+    Usually 2-10 words.
+    Never more than ~18 words.
+    Maximum 2-3 assistant bubbles before a choice.
+    Choices are buttons.
+    Fake typing between meaningful beats.
+    Never ask open-ended questions when a button works.
+    Use known user data directly.
+    Never explain what it is checking.
+
+For example, avoid:
+“I've analyzed your profile and noticed that you currently only have one friend, which may limit your experience.”
+
+Instead:
+    “I had a look.”
+    typing…
+    “You have one friend here.”
+    “Let's fix that.”
+
+    [Invite someone] [Not now]
 """
 from __future__ import annotations
 
@@ -36,6 +62,10 @@ class WelcomeEvent(AssistantEvent):
     category = AssistantCategory.TUTORIAL
 
     def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+        choice = view.selected_choice(self.event_id, "Analyse my profile", "Give me a tour", "I'm good")
+        if choice is not None:
+            return self._handle_choice(choice, view)
+
         view.say("Hey. I'm here if you need me.")
         view.typing_indicator(0.45)
         view.say("What would you like to do?")
@@ -48,6 +78,9 @@ class WelcomeEvent(AssistantEvent):
         )
         if choice is None:
             return _paused(ONBOARDING_FLOW, WELCOME_NODE)
+        return self._handle_choice(choice, view)
+
+    def _handle_choice(self, choice: str, view: AssistantView) -> EventOutcome:
         if choice == "Analyse my profile":
             view.say("Good choice.")
             return EventOutcome.pending(
@@ -76,8 +109,10 @@ class ResumeEvent(AssistantEvent):
     category = AssistantCategory.STANDARD
 
     def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        view.say("Hey, you're back.")
-        choice = view.choices(self.event_id, "Continue where we stopped?", "Continue", "Start over")
+        choice = view.selected_choice(self.event_id, "Continue", "Start over")
+        if choice is None:
+            view.say("Hey, you're back.")
+            choice = view.choices(self.event_id, "Continue where we stopped?", "Continue", "Start over")
         if choice is None:
             return EventOutcome()
         if choice == "Start over":
@@ -201,7 +236,15 @@ class InitialTutorialStory:
         state = context.state
         if state.status == "dismissed" or state.knowledge.get(ASSISTANT_DISMISSED_KEY, False):
             return None
-        if state.status == "paused" and state.flow not in (None, STANDARD_FLOW):
+        # A choice button causes Streamlit to rerun while the user is still on
+        # Help.  In that case, render the paused node again so it can receive
+        # the button click.  Only offer to resume after the user has actually
+        # left Help and returned.
+        if (
+            state.status == "paused"
+            and state.flow not in (None, STANDARD_FLOW)
+            and context.previous_page_key != "help"
+        ):
             return self._resume
         if state.flow in (None, ONBOARDING_FLOW):
             return self._welcome

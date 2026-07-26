@@ -7,7 +7,7 @@ import streamlit as st
 from src.assistant.core import AssistantContext
 from src.assistant.director import AssistantDirector
 from src.assistant.state import AssistantState
-from src.assistant.presentation import StreamlitAssistantView
+from src.assistant.presentation import StreamlitAssistantView, clear_transcript_for_new_help_visit
 from src.assistant.stories import default_stories
 from src.db.persistence import Persistence
 from src.push.storage import PushStorage
@@ -24,6 +24,7 @@ def render_help(
 ) -> None:
     """Render the current user's durable scripted assistant experience."""
 
+    clear_transcript_for_new_help_visit(st.session_state, previous_page_key)
     _render_styles()
     st.markdown("<div class='assistant-page-heading'>Help</div>", unsafe_allow_html=True)
     st.caption("Dogether Assistant")
