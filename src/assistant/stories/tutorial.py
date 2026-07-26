@@ -20,6 +20,7 @@ FRIENDS_EXPLANATION_NODE: Final = "friends.explain"
 GOALS_NODE: Final = "goals.offer_create"
 GOALS_EXPLANATION_NODE: Final = "goals.explain"
 PUSH_NODE: Final = "push.offer_enable"
+PUSH_EXPLANATION_NODE: Final = "push.explain"
 ANALYSIS_COMPLETE_NODE: Final = "analysis.complete"
 TOUR_NODE: Final = "tour"
 READY_NODE: Final = "ready"
@@ -30,6 +31,7 @@ PUSH_EVENT_ID: Final = "push_check"
 ASSISTANT_DISMISSED_KEY: Final = "assistant.dismissed"  # legacy compatibility
 GOALS_EXPLANATION_STEP_KEY: Final = "assistant.goals_explanation_step"
 FRIENDS_EXPLANATION_STEP_KEY: Final = "assistant.friends_explanation_step"
+PUSH_EXPLANATION_STEP_KEY: Final = "assistant.push_explanation_step"
 
 
 def _pending(flow: str, node: str, *, continue_flow: bool = False) -> EventOutcome:
@@ -415,13 +417,14 @@ class CheckPushEvent(AssistantEvent):
                 view.say("Notifications are ready. ✓")
                 outcome = "not_needed"
             return _event_outcome(self.event_id, outcome, ANALYSIS_COMPLETE_NODE)
-        choice = view.selected_choice(self.event_id, "Enable notifications", "Not now")
+        choice = view.selected_choice(self.event_id, "Enable notifications", "Explain notifications to me", "Not now")
         if choice is None:
             view.say("One last thing.")
             view.typing_indicator()
             view.say("I can nudge you.")
+            view.typing_indicator()
             view.say("But I need permission.")
-            choice = view.choices(self.event_id, "", "Enable notifications", "Not now")
+            choice = view.choices(self.event_id, "", "Enable notifications", "Explain notifications to me", "Not now")
         if choice is None:
             return _pending(PROFILE_ANALYSIS_FLOW, PUSH_NODE)
         if choice == "Enable notifications":
@@ -430,7 +433,140 @@ class CheckPushEvent(AssistantEvent):
                 event_updates={self.event_id: {"outcome": "interrupted", "awaiting": "enable"}},
                 flow=PROFILE_ANALYSIS_FLOW, node=PUSH_NODE, status="paused", continue_flow=True,
             )
+        if choice == "Explain notifications to me":
+            return EventOutcome.pending(
+                flow=PROFILE_ANALYSIS_FLOW,
+                node=PUSH_EXPLANATION_NODE,
+                status="active",
+                continue_flow=True,
+            )
         return _event_outcome(self.event_id, "skipped", ANALYSIS_COMPLETE_NODE)
+
+
+class NotificationExplanationStepEvent(AssistantEvent):
+    """The optional, transient notification explanation conversation."""
+    event_id = "notifications_explanation"
+    category = AssistantCategory.TUTORIAL
+
+    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+        current_step = str(context.session_state.get(PUSH_EXPLANATION_STEP_KEY, "intro"))
+        choice_event_id = f"{self.event_id}.{current_step}"
+
+        if current_step == "intro":
+            choice = view.selected_choice(choice_event_id, "Why do they matter?", "Got it")
+            if choice is None:
+                view.say("Sure.")
+                view.typing_indicator()
+                view.say("Notifications are an integral part. They keep shared goals moving.")
+                choice = view.choices(choice_event_id, "", "Why do they matter?", "Got it")
+                if choice is None:
+                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "shared_goals"
+            return self.render(context, view)
+
+        if current_step == "shared_goals":
+            choice = view.selected_choice(choice_event_id, "How do I enable them?", "Makes sense")
+            if choice is None:
+                view.typing_indicator()
+                view.say("Friends can finish a shared goal.")
+                view.typing_indicator()
+                view.say("You can celebrate right away.")
+                view.typing_indicator()
+                view.say("They can react when you finish too.")
+                choice = view.choices(choice_event_id, "", "How do I enable them?", "Makes sense")
+                if choice is None:
+                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "mobile_installation"
+            return self.render(context, view)
+
+        if current_step == "mobile_installation":
+            choice = view.selected_choice(choice_event_id, "Why install it?", "Got it")
+            if choice is None:
+                view.typing_indicator()
+                view.say("Desktop is straightforward.")
+                view.typing_indicator()
+                view.say("On iPhone and Android, install Dogether to your Home Screen first.")
+                choice = view.choices(choice_event_id, "", "Why install it?", "Got it")
+                if choice is None:
+                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "os_consent"
+            return self.render(context, view)
+
+        if current_step == "os_consent":
+            choice = view.selected_choice(choice_event_id, "What can I control?", "Makes sense")
+            if choice is None:
+                view.typing_indicator()
+                view.say("The installed app can ask your phone for permission.")
+                view.typing_indicator(3)
+                view.say("Your operating system shows the consent prompt. Only you can approve it.")
+                choice = view.choices(choice_event_id, "", "What can I control?", "Makes sense")
+                if choice is None:
+                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "goal_controls"
+            return self.render(context, view)
+
+        if current_step == "goal_controls":
+            choice = view.selected_choice(choice_event_id, "Which settings?", "Got it")
+            if choice is None:
+                view.typing_indicator()
+                view.say("Notifications are not all-or-nothing.")
+                view.typing_indicator()
+                view.say("Each goal has its own settings.")
+                choice = view.choices(choice_event_id, "", "Which settings?", "Got it")
+                if choice is None:
+                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "available_settings"
+            return self.render(context, view)
+
+        if current_step == "available_settings":
+            choice = view.selected_choice(choice_event_id, "Where are those controls?", "Makes sense")
+            if choice is None:
+                view.typing_indicator(3.5)
+                view.say("Choose alerts when friends complete it and cap completion alerts per day. Also, choose alerts for reactions.")
+                choice = view.choices(choice_event_id, "", "Where are those controls?", "Makes sense")
+                if choice is None:
+                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "finish"
+            return self.render(context, view)
+
+        if current_step == "finish":
+            options = ("Enable notifications", "Show me Manage Goals", "Cool, thank you for the explanation.")
+            choice = view.selected_choice(choice_event_id, *options)
+            if choice is None:
+                view.typing_indicator()
+                view.say("They live on Manage Goals.")
+                view.typing_indicator()
+                view.say("Open a goal.")
+                view.typing_indicator()
+                view.say("Adjust what works for you.")
+                choice = view.choices(choice_event_id, "", *options)
+                if choice is None:
+                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+
+            context.session_state.pop(PUSH_EXPLANATION_STEP_KEY, None)
+            if choice == "Enable notifications":
+                view.go_to("push_notifications")
+                return EventOutcome.pending(
+                    event_updates={PUSH_EVENT_ID: {"outcome": "interrupted", "awaiting": "enable"}},
+                    flow=PROFILE_ANALYSIS_FLOW, node=PUSH_NODE, status="paused", continue_flow=True,
+                )
+            if choice == "Show me Manage Goals":
+                view.go_to("manage_goals")
+                return EventOutcome.pending(
+                    flow=PROFILE_ANALYSIS_FLOW, node=PUSH_NODE, status="paused", continue_flow=True,
+                )
+            view.typing_indicator()
+            view.say("Ciao.")
+            view.assistant_leave()
+            return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+
+        context.session_state.pop(PUSH_EXPLANATION_STEP_KEY, None)
+        return EventOutcome.pending(
+            flow=PROFILE_ANALYSIS_FLOW,
+            node=PUSH_EXPLANATION_NODE,
+            status="active",
+            continue_flow=True,
+        )
 
 
 class AnalysisCompleteEvent(AssistantEvent):
@@ -464,6 +600,7 @@ class ProfileAnalysisEvent(AssistantEvent):
             GOALS_NODE: CheckGoalsEvent(),
             GOALS_EXPLANATION_NODE: GoalExplanationStepEvent(),
             PUSH_NODE: CheckPushEvent(),
+            PUSH_EXPLANATION_NODE: NotificationExplanationStepEvent(),
             ANALYSIS_COMPLETE_NODE: AnalysisCompleteEvent(),
         }
 

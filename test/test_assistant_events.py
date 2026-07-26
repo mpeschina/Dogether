@@ -27,7 +27,6 @@ from src.assistant.stories.standard import (
     STANDARD_TUTORIAL_FLOW,
     StandardMenuEvent,
     StandardStory,
-    StandardTutorialEvent,
 )
 from src.assistant.stories.tutorial import (
     ANALYSIS_COMPLETE_NODE,
@@ -41,6 +40,8 @@ from src.assistant.stories.tutorial import (
     GOALS_NODE,
     ONBOARDING_FLOW,
     PROFILE_ANALYSIS_FLOW,
+    PUSH_EXPLANATION_NODE,
+    PUSH_EXPLANATION_STEP_KEY,
     PUSH_NODE,
     READY_NODE,
     STANDARD_FLOW,
@@ -302,7 +303,7 @@ def test_standard_menu_starts_the_selected_tutorial() -> None:
     tutorials = (
         ("How do I add friends?", "tutorial.friends.seen", FRIENDS_EXPLANATION_NODE),
         ("How do goals work?", "tutorial.goals.seen", GOALS_EXPLANATION_NODE),
-        ("How do notifications work?", "tutorial.notifications.seen", PUSH_NODE),
+        ("How do notifications work?", "tutorial.notifications.seen", PUSH_EXPLANATION_NODE),
     )
 
     for choice, knowledge_key, node in tutorials:
@@ -314,27 +315,6 @@ def test_standard_menu_starts_the_selected_tutorial() -> None:
         assert updated.node == node
         assert updated.status == "active"
         assert outcome.continue_flow is True
-
-
-def test_standard_tutorials_return_to_standard_without_advancing_onboarding() -> None:
-    tutorials = (
-        (PUSH_NODE, "Not now", {"push_enabled": False}),
-    )
-    story = StandardStory()
-
-    for node, choice, user_state in tutorials:
-        state = AssistantState(flow=STANDARD_TUTORIAL_FLOW, node=node, status="active")
-        event = story.next_event(context_for(state, user_state=user_state))
-        outcome = event.render(
-            context_for(state, user_state=user_state), RecordingView(selected_choice=choice)
-        )
-        updated = apply_event_outcome(state, outcome)
-
-        assert isinstance(event, StandardTutorialEvent)
-        assert updated.flow == STANDARD_FLOW
-        assert updated.node == READY_NODE
-        assert updated.status == "completed"
-        assert updated.flow != PROFILE_ANALYSIS_FLOW
 
 
 def test_friendlist_explanation_creates_and_shows_an_invite_link() -> None:
@@ -378,6 +358,102 @@ def test_friendlist_explanation_creates_and_shows_an_invite_link() -> None:
     goodbye = event.render(context_for(updated, session_state=session_state), goodbye_view)
     assert goodbye.status == "completed"
     assert ("leave",) in goodbye_view.calls
+
+
+def test_notification_explanation_runs_linearly_and_can_enable_notifications() -> None:
+    event = ProfileAnalysisEvent()
+    state = AssistantState(flow=PROFILE_ANALYSIS_FLOW, node=PUSH_NODE, status="active")
+    session_state = {}
+
+    explanation = apply_event_outcome(
+        state,
+        event.render(
+            context_for(state, user_state={"push_enabled": False}, session_state=session_state),
+            RecordingView(selected_choice="Explain notifications to me"),
+        ),
+    )
+    assert explanation.node == PUSH_EXPLANATION_NODE
+
+    shared_goals_view = RecordingView(selected_choice="Got it")
+    event.render(context_for(explanation, session_state=session_state), shared_goals_view)
+    assert ("say", "Friends can finish a shared goal.") in shared_goals_view.calls
+
+    mobile_view = RecordingView(selected_choice="Makes sense")
+    event.render(context_for(explanation, session_state=session_state), mobile_view)
+    assert ("say", "Desktop is straightforward.") in mobile_view.calls
+
+    consent_view = RecordingView(selected_choice="Got it")
+    event.render(context_for(explanation, session_state=session_state), consent_view)
+    assert ("say", "Your operating system shows the consent prompt.") in consent_view.calls
+
+    controls_view = RecordingView(selected_choice="Makes sense")
+    event.render(context_for(explanation, session_state=session_state), controls_view)
+    assert ("say", "Each goal has its own settings.") in controls_view.calls
+
+    settings_view = RecordingView(selected_choice="Got it")
+    event.render(context_for(explanation, session_state=session_state), settings_view)
+    assert ("say", "And cap completion alerts per day.") in settings_view.calls
+
+    finish_view = RecordingView(selected_choice="Makes sense")
+    event.render(context_for(explanation, session_state=session_state), finish_view)
+    assert ("say", "They live on Manage Goals.") in finish_view.calls
+
+    enable_view = RecordingView(selected_choice="Enable notifications")
+    outcome = event.render(context_for(explanation, session_state=session_state), enable_view)
+    updated = apply_event_outcome(explanation, outcome)
+    assert updated.node == PUSH_NODE
+    assert updated.status == "paused"
+    assert updated.events["push_check"]["awaiting"] == "enable"
+    assert outcome.continue_flow is True
+    assert ("go_to", "push_notifications") in enable_view.calls
+
+
+def test_notification_explanation_final_actions_manage_goals_and_goodbye() -> None:
+    event = ProfileAnalysisEvent()
+    state = AssistantState(flow=PROFILE_ANALYSIS_FLOW, node=PUSH_EXPLANATION_NODE, status="active")
+
+    manage_session = {PUSH_EXPLANATION_STEP_KEY: "finish"}
+    manage_view = RecordingView(selected_choice="Show me Manage Goals")
+    manage = event.render(context_for(state, session_state=manage_session), manage_view)
+    assert manage.node == PUSH_NODE
+    assert manage.status == "paused"
+    assert manage.continue_flow is True
+    assert ("go_to", "manage_goals") in manage_view.calls
+
+    goodbye_session = {PUSH_EXPLANATION_STEP_KEY: "finish"}
+    goodbye_view = RecordingView(selected_choice="Cool, thank you for the explanation.")
+    goodbye = event.render(context_for(state, session_state=goodbye_session), goodbye_view)
+    assert goodbye.flow == STANDARD_FLOW
+    assert goodbye.status == "completed"
+    assert ("say", "Ciao.") in goodbye_view.calls
+    assert ("leave",) in goodbye_view.calls
+
+
+def test_standard_notification_explanation_does_not_persist_an_unanswered_step() -> None:
+    story = StandardStory()
+    state = AssistantState(flow=STANDARD_TUTORIAL_FLOW, node=PUSH_EXPLANATION_NODE, status="active")
+
+    outcome = story.next_event(context_for(state, previous_page_key="help")).render(
+        context_for(state, previous_page_key="help"), RecordingView()
+    )
+
+    assert outcome == EventOutcome()
+
+
+def test_standard_notification_setup_completes_standard_flow_and_navigates() -> None:
+    story = StandardStory()
+    session_state = {PUSH_EXPLANATION_STEP_KEY: "finish"}
+    state = AssistantState(flow=STANDARD_TUTORIAL_FLOW, node=PUSH_EXPLANATION_NODE, status="active")
+    view = RecordingView(selected_choice="Enable notifications")
+    context = context_for(state, session_state=session_state, previous_page_key="help")
+
+    outcome = story.next_event(context).render(context, view)
+
+    assert outcome.flow == STANDARD_FLOW
+    assert outcome.node == READY_NODE
+    assert outcome.status == "completed"
+    assert outcome.continue_flow is True
+    assert ("go_to", "push_notifications") in view.calls
 
 
 def test_goal_explanation_runs_linearly_in_profile_analysis_and_can_start_goal_creation() -> None:
@@ -521,10 +597,11 @@ def test_leaving_a_standard_explanation_resets_to_the_standard_menu() -> None:
     session_state = {
         GOALS_EXPLANATION_STEP_KEY: "finish",
         FRIENDS_EXPLANATION_STEP_KEY: "link",
+        PUSH_EXPLANATION_STEP_KEY: "goal_controls",
     }
     state = AssistantState(
         flow=STANDARD_TUTORIAL_FLOW,
-        node=GOALS_EXPLANATION_NODE,
+        node=PUSH_EXPLANATION_NODE,
         status="active",
     )
     context = context_for(state, previous_page_key="goals", session_state=session_state)
@@ -537,6 +614,7 @@ def test_leaving_a_standard_explanation_resets_to_the_standard_menu() -> None:
     assert updated.node == READY_NODE
     assert GOALS_EXPLANATION_STEP_KEY not in session_state
     assert FRIENDS_EXPLANATION_STEP_KEY not in session_state
+    assert PUSH_EXPLANATION_STEP_KEY not in session_state
 
 
 def test_push_reminder_backoff_and_third_dismissal_suppression() -> None:
