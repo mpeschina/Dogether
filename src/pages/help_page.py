@@ -209,7 +209,7 @@ def _render_styles() -> None:
           }
           .assistant-user-choice span {
             background: var(--primary-color, #1f2937);
-            border-radius: 1.4rem;
+            border-radius: 1.4rem 0.35rem 1.4rem 1.4rem;
             color: #ffffff;
             display: inline-block;
             max-width: min(80%, 30rem);
