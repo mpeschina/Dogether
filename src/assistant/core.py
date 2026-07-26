@@ -26,6 +26,7 @@ class AssistantContext:
     previous_page_key: str | None = None
     now: datetime | None = None
     shared_story_state_store: SharedStoryStateStore | None = None
+    user_state: Mapping[str, bool] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -35,14 +36,26 @@ class EventOutcome:
     knowledge_updates: Mapping[str, bool] = field(default_factory=dict)
     event_updates: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     clear_events: tuple[str, ...] = ()
+    flow: str | None = None
+    node: str | None = None
+    status: str | None = None
+    continue_flow: bool = False
 
     @classmethod
     def pending(
         cls,
         *,
         event_updates: Mapping[str, Mapping[str, Any]] | None = None,
+        knowledge_updates: Mapping[str, bool] | None = None,
+        flow: str | None = None,
+        node: str | None = None,
+        status: str | None = None,
+        continue_flow: bool = False,
     ) -> "EventOutcome":
-        return cls(event_updates=event_updates or {})
+        return cls(
+            event_updates=event_updates or {}, knowledge_updates=knowledge_updates or {}, flow=flow, node=node, status=status,
+            continue_flow=continue_flow,
+        )
 
     @classmethod
     def complete(
@@ -52,6 +65,10 @@ class EventOutcome:
         knowledge_updates: Mapping[str, bool] | None = None,
         event_updates: Mapping[str, Mapping[str, Any]] | None = None,
         clear_events: tuple[str, ...] = (),
+        flow: str | None = None,
+        node: str | None = None,
+        status: str | None = None,
+        continue_flow: bool = False,
     ) -> "EventOutcome":
         return cls(
             completed=True,
@@ -59,6 +76,10 @@ class EventOutcome:
             knowledge_updates=knowledge_updates or {},
             event_updates=event_updates or {},
             clear_events=clear_events,
+            flow=flow,
+            node=node,
+            status=status,
+            continue_flow=continue_flow,
         )
 
 

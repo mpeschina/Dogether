@@ -184,6 +184,7 @@ def help_page() -> None:
         current_user,
         user_id,
         previous_page_key=previous_page_key,
+        push_storage=push_storage,
         now=app_now,
     )
 

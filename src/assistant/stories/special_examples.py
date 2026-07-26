@@ -16,7 +16,7 @@ PROGRESS_BAR_CLICK_COUNT: Final = 40
 PROGRESS_BAR_COUNT: Final = 3
 
 
-class WelcomeExampleEvent:
+class WelcomeExampleEvent(AssistantEvent):
     event_id = "special.welcome"
     category = AssistantCategory.JOKE
 
@@ -32,7 +32,7 @@ class WelcomeExampleEvent:
         return EventOutcome.complete(advance_sequence=SPECIAL_SEQUENCE_ID)
 
 
-class ButtonTestExampleEvent:
+class ButtonTestExampleEvent(AssistantEvent):
     event_id = BUTTON_TEST_EVENT_ID
     category = AssistantCategory.JOKE
 
@@ -50,7 +50,7 @@ class ButtonTestExampleEvent:
         )
 
 
-class ClickChallengeExampleEvent:
+class ClickChallengeExampleEvent(AssistantEvent):
     event_id = CLICK_CHALLENGE_EVENT_ID
     category = AssistantCategory.JOKE
 

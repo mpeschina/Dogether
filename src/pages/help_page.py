@@ -10,6 +10,7 @@ from src.assistant.state import AssistantState
 from src.assistant.presentation import StreamlitAssistantView
 from src.assistant.stories import default_stories
 from src.db.persistence import Persistence
+from src.push.storage import PushStorage
 
 
 def render_help(
@@ -17,6 +18,7 @@ def render_help(
     current_user: dict,
     user_id: str,
     previous_page_key: str | None = None,
+    push_storage: PushStorage | None = None,
     *,
     now: datetime | None = None,
 ) -> None:
@@ -27,6 +29,11 @@ def render_help(
     st.caption("Dogether Assistant")
 
     state = AssistantState.from_profile(current_user)
+    user_state = {
+        "has_friends": bool(persistence.list_friends(user_id)),
+        "has_goals": bool(persistence.list_goals_for_user(user_id, now=now)),
+        "push_enabled": bool(push_storage and push_storage.subscriptions_for_user(user_id)),
+    }
     context = AssistantContext(
         user_id=user_id,
         current_user=current_user,
@@ -35,6 +42,7 @@ def render_help(
         current_page_key="help",
         previous_page_key=previous_page_key,
         now=now,
+        user_state=user_state,
     )
     view = StreamlitAssistantView()
     director = AssistantDirector(persistence, default_stories())

@@ -74,3 +74,6 @@ class StreamlitAssistantView:
 
     def progress(self, value: float, text: str) -> None:
         st.progress(value, text=text)
+
+    def rerun(self) -> None:
+        st.rerun()

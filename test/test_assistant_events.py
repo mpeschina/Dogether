@@ -16,10 +16,20 @@ from src.assistant.stories.special_examples import (
     WelcomeExampleEvent,
 )
 from src.assistant.stories.tutorial import (
-    APP_INTRO_SEEN_KEY,
-    TUTORIAL_SEQUENCE_ID,
-    AppIntroductionEvent,
     AssistantReadyEvent,
+    ASSISTANT_DISMISSED_KEY,
+    FRIENDS_NODE,
+    GOALS_NODE,
+    ONBOARDING_FLOW,
+    PROFILE_ANALYSIS_FLOW,
+    PUSH_NODE,
+    READY_NODE,
+    STANDARD_FLOW,
+    InitialTutorialStory,
+    ProfileAnalysisEvent,
+    PushSetupReminderEvent,
+    ResumeEvent,
+    WelcomeEvent,
 )
 
 
@@ -73,6 +83,7 @@ def context_for(
     *,
     profile: dict | None = None,
     previous_page_key: str | None = "goals",
+    user_state: dict[str, bool] | None = None,
 ) -> AssistantContext:
     current_user = profile if profile is not None else {"user_id": "alice"}
     return AssistantContext(
@@ -82,6 +93,7 @@ def context_for(
         session_state={},
         current_page_key="help",
         previous_page_key=previous_page_key,
+        user_state=user_state or {},
     )
 
 
@@ -103,7 +115,7 @@ def test_assistant_state_normalizes_missing_and_malformed_values() -> None:
     assert state.events == {"event": {"clicks": 4}}
 
 
-def test_normal_tutorial_plays_once_then_shows_ready_without_another_write() -> None:
+def test_first_visit_persists_a_paused_welcome_and_returning_user_can_resume() -> None:
     persistence = RecordingPersistence()
     profile = {"user_id": "alice"}
     state = AssistantState.from_profile(profile)
@@ -112,29 +124,96 @@ def test_normal_tutorial_plays_once_then_shows_ready_without_another_write() -> 
 
     updated = director.render(context_for(state, profile=profile), introduction_view)
 
-    assert isinstance(default_stories()[AssistantMode.NORMAL].next_event(context_for(state)), AppIntroductionEvent)
-    assert updated.sequences[TUTORIAL_SEQUENCE_ID] == 1
-    assert updated.knowledge[APP_INTRO_SEEN_KEY] is True
-    assert len([call for call in introduction_view.calls if call[0] == "say"]) == 4
+    assert isinstance(default_stories()[AssistantMode.NORMAL].next_event(context_for(state)), WelcomeEvent)
+    assert updated.flow == ONBOARDING_FLOW
+    assert updated.node == "welcome"
+    assert updated.status == "paused"
+    assert ("say", "Hey. I'm here if you need me.") in introduction_view.calls
+    assert ("say", "What would you like to do?") in introduction_view.calls
+    assert ("choices", "onboarding.welcome", "", ("Analyse my profile", "Give me a tour", "I'm good")) in introduction_view.calls
     assert len(persistence.saved_states) == 1
 
-    ready_view = RecordingView()
+    resume_view = RecordingView()
     ready_context = context_for(
         AssistantState.from_profile(profile),
         profile=profile,
         previous_page_key="help",
     )
-    unchanged = director.render(ready_context, ready_view)
+    unchanged = director.render(ready_context, resume_view)
 
+    assert isinstance(default_stories()[AssistantMode.NORMAL].next_event(ready_context), ResumeEvent)
+    assert unchanged == updated
+    assert ("say", "Hey, you're back.") in resume_view.calls
+    assert len(persistence.saved_states) == 1
+
+
+def test_profile_analysis_checks_real_state_in_order_and_completes() -> None:
+    event = ProfileAnalysisEvent()
+    state = AssistantState(flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="active")
+
+    friends_done = apply_event_outcome(
+        state, event.render(context_for(state, user_state={"has_friends": True}), RecordingView())
+    )
+    assert friends_done.node == GOALS_NODE
+
+    goals_done = apply_event_outcome(
+        friends_done,
+        event.render(
+            context_for(friends_done, user_state={"has_friends": True, "has_goals": True}),
+            RecordingView(),
+        ),
+    )
+    assert goals_done.node == PUSH_NODE
+
+    complete_view = RecordingView()
+    completed = apply_event_outcome(
+        goals_done,
+        event.render(
+            context_for(
+                goals_done,
+                user_state={"has_friends": True, "has_goals": True, "push_enabled": True},
+            ),
+            complete_view,
+        ),
+    )
+    assert completed.flow == STANDARD_FLOW
+    assert completed.node == READY_NODE
+    assert completed.status == "completed"
+    assert ("say", "You're all set.") in complete_view.calls
+
+
+def test_im_good_leaves_the_assistant_and_prevents_follow_up_events() -> None:
+    persistence = RecordingPersistence()
+    profile = {"user_id": "alice"}
+    director = AssistantDirector(persistence, default_stories())
+    state = AssistantState()
+    leaving_view = RecordingView(selected_choice="I'm good")
+    dismissed = director.render(context_for(state, profile=profile), leaving_view)
+
+    assert dismissed.status == "dismissed"
+    assert dismissed.knowledge[ASSISTANT_DISMISSED_KEY] is True
+    assert ("say", "I'll leave you to it.") in leaving_view.calls
+    assert ("leave",) in leaving_view.calls
+    assert InitialTutorialStory().next_event(context_for(dismissed)) is None
+    next_visit = RecordingView()
+    assert director.render(context_for(dismissed, profile=profile), next_visit) == dismissed
+    assert next_visit.calls == []
+
+
+def test_standard_mode_shows_only_the_unseen_push_setup_reminder() -> None:
+    state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+    story = InitialTutorialStory()
+    assert isinstance(story.next_event(context_for(state, user_state={"push_enabled": False})), PushSetupReminderEvent)
+
+    prompted = apply_event_outcome(
+        state,
+        PushSetupReminderEvent().render(context_for(state), RecordingView()),
+    )
+    assert story.next_event(context_for(prompted, user_state={"push_enabled": False})) is not None
     assert isinstance(
-        default_stories()[AssistantMode.NORMAL].next_event(ready_context),
+        story.next_event(context_for(prompted, user_state={"push_enabled": False})),
         AssistantReadyEvent,
     )
-    assert unchanged == updated
-    assert ready_view.calls == [
-        ("status", "Assistant ready — come back whenever you need help.")
-    ]
-    assert len(persistence.saved_states) == 1
 
 
 def test_special_story_requires_a_new_help_visit_between_events() -> None:
@@ -209,8 +288,8 @@ def test_click_challenge_persists_clicks_and_completes_at_existing_threshold() -
 
 def test_mode_switch_preserves_progress_and_reset_clears_everything() -> None:
     normal_state = AssistantState(
-        sequences={TUTORIAL_SEQUENCE_ID: 1, SPECIAL_SEQUENCE_ID: 2},
-        knowledge={APP_INTRO_SEEN_KEY: True, "tutorial.notifications.seen": False},
+        sequences={SPECIAL_SEQUENCE_ID: 2},
+        knowledge={"tutorial.notifications.seen": False},
         events={CLICK_CHALLENGE_EVENT_ID: {"clicks": 20}},
     )
 

@@ -53,7 +53,7 @@ def render_assistant_settings(
 ) -> None:
     st.subheader("Assistant (Prototype)")
     st.caption(
-        "Normal shows the current tutorial experience. "
+        "Normal runs the guided onboarding and assistant events. "
         "Special runs the example assistant story."
     )
 

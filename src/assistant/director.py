@@ -58,6 +58,10 @@ class AssistantDirector:
         )
         normalized_state = AssistantState.from_value(stored_state)
         context.current_user["assistant_state"] = normalized_state.to_dict()
+        if outcome.continue_flow:
+            rerun = getattr(view, "rerun", None)
+            if callable(rerun):
+                rerun()
         return normalized_state
 
 
@@ -79,4 +83,7 @@ def apply_event_outcome(state: AssistantState, outcome: EventOutcome) -> Assista
         sequences=sequences,
         knowledge=knowledge,
         events=events,
+        flow=outcome.flow if outcome.flow is not None else state.flow,
+        node=outcome.node if outcome.node is not None else state.node,
+        status=outcome.status if outcome.status is not None else state.status,
     )

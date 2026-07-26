@@ -29,6 +29,12 @@ class AssistantState:
     sequences: dict[str, int] = field(default_factory=dict)
     knowledge: dict[str, bool] = field(default_factory=dict)
     events: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The guided-event engine stores its resume point, rather than a rendered
+    # transcript.  The older generic fields remain for backwards-compatible
+    # prototype stories and future event metadata.
+    flow: str | None = None
+    node: str | None = None
+    status: str = "new"
 
     @classmethod
     def from_profile(cls, profile: Mapping[str, Any]) -> "AssistantState":
@@ -73,11 +79,21 @@ class AssistantState:
                 if isinstance(key, str) and isinstance(event_state, Mapping)
             }
 
+        flow = value.get("flow")
+        flow = flow if isinstance(flow, str) and flow else None
+        node = value.get("node")
+        node = node if isinstance(node, str) and node else None
+        status = value.get("status", "new")
+        status = status if isinstance(status, str) and status else "new"
+
         return cls(
             mode=mode,
             sequences=sequences,
             knowledge=knowledge,
             events=events,
+            flow=flow,
+            node=node,
+            status=status,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -87,6 +103,9 @@ class AssistantState:
             "sequences": copy.deepcopy(self.sequences),
             "knowledge": copy.deepcopy(self.knowledge),
             "events": copy.deepcopy(self.events),
+            "flow": self.flow,
+            "node": self.node,
+            "status": self.status,
         }
 
     def with_mode(self, mode: AssistantMode) -> "AssistantState":
