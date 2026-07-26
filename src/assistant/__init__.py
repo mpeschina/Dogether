@@ -1,1 +1,1 @@
-"""Reusable state and content for scripted assistant events."""
+"""Modular assistant events, stories, presentation, and orchestration."""

@@ -4,7 +4,9 @@ from __future__ import annotations
 import copy
 from datetime import datetime, timedelta
 from time import monotonic
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
+
+from src.assistant.state import AssistantState
 
 from .persistence_helpers import (
     ACTIVITY_DAYS_REPAIR_VERSION,
@@ -315,6 +317,32 @@ class MongoNativePersistence:
             return _normalise_user_profile(user) if user else None
 
         return self._read_cached(("user", user_id), load_user)
+
+    def save_assistant_state(
+        self,
+        user_id: str,
+        assistant_state: Mapping[str, Any],
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        normalized_state = AssistantState.from_value(assistant_state).to_dict()
+        self._users_inventory_collection().update_one(
+            {"_id": user_id},
+            {
+                "$set": {
+                    "assistant_state": normalized_state,
+                    "updated_at": _iso(now),
+                }
+            },
+        )
+        self._cache_clear()
+        return copy.deepcopy(normalized_state)
+
+    def reset_assistant_state(
+        self,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        return self.save_assistant_state(user_id, AssistantState.reset().to_dict(), now=now)
 
     def ensure_friend_share_code(self, user_id: str, now: datetime | None = None) -> str:
         user = self.get_user(user_id)

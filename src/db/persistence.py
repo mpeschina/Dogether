@@ -17,6 +17,19 @@ class Persistence(Protocol):
 
     def get_user(self, user_id: str) -> dict[str, Any] | None: ...
 
+    def save_assistant_state(
+        self,
+        user_id: str,
+        assistant_state: Mapping[str, Any],
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
+    def reset_assistant_state(
+        self,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]: ...
+
     def ensure_friend_share_code(self, user_id: str, now: datetime | None = None) -> str: ...
 
     def find_user_by_friend_share_code(self, code: str) -> dict[str, Any] | None: ...

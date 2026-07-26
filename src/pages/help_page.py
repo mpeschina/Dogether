@@ -1,36 +1,46 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import streamlit as st
 
-from src.assistant.events import (
-    assistant_leave,
-    button_test_event,
-    complete_welcome_event,
-    event_for_help_visit,
-    third_event,
-    welcome_event,
-)
+from src.assistant.core import AssistantContext
+from src.assistant.director import AssistantDirector
+from src.assistant.state import AssistantState
+from src.assistant.presentation import StreamlitAssistantView
+from src.assistant.stories import default_stories
+from src.db.persistence import Persistence
 
 
-def render_help(previous_page_key: str | None = None) -> None:
-    """Render the session-only scripted assistant experience."""
+def render_help(
+    persistence: Persistence,
+    current_user: dict,
+    user_id: str,
+    previous_page_key: str | None = None,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Render the current user's durable scripted assistant experience."""
 
     _render_styles()
     st.markdown("<div class='assistant-page-heading'>Help</div>", unsafe_allow_html=True)
     st.caption("Dogether Assistant")
 
-    event = event_for_help_visit(st.session_state, previous_page_key=previous_page_key)
-    if event == "welcome":
-        welcome_event()
-        complete_welcome_event(st.session_state)
-    elif event == "button_test":
-        button_test_event(st.session_state)
-    elif event == "third_event":
-        third_event(st.session_state)
-    else:
-        pass
+    state = AssistantState.from_profile(current_user)
+    context = AssistantContext(
+        user_id=user_id,
+        current_user=current_user,
+        state=state,
+        session_state=st.session_state,
+        current_page_key="help",
+        previous_page_key=previous_page_key,
+        now=now,
+    )
+    view = StreamlitAssistantView()
+    director = AssistantDirector(persistence, default_stories())
+    director.render(context, view)
 
-    if event != "third_event":
+    if not view.input_rendered:
         st.chat_input("Message the assistant", disabled=True, key="help_assistant_dummy_input")
 
 

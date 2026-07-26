@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from html import escape
 import streamlit as st
 
+from src.assistant.state import AssistantMode, AssistantState
 from src.db.persistence import Persistence
 from src.pages.common_helpers import (
     ACTIVITY_CELL_GAP,
@@ -40,6 +41,51 @@ def render_account(
 
     st.subheader("Activity")
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=365)
+    render_assistant_settings(persistence, current_user, user_id, now=now)
+
+
+def render_assistant_settings(
+    persistence: Persistence,
+    current_user: dict,
+    user_id: str,
+    *,
+    now: datetime | None = None,
+) -> None:
+    st.subheader("Assistant (Prototype)")
+    st.caption(
+        "Normal shows the current tutorial experience. "
+        "Special runs the example assistant story."
+    )
+
+    state = AssistantState.from_profile(current_user)
+    st.caption("Current assistant state")
+    st.json(state.to_dict())
+
+    widget_key = f"assistant_mode_{user_id}"
+    mode_options = [mode.value for mode in AssistantMode]
+    selected_mode = st.radio(
+        "Assistant mode",
+        mode_options,
+        index=mode_options.index(state.mode.value),
+        format_func=str.title,
+        horizontal=True,
+        key=widget_key,
+    )
+    if selected_mode != state.mode.value:
+        updated_state = state.with_mode(AssistantMode(selected_mode))
+        stored_state = persistence.save_assistant_state(
+            user_id,
+            updated_state.to_dict(),
+            now=now,
+        )
+        current_user["assistant_state"] = stored_state
+        st.rerun()
+
+    if st.button("Reset assistant", key=f"reset_assistant_{user_id}"):
+        reset_state = persistence.reset_assistant_state(user_id, now=now)
+        current_user["assistant_state"] = reset_state
+        st.session_state.pop(widget_key, None)
+        st.rerun()
 
 
 def render_activity_diagram(

@@ -7,6 +7,7 @@ import json
 import pytest
 
 import src.db.cached_document_persistence as cached_document_persistence
+from src.assistant.state import AssistantMode, AssistantState
 from src.db.mongodb_native_persistence import MongoNativePersistence
 from src.db.persistence import JsonPersistence, create_persistence, persistence_settings
 from src.pages.debug_page import DebugMechanics, debug_now, debug_view_enabled
@@ -263,6 +264,79 @@ def test_user_profile_upsert_skips_write_when_profile_is_unchanged(tmp_path: Pat
 
     assert second == first
     assert persistence.write_count == writes_after_create
+
+
+def test_assistant_state_persists_in_json_user_profile_and_resets(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    persistence = JsonPersistence(path)
+    persistence.upsert_user(
+        "alice",
+        "alice@example.com",
+        "Alice",
+        at("2026-06-01T09:00:00"),
+    )
+    special_state = AssistantState(
+        mode=AssistantMode.SPECIAL,
+        sequences={"initial_tutorial": 1, "special_examples": 2},
+        knowledge={"tutorial.app_intro.seen": True},
+        events={"special.click_challenge": {"active": True, "clicks": 37}},
+    )
+
+    stored = persistence.save_assistant_state(
+        "alice",
+        special_state.to_dict(),
+        now=at("2026-06-01T09:01:00"),
+    )
+
+    assert stored == special_state.to_dict()
+    reloaded = JsonPersistence(path).get_user("alice")
+    assert reloaded is not None
+    assert AssistantState.from_profile(reloaded) == special_state
+
+    reset = persistence.reset_assistant_state(
+        "alice",
+        now=at("2026-06-01T09:02:00"),
+    )
+    assert reset == AssistantState.reset().to_dict()
+    reset_profile = JsonPersistence(path).get_user("alice")
+    assert AssistantState.from_profile(reset_profile or {}) == AssistantState.reset()
+
+
+def test_legacy_and_malformed_assistant_profiles_normalize_safely(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    path.write_text(
+        json.dumps(
+            {
+                "users": {
+                    "legacy": {
+                        "user_id": "legacy",
+                        "email": "legacy@example.com",
+                        "name": "Legacy",
+                    },
+                    "malformed": {
+                        "user_id": "malformed",
+                        "email": "malformed@example.com",
+                        "name": "Malformed",
+                        "assistant_state": {
+                            "mode": "invalid",
+                            "sequences": "invalid",
+                        },
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    persistence = JsonPersistence(path)
+
+    legacy = persistence.get_user("legacy")
+    malformed = persistence.get_user("malformed")
+
+    assert legacy is not None
+    assert "assistant_state" not in legacy
+    assert AssistantState.from_profile(legacy) == AssistantState.reset()
+    assert malformed is not None
+    assert malformed["assistant_state"] == AssistantState.reset().to_dict()
 
 
 def test_friend_invite_lifecycle_and_duplicate_prevention(tmp_path: Path) -> None:
@@ -1397,6 +1471,45 @@ def test_mongodb_native_goal_progress_uses_targeted_updates() -> None:
     assert not [call for call in database["goals"].calls if call[0] == "replace_one"]
     assert [call for call in database["users_inventory"].calls if call[0] == "update_one"]
     assert database["goals"].documents[goal["id"]]["participants"]["alice"]["current"] == 4
+
+
+def test_mongodb_native_assistant_state_uses_targeted_write_without_read() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    persistence.upsert_user(
+        "alice",
+        "alice@example.com",
+        "Alice",
+        at("2026-06-01T09:00:00"),
+    )
+    database["users_inventory"].calls.clear()
+    state = AssistantState(
+        mode=AssistantMode.SPECIAL,
+        sequences={"special_examples": 1},
+    )
+
+    stored = persistence.save_assistant_state(
+        "alice",
+        state.to_dict(),
+        now=at("2026-06-01T09:01:00"),
+    )
+
+    assert stored == state.to_dict()
+    assert not [
+        call
+        for call in database["users_inventory"].calls
+        if call[0] in {"find", "find_one"}
+    ]
+    update_calls = [
+        call for call in database["users_inventory"].calls if call[0] == "update_one"
+    ]
+    assert len(update_calls) == 1
+    assert update_calls[0][1] == {"_id": "alice"}
+    assert update_calls[0][2]["$set"]["assistant_state"] == state.to_dict()
+    assert (
+        database["users_inventory"].documents["alice"]["assistant_state"]
+        == state.to_dict()
+    )
 
 
 def test_mongodb_native_goal_reaction_notifications_use_targeted_update() -> None:

@@ -8,6 +8,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from src.assistant.state import AssistantState
+
 
 APP_ZONE = ZoneInfo("Europe/Berlin")
 UTC = timezone.utc
@@ -91,6 +93,10 @@ def _normalise_friend_pair(value: Any) -> list[str] | None:
 
 def _normalise_user_profile(user: dict[str, Any]) -> dict[str, Any]:
     normalised = dict(user)
+    if "assistant_state" in normalised:
+        normalised["assistant_state"] = AssistantState.from_value(
+            normalised.get("assistant_state")
+        ).to_dict()
     dismissed_pairs = []
     seen_pairs = set()
     for value in user.get("dismissed_friend_suggestion_pairs", []):

@@ -4,7 +4,9 @@ from __future__ import annotations
 import copy
 import threading
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Mapping
+
+from src.assistant.state import AssistantState
 
 from .persistence_helpers import (
     _active_friendship,
@@ -74,6 +76,31 @@ class DocumentPersistence:
     def get_user(self, user_id: str) -> dict[str, Any] | None:
         with self._lock:
             return self._read()["users"].get(user_id)
+
+    def save_assistant_state(
+        self,
+        user_id: str,
+        assistant_state: Mapping[str, Any],
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        normalized_state = AssistantState.from_value(assistant_state).to_dict()
+        with self._lock:
+            data = self._read()
+            user = data["users"].get(user_id)
+            if not user:
+                raise ValueError("User not found.")
+            if user.get("assistant_state") != normalized_state:
+                user["assistant_state"] = normalized_state
+                user["updated_at"] = _iso(now)
+                self._write(data)
+        return copy.deepcopy(normalized_state)
+
+    def reset_assistant_state(
+        self,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        return self.save_assistant_state(user_id, AssistantState.reset().to_dict(), now=now)
 
     def users_by_ids(self, user_ids: list[str]) -> dict[str, dict[str, Any]]:
         with self._lock:

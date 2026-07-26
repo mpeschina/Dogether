@@ -179,7 +179,13 @@ def push_notifications_page() -> None:
 def help_page() -> None:
     previous_page_key = st.session_state.get("current_page_key")
     mark_current_page("help")
-    render_help(previous_page_key=previous_page_key)
+    render_help(
+        persistence,
+        current_user,
+        user_id,
+        previous_page_key=previous_page_key,
+        now=app_now,
+    )
 
 
 def debug_page() -> None:
