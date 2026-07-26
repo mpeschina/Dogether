@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, MutableMapping
 from datetime import date, datetime, timedelta
 from html import escape
 import streamlit as st
 
 from src.assistant.state import AssistantMode, AssistantState
+from src.assistant.stories.greetings import (
+    GREETING_DATE_SESSION_KEY,
+    GREETING_PENDING_SESSION_KEY,
+    GREETING_SELECTION_SESSION_KEY,
+)
 from src.db.persistence import Persistence
 from src.pages.common_helpers import (
     ACTIVITY_CELL_GAP,
@@ -60,6 +66,8 @@ def render_assistant_settings(
     state = AssistantState.from_profile(current_user)
     st.caption("Current assistant state")
     st.json(state.to_dict())
+    st.caption("Greeting session debug")
+    st.json(greeting_debug_info(st.session_state))
 
     widget_key = f"assistant_mode_{user_id}"
     mode_options = [mode.value for mode in AssistantMode]
@@ -86,6 +94,31 @@ def render_assistant_settings(
         current_user["assistant_state"] = reset_state
         st.session_state.pop(widget_key, None)
         st.rerun()
+
+    if st.button("Clear greeting session", key=f"clear_greeting_session_{user_id}"):
+        clear_greeting_session(st.session_state)
+        st.rerun()
+
+
+def greeting_debug_info(session_state: Mapping[str, object]) -> dict[str, object]:
+    """Expose transient greeting state without adding it to assistant persistence."""
+    current_greeting = session_state.get(GREETING_SELECTION_SESSION_KEY)
+    return {
+        "greeting": current_greeting,
+        "current_greeting_variable": current_greeting,
+        "greeting_date": session_state.get(GREETING_DATE_SESSION_KEY),
+        "pending_interaction": session_state.get(GREETING_PENDING_SESSION_KEY),
+    }
+
+
+def clear_greeting_session(session_state: MutableMapping[str, object]) -> None:
+    """Reset only the session-scoped greeting keys used for Help testing."""
+    for key in (
+        GREETING_DATE_SESSION_KEY,
+        GREETING_SELECTION_SESSION_KEY,
+        GREETING_PENDING_SESSION_KEY,
+    ):
+        session_state.pop(key, None)
 
 
 def render_activity_diagram(

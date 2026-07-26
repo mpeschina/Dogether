@@ -12,6 +12,15 @@ from src.assistant.presentation import (
 )
 from src.assistant.state import AssistantMode, AssistantState
 from src.assistant.stories import default_stories
+from src.assistant.stories.greetings import (
+    GREETING_DATE_SESSION_KEY,
+    GREETING_PENDING_SESSION_KEY,
+    GREETING_SELECTION_SESSION_KEY,
+    GreetingEvent,
+    GreetingsStory,
+    INTERACTIVE_GREETING_IDS,
+    NORMAL_GREETING_IDS,
+)
 from src.assistant.stories.special_examples import (
     BUTTON_TEST_EVENT_ID,
     CLICK_CHALLENGE_EVENT_ID,
@@ -103,6 +112,18 @@ class RecordingView:
 
     def progress(self, value, text):
         self.calls.append(("progress", value, text))
+
+
+class StubRandom:
+    def __init__(self, roll: float, choice_index: int = 0) -> None:
+        self.roll = roll
+        self.choice_index = choice_index
+
+    def random(self) -> float:
+        return self.roll
+
+    def choice(self, choices):
+        return choices[self.choice_index]
 
 
 def context_for(
@@ -240,7 +261,7 @@ def test_im_good_leaves_the_assistant_and_prevents_follow_up_events() -> None:
     assert InitialTutorialStory().next_event(context_for(dismissed)) is None
     next_visit = RecordingView()
     assert director.render(context_for(dismissed, profile=profile), next_visit) == dismissed
-    assert ("say", "Hello") in next_visit.calls
+    assert any(call[0] == "say" for call in next_visit.calls)
 
 
 def test_im_good_click_is_processed_after_the_welcome_rerun() -> None:
@@ -273,7 +294,7 @@ def test_im_good_click_is_processed_after_the_welcome_rerun() -> None:
 def test_standard_mode_shows_the_default_tutorial_menu_after_onboarding() -> None:
     state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
     director = AssistantDirector(RecordingPersistence(), default_stories())
-    assert isinstance(director._next_event(context_for(state, user_state={"push_enabled": False})), StandardMenuEvent)
+    assert isinstance(director._next_event(context_for(state, user_state={"push_enabled": False})), GreetingEvent)
 
 
 def test_director_selects_one_normal_mode_event_in_priority_order() -> None:
@@ -293,8 +314,93 @@ def test_director_selects_one_normal_mode_event_in_priority_order() -> None:
     standard = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
     assert isinstance(
         director._next_event(context_for(standard, user_state={"push_enabled": False, "completed_goal_count": 0})),
-        StandardMenuEvent,
+        GreetingEvent,
     )
+
+
+def test_greeting_roll_uses_an_explicit_eighty_twenty_category_split() -> None:
+    state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+    menu = StandardMenuEvent()
+
+    normal_event = GreetingsStory(menu, random_source=StubRandom(0.79)).next_event(context_for(state))
+    interactive_event = GreetingsStory(menu, random_source=StubRandom(0.8)).next_event(context_for(state))
+
+    assert isinstance(normal_event, GreetingEvent)
+    assert normal_event.greeting_id in NORMAL_GREETING_IDS
+    assert isinstance(interactive_event, GreetingEvent)
+    assert interactive_event.greeting_id in INTERACTIVE_GREETING_IDS
+
+
+def test_daily_greeting_is_session_only_and_date_aware() -> None:
+    persistence = RecordingPersistence()
+    stories = default_stories()
+    stories["greetings"] = GreetingsStory(StandardMenuEvent(), random_source=StubRandom(0.1, 1))
+    director = AssistantDirector(persistence, stories)
+    state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+    session_state = {}
+    context = replace(
+        context_for(state, session_state=session_state, user_state={"push_enabled": False}),
+        now=datetime(2026, 7, 26, tzinfo=timezone.utc),
+    )
+    view = RecordingView()
+
+    assert director.render(context, view) == state
+    assert ("say", "Hello, today is July 26.") in view.calls
+    assert session_state[GREETING_DATE_SESSION_KEY] == "2026-07-26"
+    assert session_state[GREETING_SELECTION_SESSION_KEY] == "date"
+    assert GREETING_PENDING_SESSION_KEY not in session_state
+    assert persistence.saved_states == []
+
+
+def test_interactive_greeting_resumes_then_forwards_to_the_tutorial_menu() -> None:
+    state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+    session_state = {}
+    story = GreetingsStory(StandardMenuEvent(), random_source=StubRandom(0.8))
+    context = replace(
+        context_for(state, session_state=session_state),
+        now=datetime(2026, 7, 26, tzinfo=timezone.utc),
+    )
+
+    initial = story.next_event(context)
+    initial_view = RecordingView()
+    initial.render(context, initial_view)
+    assert ("say", "Howdy my friend!") in initial_view.calls
+    assert ("choices", "greetings.interaction", "", ("Are you a Cowboy today?",)) in initial_view.calls
+    assert session_state[GREETING_PENDING_SESSION_KEY] == "cowboy"
+
+    selected = story.next_event(context)
+    selected_view = RecordingView(selected_choice="Are you a Cowboy today?")
+    selected.render(context, selected_view)
+    assert ("say", "I am just in a good mood. How can I help you?") in selected_view.calls
+    assert ("choices", "standard.tutorial_menu", "Tutorials", (
+        "How do I add friends?", "How do goals work?", "How do notifications work?", "How do I track progress?",
+    )) in selected_view.calls
+    assert GREETING_PENDING_SESSION_KEY not in session_state
+
+
+def test_greetings_fall_back_to_hello_until_a_new_session_day() -> None:
+    state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+    session_state = {}
+    story = GreetingsStory(StandardMenuEvent(), random_source=StubRandom(0.1, 2))
+    today_context = replace(
+        context_for(state, session_state=session_state),
+        now=datetime(2026, 7, 26, tzinfo=timezone.utc),
+    )
+    story.next_event(today_context).render(today_context, RecordingView())
+
+    fallback_view = RecordingView()
+    story.next_event(today_context).render(today_context, fallback_view)
+    assert ("say", "Hello") in fallback_view.calls
+
+    tomorrow_context = replace(today_context, now=datetime(2026, 7, 27, tzinfo=timezone.utc))
+    tomorrow_view = RecordingView()
+    story.next_event(tomorrow_context).render(tomorrow_context, tomorrow_view)
+    assert ("say", "Good to see you.") in tomorrow_view.calls
+
+    new_session_view = RecordingView()
+    new_session_context = replace(tomorrow_context, session_state={})
+    story.next_event(new_session_context).render(new_session_context, new_session_view)
+    assert ("say", "Good to see you.") in new_session_view.calls
 
 
 def test_standard_menu_starts_the_selected_tutorial() -> None:

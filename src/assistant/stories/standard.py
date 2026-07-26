@@ -47,7 +47,6 @@ class StandardMenuEvent(AssistantEvent):
         options = tuple(label for label, _, _ in TUTORIAL_OPTIONS)
         choice = view.selected_choice(self.event_id, *options)
         if choice is None:
-            view.say("Hello")
             choice = view.choices(self.event_id, "Tutorials", *options)
         if choice is None:
             if (

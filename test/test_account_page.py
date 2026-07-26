@@ -1,7 +1,12 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from src.pages.account_page import activity_diagram_html
+from src.assistant.stories.greetings import (
+    GREETING_DATE_SESSION_KEY,
+    GREETING_PENDING_SESSION_KEY,
+    GREETING_SELECTION_SESSION_KEY,
+)
+from src.pages.account_page import activity_diagram_html, clear_greeting_session, greeting_debug_info
 
 BERLIN = ZoneInfo("Europe/Berlin")
 
@@ -46,3 +51,25 @@ def test_activity_diagram_html_renders_full_past_365_days() -> None:
     assert "2026-01-01: 1 / 1 goals fulfilled (100.0%)" in html
     assert "2026-12-31: 1 / 2 goals fulfilled (50.0%)" in html
     assert html.count("class='activity-day'") == 371
+
+
+def test_greeting_debug_info_shows_and_clears_only_session_greeting_state() -> None:
+    session_state = {
+        GREETING_DATE_SESSION_KEY: "2026-07-26",
+        GREETING_SELECTION_SESSION_KEY: "cowboy",
+        GREETING_PENDING_SESSION_KEY: "cowboy",
+        "unrelated": "kept",
+    }
+
+    debug_info = greeting_debug_info(session_state)
+
+    assert debug_info == {
+        "greeting": "cowboy",
+        "current_greeting_variable": "cowboy",
+        "greeting_date": "2026-07-26",
+        "pending_interaction": "cowboy",
+    }
+
+    clear_greeting_session(session_state)
+
+    assert session_state == {"unrelated": "kept"}

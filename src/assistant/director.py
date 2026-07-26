@@ -108,7 +108,14 @@ class AssistantDirector:
             push_story = self.stories.get("push_reminder")
             return push_story.next_event(context) if push_story is not None else None
 
-        # 6. The standard story is the non-proactive fallback.
+        # 6. A session-scoped greeting decorates the standard fallback.
+        greetings = self.stories.get("greetings")
+        if greetings is not None:
+            greeting_event = greetings.next_event(context)
+            if greeting_event is not None:
+                return greeting_event
+
+        # 7. The standard story is the non-proactive fallback.
         standard = self.stories.get(AssistantMode.NORMAL)
         return standard.next_event(context) if standard is not None else None
 
