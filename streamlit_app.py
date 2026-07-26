@@ -13,7 +13,7 @@ from src.friends.share_links import (
     capture_friend_share_code,
 )
 from src.pages.account_page import render_account
-from src.pages.historical_data_repair import (
+from src.pages.historical_data_repair_page import (
     CHANGES_TOAST_SHOWN_SESSION_KEY,
     READY_OPTION_SESSION_KEY,
     READY_SESSION_KEY,
