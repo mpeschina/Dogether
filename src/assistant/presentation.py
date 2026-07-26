@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator, MutableMapping
+from html import escape
 from typing import Any
 
 import streamlit as st
@@ -45,6 +46,8 @@ class StreamlitAssistantView:
             if kind == "say":
                 with st.chat_message("assistant", avatar="✨"):
                     st.markdown(content)
+            elif kind == "user_choice":
+                self._render_user_choice(content)
             else:
                 st.markdown(f"<div class='assistant-status'>{content}</div>", unsafe_allow_html=True)
 
@@ -79,10 +82,20 @@ class StreamlitAssistantView:
         self._transcript.append(("status", message))
         st.markdown(f"<div class='assistant-status'>{message}</div>", unsafe_allow_html=True)
 
+    @staticmethod
+    def _render_user_choice(message: str) -> None:
+        """Render a selected assistant option as an outgoing chat bubble."""
+        st.markdown(
+            f"<div class='assistant-user-choice'><span>{escape(message)}</span></div>",
+            unsafe_allow_html=True,
+        )
+
     def selected_choice(self, event_id: str, *options: str) -> str | None:
-        """Read a previous-run button click without rendering that button again."""
+        """Read and record a clicked choice without rendering its button again."""
         for index, option in enumerate(options):
             if st.session_state.get(f"assistant_choice_{event_id}_{index}", False):
+                self._transcript.append(("user_choice", option))
+                self._render_user_choice(option)
                 return option
         return None
 
@@ -95,6 +108,8 @@ class StreamlitAssistantView:
                 key=f"assistant_choice_{event_id}_{index}",
                 use_container_width=True,
             ):
+                self._transcript.append(("user_choice", option))
+                self._render_user_choice(option)
                 return option
         return None
 

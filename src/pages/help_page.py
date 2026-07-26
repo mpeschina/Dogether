@@ -163,6 +163,21 @@ def _render_styles() -> None:
           }
           .assistant-typing span:nth-child(2) { animation-delay: 0.16s; }
           .assistant-typing span:nth-child(3) { animation-delay: 0.32s; }
+          .assistant-user-choice {
+            display: flex;
+            justify-content: flex-end;
+            margin: 0.8rem 0;
+          }
+          .assistant-user-choice span {
+            background: #f2f4f7;
+            border-radius: 1.4rem;
+            color: #101828;
+            display: inline-block;
+            max-width: min(80%, 30rem);
+            padding: 0.6rem 0.95rem;
+            text-align: center;
+            overflow-wrap: anywhere;
+          }
           @keyframes assistant-dot-pulse {
             0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
             30% { opacity: 1; transform: translateY(-0.18rem); }
