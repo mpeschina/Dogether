@@ -9,6 +9,7 @@ from src.assistant.director import AssistantDirector
 from src.assistant.state import AssistantState
 from src.assistant.presentation import StreamlitAssistantView, clear_transcript_for_new_help_visit
 from src.assistant.stories import default_stories
+from src.friends.share_links import create_friend_share_link
 from src.db.persistence import Persistence
 from src.push.storage import PushStorage
 
@@ -88,6 +89,9 @@ def render_help(
         previous_page_key=previous_page_key,
         now=now,
         user_state=user_state,
+        create_friend_share_link=lambda: create_friend_share_link(
+            persistence, user_id, st.session_state, now=now
+        ),
     )
     view = StreamlitAssistantView()
     director = AssistantDirector(persistence, default_stories())

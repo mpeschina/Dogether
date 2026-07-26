@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 from src.assistant.state import AssistantCategory, AssistantState
 
@@ -27,6 +27,7 @@ class AssistantContext:
     now: datetime | None = None
     shared_story_state_store: SharedStoryStateStore | None = None
     user_state: Mapping[str, Any] = field(default_factory=dict)
+    create_friend_share_link: Callable[[], str] | None = None
 
 
 @dataclass(frozen=True)

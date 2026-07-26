@@ -9,7 +9,7 @@ from typing import Any
 import streamlit as st
 
 
-WORD_DELAY_SECONDS = 0.05
+WORD_DELAY_SECONDS = 0.01
 TYPING_DELAY_MIN = 0.6
 TYPING_DELAY_MAX = 2.5
 TRANSCRIPT_KEY = "assistant.transcript"

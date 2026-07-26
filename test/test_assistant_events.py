@@ -34,6 +34,8 @@ from src.assistant.stories.tutorial import (
     AssistantReadyEvent,
     ASSISTANT_DISMISSED_KEY,
     FRIENDS_NODE,
+    FRIENDS_EXPLANATION_NODE,
+    FRIENDS_EXPLANATION_STEP_KEY,
     GOALS_EXPLANATION_NODE,
     GOALS_EXPLANATION_STEP_KEY,
     GOALS_NODE,
@@ -109,6 +111,7 @@ def context_for(
     previous_page_key: str | None = "goals",
     user_state: dict[str, bool] | None = None,
     session_state: dict | None = None,
+    create_friend_share_link=None,
 ) -> AssistantContext:
     current_user = profile if profile is not None else {"user_id": "alice"}
     return AssistantContext(
@@ -119,6 +122,7 @@ def context_for(
         current_page_key="help",
         previous_page_key=previous_page_key,
         user_state=user_state or {},
+        create_friend_share_link=create_friend_share_link,
     )
 
 
@@ -296,8 +300,8 @@ def test_standard_menu_starts_the_selected_tutorial() -> None:
     event = StandardMenuEvent()
     state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
     tutorials = (
-        ("How do I add friends?", "tutorial.friends.seen", FRIENDS_NODE),
-        ("How do I create a goal?", "tutorial.goals.seen", GOALS_EXPLANATION_NODE),
+        ("How do I add friends?", "tutorial.friends.seen", FRIENDS_EXPLANATION_NODE),
+        ("How do goals work?", "tutorial.goals.seen", GOALS_EXPLANATION_NODE),
         ("How do notifications work?", "tutorial.notifications.seen", PUSH_NODE),
     )
 
@@ -314,7 +318,6 @@ def test_standard_menu_starts_the_selected_tutorial() -> None:
 
 def test_standard_tutorials_return_to_standard_without_advancing_onboarding() -> None:
     tutorials = (
-        (FRIENDS_NODE, "Later", {"friend_count": 0}),
         (PUSH_NODE, "Not now", {"push_enabled": False}),
     )
     story = StandardStory()
@@ -332,6 +335,49 @@ def test_standard_tutorials_return_to_standard_without_advancing_onboarding() ->
         assert updated.node == READY_NODE
         assert updated.status == "completed"
         assert updated.flow != PROFILE_ANALYSIS_FLOW
+
+
+def test_friendlist_explanation_creates_and_shows_an_invite_link() -> None:
+    event = ProfileAnalysisEvent()
+    state = AssistantState(flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="active")
+    session_state = {}
+
+    explanation = apply_event_outcome(
+        state,
+        event.render(
+            context_for(state, user_state={"friend_count": 0}, session_state=session_state),
+            RecordingView(selected_choice="Explain the Friendlist to me"),
+        ),
+    )
+    assert explanation.node == FRIENDS_EXPLANATION_NODE
+
+    intro_view = RecordingView(selected_choice="Got it")
+    event.render(context_for(explanation, session_state=session_state), intro_view)
+    assert ("say", "You have two options to add friends here.") in intro_view.calls
+
+    options_view = RecordingView(selected_choice="Makes sense")
+    event.render(context_for(explanation, session_state=session_state), options_view)
+    assert ("say", "Your link belongs to you.") in options_view.calls
+
+    link_view = RecordingView(selected_choice="Create a Link for me")
+    outcome = event.render(
+        context_for(
+            explanation,
+            session_state=session_state,
+            create_friend_share_link=lambda: "https://dogether.example/friend?share=abc",
+        ),
+        link_view,
+    )
+    updated = apply_event_outcome(explanation, outcome)
+    assert updated.node == FRIENDS_EXPLANATION_NODE
+    assert updated.status == "paused"
+    assert ("say", "Here’s your invite link:\n\nhttps://dogether.example/friend?share=abc") in link_view.calls
+    assert ("choices", "friends_explanation.goodbye", "", ("Ciao, thanks for the explanation",)) in link_view.calls
+
+    goodbye_view = RecordingView(selected_choice="Ciao, thanks for the explanation")
+    goodbye = event.render(context_for(updated, session_state=session_state), goodbye_view)
+    assert goodbye.status == "completed"
+    assert ("leave",) in goodbye_view.calls
 
 
 def test_goal_explanation_runs_linearly_in_profile_analysis_and_can_start_goal_creation() -> None:
@@ -410,7 +456,7 @@ def test_goal_explanation_choices_do_not_change_the_linear_path() -> None:
     assert ("say", "Send them a reaction.") in reactions_view.calls
 
 
-def test_goal_explanation_returns_to_standard_flow_when_backed_out() -> None:
+def test_goal_explanation_returns_to_standard_flow_when_thanked() -> None:
     story = StandardStory()
     session_state = {GOALS_EXPLANATION_STEP_KEY: "finish"}
     finish_state = AssistantState(
@@ -420,9 +466,9 @@ def test_goal_explanation_returns_to_standard_flow_when_backed_out() -> None:
     )
     back = apply_event_outcome(
         finish_state,
-        story.next_event(context_for(finish_state, session_state=session_state)).render(
-            context_for(finish_state, session_state=session_state),
-            RecordingView(selected_choice="Back"),
+        story.next_event(context_for(finish_state, session_state=session_state, previous_page_key="help")).render(
+            context_for(finish_state, session_state=session_state, previous_page_key="help"),
+            RecordingView(selected_choice="Cool, thank you for the explanation."),
         ),
     )
     assert back.flow == STANDARD_FLOW
@@ -436,8 +482,8 @@ def test_standard_goal_explanation_can_navigate_to_goal_creation() -> None:
     state = AssistantState(flow=STANDARD_TUTORIAL_FLOW, node=GOALS_EXPLANATION_NODE, status="active")
     view = RecordingView(selected_choice="Create a goal")
 
-    outcome = story.next_event(context_for(state, session_state=session_state)).render(
-        context_for(state, session_state=session_state), view
+    outcome = story.next_event(context_for(state, session_state=session_state, previous_page_key="help")).render(
+        context_for(state, session_state=session_state, previous_page_key="help"), view
     )
 
     assert outcome.flow == STANDARD_FLOW
@@ -445,13 +491,52 @@ def test_standard_goal_explanation_can_navigate_to_goal_creation() -> None:
     assert ("go_to", "manage_goals") in view.calls
 
 
+def test_goal_explanation_can_end_with_a_goodbye() -> None:
+    event = ProfileAnalysisEvent()
+    session_state = {GOALS_EXPLANATION_STEP_KEY: "finish"}
+    state = AssistantState(flow=PROFILE_ANALYSIS_FLOW, node=GOALS_EXPLANATION_NODE, status="active")
+    view = RecordingView(selected_choice="Cool, thank you for the explanation.")
+
+    outcome = event.render(context_for(state, session_state=session_state), view)
+
+    assert outcome.status == "completed"
+    assert outcome.flow == STANDARD_FLOW
+    assert ("say", "Ciao.") in view.calls
+    assert ("leave",) in view.calls
+
+
 def test_standard_goal_explanation_does_not_pause_without_a_choice() -> None:
     story = StandardStory()
     state = AssistantState(flow=STANDARD_TUTORIAL_FLOW, node=GOALS_EXPLANATION_NODE, status="active")
 
-    outcome = story.next_event(context_for(state)).render(context_for(state), RecordingView())
+    outcome = story.next_event(context_for(state, previous_page_key="help")).render(
+        context_for(state, previous_page_key="help"), RecordingView()
+    )
 
     assert outcome == EventOutcome()
+
+
+def test_leaving_a_standard_explanation_resets_to_the_standard_menu() -> None:
+    story = StandardStory()
+    session_state = {
+        GOALS_EXPLANATION_STEP_KEY: "finish",
+        FRIENDS_EXPLANATION_STEP_KEY: "link",
+    }
+    state = AssistantState(
+        flow=STANDARD_TUTORIAL_FLOW,
+        node=GOALS_EXPLANATION_NODE,
+        status="active",
+    )
+    context = context_for(state, previous_page_key="goals", session_state=session_state)
+
+    outcome = story.next_event(context).render(context, RecordingView())
+    updated = apply_event_outcome(state, outcome)
+
+    assert isinstance(story.next_event(context), StandardMenuEvent)
+    assert updated.flow == STANDARD_FLOW
+    assert updated.node == READY_NODE
+    assert GOALS_EXPLANATION_STEP_KEY not in session_state
+    assert FRIENDS_EXPLANATION_STEP_KEY not in session_state
 
 
 def test_push_reminder_backoff_and_third_dismissal_suppression() -> None:

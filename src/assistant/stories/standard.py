@@ -6,10 +6,13 @@ from typing import Final
 from src.assistant.core import AssistantContext, AssistantEvent, AssistantView, EventOutcome
 from src.assistant.state import AssistantCategory
 from src.assistant.stories.tutorial import (
-    CheckFriendsEvent,
     CheckPushEvent,
+    FRIENDS_EXPLANATION_NODE,
     FRIENDS_NODE,
+    FRIENDS_EXPLANATION_STEP_KEY,
+    FriendlistExplanationStepEvent,
     GOALS_EXPLANATION_NODE,
+    GOALS_EXPLANATION_STEP_KEY,
     GOALS_NODE,
     GoalExplanationStepEvent,
     PUSH_NODE,
@@ -26,7 +29,7 @@ STANDARD_PUSH_NODE: Final = "push.offer_enable"
 PUSH_PROMPT_EVENT_ID: Final = "standard.push_prompt"
 
 TUTORIAL_OPTIONS: Final = (
-    ("How do I add friends?", "tutorial.friends.seen", FRIENDS_NODE),
+    ("How do I add friends?", "tutorial.friends.seen", FRIENDS_EXPLANATION_NODE),
     ("How do goals work?", "tutorial.goals.seen", GOALS_EXPLANATION_NODE),
     ("How do notifications work?", "tutorial.notifications.seen", PUSH_NODE),
     ("How do I track progress?", "tutorial.progress.seen", None),
@@ -46,6 +49,18 @@ class StandardMenuEvent(AssistantEvent):
             view.say("Hello")
             choice = view.choices(self.event_id, "Tutorials", *options)
         if choice is None:
+            if (
+                context.state.flow == STANDARD_TUTORIAL_FLOW
+                and context.previous_page_key != "help"
+                and context.state.node in {FRIENDS_EXPLANATION_NODE, GOALS_EXPLANATION_NODE}
+            ):
+                context.session_state.pop(FRIENDS_EXPLANATION_STEP_KEY, None)
+                context.session_state.pop(GOALS_EXPLANATION_STEP_KEY, None)
+                return EventOutcome.complete(
+                    flow=STANDARD_FLOW,
+                    node=READY_NODE,
+                    status="completed",
+                )
             return EventOutcome()
 
         _, knowledge_key, tutorial_node = next(
@@ -78,9 +93,9 @@ class StandardTutorialEvent(AssistantEvent):
         outcome = self.event.render(context, view)
         if outcome == EventOutcome():
             return outcome
-        stays_in_goal_tutorial = isinstance(self.event, GoalExplanationStepEvent)
-        if outcome.status == "paused" or stays_in_goal_tutorial:
-            if stays_in_goal_tutorial and outcome.node == GOALS_NODE:
+        stays_in_explanation = isinstance(self.event, (FriendlistExplanationStepEvent, GoalExplanationStepEvent))
+        if outcome.status == "paused" or stays_in_explanation:
+            if stays_in_explanation and outcome.node != self.node:
                 return EventOutcome.complete(
                     knowledge_updates=outcome.knowledge_updates,
                     clear_events=outcome.clear_events,
@@ -115,12 +130,17 @@ class StandardStory:
     def __init__(self) -> None:
         self._menu = StandardMenuEvent()
         self._tutorials = {
-            FRIENDS_NODE: StandardTutorialEvent(FRIENDS_NODE, CheckFriendsEvent()),
+            FRIENDS_EXPLANATION_NODE: StandardTutorialEvent(FRIENDS_EXPLANATION_NODE, FriendlistExplanationStepEvent()),
             GOALS_EXPLANATION_NODE: StandardTutorialEvent(GOALS_EXPLANATION_NODE, GoalExplanationStepEvent()),
             PUSH_NODE: StandardTutorialEvent(PUSH_NODE, CheckPushEvent()),
         }
 
     def next_event(self, context: AssistantContext) -> AssistantEvent:
         if context.state.flow == STANDARD_TUTORIAL_FLOW:
+            if (
+                context.previous_page_key != "help"
+                and context.state.node in {FRIENDS_EXPLANATION_NODE, GOALS_EXPLANATION_NODE}
+            ):
+                return self._menu
             return self._tutorials.get(context.state.node or "", self._menu)
         return self._menu
