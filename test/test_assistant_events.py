@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 from src.assistant.core import AssistantContext
 from src.assistant.director import AssistantDirector, apply_event_outcome
@@ -20,6 +21,8 @@ from src.assistant.stories.special_examples import (
     SpecialExampleStory,
     WelcomeExampleEvent,
 )
+from src.assistant.stories.push_reminder import PushReminderEvent
+from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID, StandardMenuEvent
 from src.assistant.stories.tutorial import (
     ANALYSIS_COMPLETE_NODE,
     AssistantReadyEvent,
@@ -152,7 +155,7 @@ def test_first_visit_persists_a_paused_welcome_and_returning_user_can_resume() -
 
     updated = director.render(context_for(state, profile=profile), introduction_view)
 
-    assert isinstance(default_stories()[AssistantMode.NORMAL].next_event(context_for(state)), WelcomeEvent)
+    assert isinstance(director._next_event(context_for(state)), WelcomeEvent)
     assert updated.flow == ONBOARDING_FLOW
     assert updated.node == WELCOME_NODE
     assert updated.status == "paused"
@@ -169,7 +172,7 @@ def test_first_visit_persists_a_paused_welcome_and_returning_user_can_resume() -
     )
     unchanged = director.render(ready_context, resume_view)
 
-    assert isinstance(default_stories()[AssistantMode.NORMAL].next_event(ready_context), ResumeEvent)
+    assert isinstance(director._next_event(ready_context), ResumeEvent)
     assert unchanged == updated
     assert ("say", "Hey, you're back.") in resume_view.calls
     assert len(persistence.saved_states) == 1
@@ -223,7 +226,7 @@ def test_im_good_leaves_the_assistant_and_prevents_follow_up_events() -> None:
     assert InitialTutorialStory().next_event(context_for(dismissed)) is None
     next_visit = RecordingView()
     assert director.render(context_for(dismissed, profile=profile), next_visit) == dismissed
-    assert next_visit.calls == []
+    assert ("say", "Hello") in next_visit.calls
 
 
 def test_im_good_click_is_processed_after_the_welcome_rerun() -> None:
@@ -253,10 +256,77 @@ def test_im_good_click_is_processed_after_the_welcome_rerun() -> None:
     assert ("say", "Hey, you're back.") not in leaving_view.calls
 
 
-def test_standard_mode_is_quiet_after_onboarding() -> None:
+def test_standard_mode_shows_the_default_tutorial_menu_after_onboarding() -> None:
     state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
-    story = InitialTutorialStory()
-    assert story.next_event(context_for(state, user_state={"push_enabled": False})) is None
+    director = AssistantDirector(RecordingPersistence(), default_stories())
+    assert isinstance(director._next_event(context_for(state, user_state={"push_enabled": False})), StandardMenuEvent)
+
+
+def test_director_selects_one_normal_mode_event_in_priority_order() -> None:
+    director = AssistantDirector(RecordingPersistence(), default_stories())
+    fresh = AssistantState()
+    assert isinstance(director._next_event(context_for(fresh)), WelcomeEvent)
+
+    resuming = AssistantState(flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="active")
+    assert isinstance(director._next_event(context_for(resuming)), ProfileAnalysisEvent)
+
+    push_ready = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+    assert isinstance(
+        director._next_event(context_for(push_ready, user_state={"push_enabled": False, "completed_goal_count": 1})),
+        PushReminderEvent,
+    )
+
+    standard = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+    assert isinstance(
+        director._next_event(context_for(standard, user_state={"push_enabled": False, "completed_goal_count": 0})),
+        StandardMenuEvent,
+    )
+
+
+def test_standard_menu_records_the_selected_placeholder_tutorial() -> None:
+    event = StandardMenuEvent()
+    state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+    outcome = event.render(context_for(state), RecordingView(selected_choice="How do I add friends?"))
+    updated = apply_event_outcome(state, outcome)
+    assert updated.knowledge["tutorial.friends.seen"] is True
+
+
+def test_push_reminder_backoff_and_third_dismissal_suppression() -> None:
+    director = AssistantDirector(RecordingPersistence(), default_stories())
+    now = datetime(2026, 7, 26, tzinfo=timezone.utc)
+    state = AssistantState(
+        flow=STANDARD_FLOW,
+        node=READY_NODE,
+        status="completed",
+        events={
+            PUSH_PROMPT_EVENT_ID: {
+                "dismissed_count": 1,
+                "dismissed_at_completed_goal_count": 2,
+            }
+        },
+    )
+    assert not director._push_prompt_is_eligible(context_for(state, user_state={"completed_goal_count": 2}))
+    assert director._push_prompt_is_eligible(context_for(state, user_state={"completed_goal_count": 3}))
+
+    second = replace(
+        state,
+        events={
+            PUSH_PROMPT_EVENT_ID: {
+                "dismissed_count": 2,
+                "dismissed_at_completed_goal_count": 2,
+                "last_dismissed_at": (now - timedelta(days=29)).isoformat(),
+            }
+        },
+    )
+    assert not director._push_prompt_is_eligible(
+        replace(context_for(second, user_state={"completed_goal_count": 5}), now=now)
+    )
+    assert director._push_prompt_is_eligible(
+        replace(context_for(second, user_state={"completed_goal_count": 5}), now=now + timedelta(days=1))
+    )
+
+    suppressed = replace(second, events={PUSH_PROMPT_EVENT_ID: {"dismissed_count": 3}})
+    assert not director._push_prompt_is_eligible(context_for(suppressed, user_state={"completed_goal_count": 99}))
 
 
 def test_special_story_requires_a_new_help_visit_between_events() -> None:

@@ -283,13 +283,15 @@ class InitialTutorialStory:
         self._welcome, self._resume = WelcomeEvent(), ResumeEvent()
         self._profile_analysis, self._tour = ProfileAnalysisEvent(), TourEvent()
 
+    def initial_event(self) -> AssistantEvent:
+        """Return onboarding's entry scene after the director selects this flow."""
+        return self._welcome
+
     def next_event(self, context: AssistantContext) -> AssistantEvent | None:
         state = context.state
-        if state.status in {"dismissed", "declined", "completed"}:
-            return None
         if state.status == "paused" and state.flow not in (None, STANDARD_FLOW) and context.previous_page_key != "help":
             return self._resume
-        if state.flow in (None, ONBOARDING_FLOW):
+        if state.flow == ONBOARDING_FLOW:
             return self._welcome
         if state.flow == PROFILE_ANALYSIS_FLOW:
             return self._profile_analysis

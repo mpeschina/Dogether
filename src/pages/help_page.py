@@ -77,6 +77,7 @@ def render_help(
         "has_friends": bool(friends),
         "has_goals": bool(goals),
         "push_enabled": bool(push_storage and push_storage.subscriptions_for_user(user_id)),
+        "completed_goal_count": _completed_goal_period_count(goals, user_id),
     }
     context = AssistantContext(
         user_id=user_id,
@@ -94,6 +95,26 @@ def render_help(
 
     if not view.input_rendered:
         st.chat_input("Message the assistant", disabled=True, key="help_assistant_dummy_input")
+
+
+def _completed_goal_period_count(goals: list[dict], user_id: str) -> int:
+    """Count durable completed periods plus a currently completed period."""
+    completed = 0
+    for goal in goals:
+        participant = goal.get("participants", {}).get(user_id, {})
+        if not isinstance(participant, dict):
+            continue
+        outcomes = participant.get("period_outcomes", {})
+        if isinstance(outcomes, dict):
+            completed += sum(
+                1 for outcome in outcomes.values()
+                if isinstance(outcome, dict) and outcome.get("completed") is True
+            )
+        current = max(0, int(participant.get("current", 0) or 0))
+        target = max(1, int(participant.get("target", 1) or 1))
+        if not participant.get("skipped", False) and current >= target:
+            completed += 1
+    return completed
 
 
 def _render_styles() -> None:
