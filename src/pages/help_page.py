@@ -63,7 +63,13 @@ def render_help(
 
     clear_transcript_for_new_help_visit(st.session_state, previous_page_key)
     _render_styles()
-    st.markdown("<div class='assistant-page-heading'>Help</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='assistant-page-heading'>"
+        "<span class='assistant-page-icon' aria-hidden='true'>✨</span>"
+        "<span>Help</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     st.caption("Dogether Assistant")
 
     state = AssistantState.from_profile(current_user)
@@ -132,10 +138,23 @@ def _render_styles() -> None:
           }
           .assistant-page-heading {
             color: #101828;
+            align-items: center;
+            display: flex;
             font-size: 1.75rem;
             font-weight: 650;
+            gap: 0.6rem;
             letter-spacing: -0.025em;
             line-height: 1.2;
+          }
+          .assistant-page-icon {
+            align-items: center;
+            background: #f2f4f7;
+            border-radius: 50%;
+            display: inline-flex;
+            font-size: 1.1rem;
+            height: 2.25rem;
+            justify-content: center;
+            width: 2.25rem;
           }
           .assistant-status, .assistant-choice-label {
             color: #98a2b3;
@@ -154,8 +173,24 @@ def _render_styles() -> None:
             border-radius: 1rem;
             display: inline-flex;
             gap: 0.25rem;
-            margin: 0.3rem 0 0.8rem 3rem;
+            margin: 0.3rem 0 0.8rem;
             padding: 0.55rem 0.75rem;
+          }
+          .assistant-message {
+            background: #f2f4f7;
+            border-radius: 0.35rem 1.25rem 1.25rem;
+            color: #101828;
+            margin: 0.35rem 0;
+            max-width: min(80%, 30rem);
+            padding: 0.6rem 0.95rem;
+            overflow-wrap: anywhere;
+          }
+          .assistant-message p {
+            margin: 0;
+          }
+          .assistant-message a {
+            color: inherit;
+            text-decoration: underline;
           }
           .assistant-typing span {
             animation: assistant-dot-pulse 1.15s infinite ease-in-out;
@@ -173,9 +208,9 @@ def _render_styles() -> None:
             margin: 0.8rem 0;
           }
           .assistant-user-choice span {
-            background: #f2f4f7;
+            background: var(--primary-color, #1f2937);
             border-radius: 1.4rem;
-            color: #101828;
+            color: #ffffff;
             display: inline-block;
             max-width: min(80%, 30rem);
             padding: 0.6rem 0.95rem;

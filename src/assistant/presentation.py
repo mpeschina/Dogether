@@ -47,8 +47,7 @@ class StreamlitAssistantView:
         self._transcript: list[tuple[str, str]] = st.session_state.setdefault(TRANSCRIPT_KEY, [])
         for kind, content in self._transcript:
             if kind == "say":
-                with st.chat_message("assistant", avatar="✨"):
-                    st.markdown(content)
+                self._render_assistant_message(content)
             elif kind == "user_choice":
                 self._render_user_choice(content)
             else:
@@ -56,8 +55,13 @@ class StreamlitAssistantView:
 
     def say(self, message: str) -> None:
         self._transcript.append(("say", message))
-        with st.chat_message("assistant", avatar="✨"):
-            st.write_stream(response_generator(message))
+        placeholder = st.empty()
+        response = ""
+        for part in response_generator(message):
+            response += part
+            self._render_assistant_message(response, placeholder=placeholder)
+        if not response:
+            self._render_assistant_message(message, placeholder=placeholder)
 
     def typing_indicator(self, duration_seconds: float = 0) -> None:
         placeholder = st.empty()
@@ -91,6 +95,15 @@ class StreamlitAssistantView:
     def status(self, message: str) -> None:
         self._transcript.append(("status", message))
         st.markdown(f"<div class='assistant-status'>{message}</div>", unsafe_allow_html=True)
+
+    @staticmethod
+    def _render_assistant_message(message: str, *, placeholder: Any | None = None) -> None:
+        """Render an incoming message as a neutral chat bubble without an avatar."""
+        target = st if placeholder is None else placeholder
+        target.markdown(
+            f"<div class='assistant-message'><p>{escape(message).replace(chr(10), '<br>')}</p></div>",
+            unsafe_allow_html=True,
+        )
 
     @staticmethod
     def _render_user_choice(message: str) -> None:
