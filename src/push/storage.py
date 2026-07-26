@@ -7,10 +7,12 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from time import monotonic
 from typing import Any, Mapping, Protocol
 
 import streamlit as st
 
+from src.db.cached_document_persistence import DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS
 from src.db.persistence_helpers import _iso, normalize_email
 
 
@@ -142,12 +144,15 @@ class MongoPushStorage:
         collection: str = "push_subscriptions",
         *,
         mongo_collection: Any | None = None,
+        cache_ttl_seconds: float = DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS,
     ) -> None:
         self.uri = uri
         self.database = database
         self.collection_name = collection
         self._client = None
         self._collection = mongo_collection
+        self.cache_ttl_seconds = float(cache_ttl_seconds)
+        self._cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
         if mongo_collection is None and not uri:
             raise ValueError("MongoDB push storage requires mongodb_uri.")
 
@@ -181,19 +186,46 @@ class MongoPushStorage:
             updated_at=now_iso,
         )
         self.collection.replace_one({"_id": endpoint}, {"_id": endpoint, **record}, upsert=True)
+        self._cache_clear()
         return record
 
     def delete_subscription(self, endpoint: str) -> None:
         self.collection.delete_one({"_id": endpoint})
+        self._cache_clear()
 
     def subscriptions_for_user(self, user_id: str) -> list[dict[str, Any]]:
+        cache_key = ("subscriptions_for_user", user_id)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
+
         records = []
         for document in self.collection.find({"user_id": user_id}):
             record = dict(document)
             record.pop("_id", None)
             if isinstance(record.get("subscription"), dict):
                 records.append(record)
-        return records
+        return self._cache_set(cache_key, records)
+
+    def _cache_get(self, key: tuple[str, str]) -> list[dict[str, Any]] | None:
+        if self.cache_ttl_seconds <= 0:
+            return None
+        cached = self._cache.get(key)
+        if cached is None:
+            return None
+        cached_at, value = cached
+        if monotonic() - cached_at > self.cache_ttl_seconds:
+            self._cache.pop(key, None)
+            return None
+        return copy.deepcopy(value)
+
+    def _cache_set(self, key: tuple[str, str], value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if self.cache_ttl_seconds > 0:
+            self._cache[key] = (monotonic(), copy.deepcopy(value))
+        return value
+
+    def _cache_clear(self) -> None:
+        self._cache.clear()
 
     def close(self) -> None:
         if self._client is not None:
@@ -207,6 +239,7 @@ def create_push_storage(
     mongodb_uri: str = "",
     mongodb_database: str = "dogether",
     mongodb_collection: str = "push_subscriptions",
+    cache_ttl_seconds: float = DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS,
 ) -> PushStorage:
     backend = backend.strip().lower()
     if backend == "json":
@@ -216,11 +249,12 @@ def create_push_storage(
             mongodb_uri,
             database=mongodb_database,
             collection=mongodb_collection,
+            cache_ttl_seconds=cache_ttl_seconds,
         )
     raise ValueError("Unsupported push storage backend. Use 'json' or 'mongodb'.")
 
 
-def push_storage_settings(secrets: Mapping[str, Any] | None = None) -> dict[str, str]:
+def push_storage_settings(secrets: Mapping[str, Any] | None = None) -> dict[str, Any]:
     secrets = st.secrets if secrets is None else secrets
     persistence = secrets.get("persistence", {})
     push = secrets.get("push", {})
@@ -233,6 +267,9 @@ def push_storage_settings(secrets: Mapping[str, Any] | None = None) -> dict[str,
         "mongodb_uri": str(push.get("mongodb_uri", persistence.get("mongodb_uri", ""))),
         "mongodb_database": str(push.get("mongodb_database", persistence.get("mongodb_database", "dogether"))),
         "mongodb_collection": str(push.get("mongodb_collection", "push_subscriptions")),
+        "cache_ttl_seconds": float(
+            push.get("cache_ttl_seconds", persistence.get("cache_ttl_seconds", DEFAULT_PERSISTENCE_CACHE_TTL_SECONDS))
+        ),
     }
 
 
@@ -243,6 +280,7 @@ def get_push_storage(
     mongodb_uri: str,
     mongodb_database: str,
     mongodb_collection: str,
+    cache_ttl_seconds: float,
 ) -> PushStorage:
     return create_push_storage(
         backend,
@@ -250,4 +288,5 @@ def get_push_storage(
         mongodb_uri=mongodb_uri,
         mongodb_database=mongodb_database,
         mongodb_collection=mongodb_collection,
+        cache_ttl_seconds=cache_ttl_seconds,
     )

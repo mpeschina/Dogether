@@ -26,6 +26,7 @@ def subscription(endpoint: str = "https://push.example/one") -> dict:
 class FakeMongoCollection:
     def __init__(self) -> None:
         self.documents = {}
+        self.find_calls = 0
 
     def find_one(self, query: dict) -> dict | None:
         document = self.documents.get(query["_id"])
@@ -39,6 +40,7 @@ class FakeMongoCollection:
         self.documents.pop(query["_id"], None)
 
     def find(self, query: dict):
+        self.find_calls += 1
         return [dict(document) for document in self.documents.values() if document.get("user_id") == query["user_id"]]
 
 
@@ -108,6 +110,23 @@ def test_mongo_push_storage_uses_endpoint_as_document_id() -> None:
     assert set(collection.documents) == {"https://push.example/two"}
 
 
+def test_mongo_push_storage_caches_subscriptions_and_invalidates_after_writes() -> None:
+    collection = FakeMongoCollection()
+    storage = MongoPushStorage(mongo_collection=collection, cache_ttl_seconds=60)
+    storage.save_subscription("alice", "alice@example.com", subscription())
+
+    first = storage.subscriptions_for_user("alice")
+    first[0]["user_agent"] = "mutated outside the cache"
+    second = storage.subscriptions_for_user("alice")
+
+    assert collection.find_calls == 1
+    assert second[0]["user_agent"] == ""
+
+    storage.delete_subscription("https://push.example/one")
+    assert storage.subscriptions_for_user("alice") == []
+    assert collection.find_calls == 2
+
+
 def test_push_storage_defaults_to_json_with_json_persistence() -> None:
     settings = push_storage_settings({"persistence": {"backend": "json"}})
 
@@ -127,3 +146,11 @@ def test_push_storage_explicit_backend_wins() -> None:
     })
 
     assert settings["backend"] == "json"
+
+
+def test_push_storage_inherits_persistence_cache_ttl_unless_overridden() -> None:
+    inherited = push_storage_settings({"persistence": {"cache_ttl_seconds": 12}})
+    overridden = push_storage_settings({"persistence": {"cache_ttl_seconds": 12}, "push": {"cache_ttl_seconds": 30}})
+
+    assert inherited["cache_ttl_seconds"] == 12
+    assert overridden["cache_ttl_seconds"] == 30

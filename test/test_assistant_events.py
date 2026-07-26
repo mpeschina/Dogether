@@ -384,7 +384,7 @@ def test_notification_explanation_runs_linearly_and_can_enable_notifications() -
 
     consent_view = RecordingView(selected_choice="Got it")
     event.render(context_for(explanation, session_state=session_state), consent_view)
-    assert ("say", "Your operating system shows the consent prompt.") in consent_view.calls
+    assert ("say", "Your operating system shows the consent prompt. Only you can approve it.") in consent_view.calls
 
     controls_view = RecordingView(selected_choice="Makes sense")
     event.render(context_for(explanation, session_state=session_state), controls_view)
@@ -392,7 +392,10 @@ def test_notification_explanation_runs_linearly_and_can_enable_notifications() -
 
     settings_view = RecordingView(selected_choice="Got it")
     event.render(context_for(explanation, session_state=session_state), settings_view)
-    assert ("say", "And cap completion alerts per day.") in settings_view.calls
+    assert (
+        "say",
+        "Choose alerts when friends complete it and cap completion alerts per day. Also, choose alerts for reactions.",
+    ) in settings_view.calls
 
     finish_view = RecordingView(selected_choice="Makes sense")
     event.render(context_for(explanation, session_state=session_state), finish_view)
