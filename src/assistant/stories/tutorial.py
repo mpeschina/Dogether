@@ -81,7 +81,8 @@ class ResumeEvent(AssistantEvent):
         if choice is None:
             view.say("Hey, you're back.")
             view.typing_indicator(1.2)
-            choice = view.choices(self.event_id, "Continue where we stopped?", "Yes", "Start over")
+            view.say("Continue where we stopped?")
+            choice = view.choices(self.event_id, "", "Yes", "Start over")
         if choice is None:
             return EventOutcome()
         if choice == "Start over":
@@ -148,8 +149,9 @@ class CheckGoalsEvent(AssistantEvent):
             choice = view.selected_choice(self.event_id, "Create a goal", "Later")
             if choice is None:
                 view.say("Next: goals.")
-                view.typing_indicator(1.2)
+                view.typing_indicator()
                 view.say("You don't have one yet.")
+                view.typing_indicator()
                 view.say("Let's make that useful.")
                 choice = view.choices(self.event_id, "", "Create a goal", "Later")
             if choice is None:
@@ -191,7 +193,7 @@ class CheckPushEvent(AssistantEvent):
         choice = view.selected_choice(self.event_id, "Enable notifications", "Not now")
         if choice is None:
             view.say("One last thing.")
-            view.typing_indicator(1.2)
+            view.typing_indicator()
             view.say("I can nudge you.")
             view.say("But I need permission.")
             choice = view.choices(self.event_id, "", "Enable notifications", "Not now")
@@ -214,9 +216,9 @@ class AnalysisCompleteEvent(AssistantEvent):
         choice = view.selected_choice(self.event_id, "Thanks!")
         if choice is None:
             view.say("That's it.")
-            view.typing_indicator(1.2)
+            view.typing_indicator()
             view.say("You're ready. ✓")
-            view.typing_indicator(1.2)
+            view.typing_indicator()
             view.say("I'll get out of your way.")
             choice = view.choices(self.event_id, "", "Thanks!")
         if choice is None:
@@ -245,16 +247,17 @@ class TourEvent(AssistantEvent):
         choice = view.selected_choice(self.event_id, "Got it")
         if choice is None:
             view.say("Sure.")
-            view.typing_indicator(1.2)
+            view.typing_indicator()
             view.say("Dogether is simple.")
-            view.typing_indicator(1.2)
+            view.typing_indicator()
             view.say("Pick something worth doing.")
-            view.typing_indicator(1.2)
+            view.typing_indicator()
             view.say("Bring someone along.")
-            view.typing_indicator(1.2)
+            view.typing_indicator()
             view.say("Keep each other moving.")
-            view.typing_indicator(1.2)
+            view.typing_indicator()
             view.say("That's basically it.")
+            view.typing_indicator()
             view.say("You'll figure out the rest.")
             choice = view.choices(self.event_id, "", "Got it")
         if choice is None:

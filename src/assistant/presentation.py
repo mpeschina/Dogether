@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import random
 from collections.abc import Iterator, MutableMapping
 from html import escape
 from typing import Any
@@ -9,6 +10,8 @@ import streamlit as st
 
 
 WORD_DELAY_SECONDS = 0.05
+TYPING_DELAY_MIN = 0.6
+TYPING_DELAY_MAX = 2.5
 TRANSCRIPT_KEY = "assistant.transcript"
 # Events that deliberately span page hops can set this session flag before the
 # user leaves Help.  It is consumed on the next entry to Help.
@@ -56,8 +59,15 @@ class StreamlitAssistantView:
         with st.chat_message("assistant", avatar="✨"):
             st.write_stream(response_generator(message))
 
-    def typing_indicator(self, duration_seconds: float) -> None:
+    def typing_indicator(self, duration_seconds: float = 0) -> None:
         placeholder = st.empty()
+        if duration_seconds == 0:
+            duration_seconds = TYPING_DELAY_MIN + (random.random()*(TYPING_DELAY_MAX-TYPING_DELAY_MIN))
+            if duration_seconds < 1:
+                return
+        if duration_seconds > 0.4:
+            time.sleep(0.4)
+            duration_seconds -= 0.4
         placeholder.markdown(
             "<div class='assistant-typing' aria-label='Assistant is typing'>"
             "<span></span><span></span><span></span></div>",
