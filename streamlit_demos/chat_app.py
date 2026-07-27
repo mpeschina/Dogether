@@ -255,7 +255,7 @@ live_transcript = st.container()
 choice_bar = st.empty()
 with choice_bar.container():
     with st.container(key="rpg-choice-bar"):
-        st.caption("Choose a number")
+        # st.caption("Choose a number")  # --> we dont want to have additional captions build it. They are later to be configured, if needed from the chat flow
         choices = st.session_state[CHOICES_KEY]
         columns = st.columns(len(choices))
         for index, (column, choice) in enumerate(zip(columns, choices)):
