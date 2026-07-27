@@ -19,6 +19,7 @@ from src.assistant.core import (
 WORD_DELAY_SECONDS = 0.01
 TYPING_DELAY_MIN = 0.6
 TYPING_DELAY_MAX = 2.5
+CHOICE_FADE_IN_DURATION_MS = 1000
 TRANSCRIPT_KEY = "assistant.transcript"
 ACTIVE_CONTROL_KEY = "assistant.active_control"
 PENDING_SELECTION_KEY = "assistant.pending_selection"
@@ -294,8 +295,7 @@ class StreamlitAssistantView:
 
     @staticmethod
     def _render_control_styles() -> None:
-        st.markdown(
-            """
+        styles = """
             <style>
               [data-testid="stMainBlockContainer"] { padding-bottom: 9rem; }
               [class*="st-key-assistant-choice-bar-"],
@@ -309,10 +309,24 @@ class StreamlitAssistantView:
                 width: min(calc(100% - 2rem), 760px);
                 z-index: 999;
               }
-              [class*="st-key-assistant-choice-bar-"] { bottom: 5.25rem; }
+              [class*="st-key-assistant-choice-bar-"] {
+                animation: assistant-choice-fade-in CHOICE_FADE_IN_DURATION_MS ease-out both;
+                bottom: 5.25rem;
+              }
               [class*="st-key-assistant-send-bar-"] { bottom: 0.5rem; }
+              @keyframes assistant-choice-fade-in {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
+              @media (prefers-reduced-motion: reduce) {
+                [class*="st-key-assistant-choice-bar-"] { animation: none; }
+              }
             </style>
-            """,
+            """
+        st.markdown(
+            styles.replace(
+                "CHOICE_FADE_IN_DURATION_MS", f"{CHOICE_FADE_IN_DURATION_MS}ms"
+            ),
             unsafe_allow_html=True,
         )
 
