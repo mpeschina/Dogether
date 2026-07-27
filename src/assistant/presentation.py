@@ -202,6 +202,7 @@ class StreamlitAssistantView:
                     column.button(
                         choice_label,
                         key=f"assistant_choice_{control.get('round_id')}_{index}",
+                        type="primary",
                         use_container_width=True,
                         on_click=self._queue_selection,
                         args=(control, choice_id, choice_label),
@@ -224,6 +225,7 @@ class StreamlitAssistantView:
                     )
                     st.form_submit_button(
                         "Send",
+                        type="primary",
                         use_container_width=True,
                         on_click=self._queue_selection,
                         args=(control, "send", "Send"),
