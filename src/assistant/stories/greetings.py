@@ -272,8 +272,6 @@ class GreetingsStory(AssistantStory):
         )
 
     def _choose_greeting_id(self) -> str:
-        return self._random_source.choice(RARE_GREETING_IDS)
-        
         roll = self._random_source.random()
         if roll < 0.6:
             return self._random_source.choice(NORMAL_GREETING_IDS)
