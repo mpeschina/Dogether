@@ -24,6 +24,7 @@ from src.assistant.stories.greetings import (
     GREETING_DATE_SESSION_KEY,
     GREETING_PENDING_SESSION_KEY,
     GREETING_SELECTION_SESSION_KEY,
+    GREETINGS_STORY_ID,
     GreetingsStory,
 )
 from src.assistant.stories.push_reminder import PushReminderStory
@@ -410,7 +411,8 @@ def test_greetings_keep_daily_random_selection_and_forward_to_menu() -> None:
     normal = GreetingsStory(random_source=StubRandom(0.1, 1))
     scene = normal.entry_scene(context)
     turn = normal.advance(context, scene, None)
-    assert turn.story_id == STANDARD_STORY_ID
+    assert turn.story_id == GREETINGS_STORY_ID
+    assert turn.continue_flow is True
     assert turn.lines[0].text == "Hello, today is July 26."
     assert session[GREETING_DATE_SESSION_KEY] == "2026-07-26"
     assert session[GREETING_SELECTION_SESSION_KEY] == "date"
@@ -427,7 +429,8 @@ def test_greetings_keep_daily_random_selection_and_forward_to_menu() -> None:
         scene,
         selection("greetings", scene, "continue", "Are you a Cowboy today?"),
     )
-    assert response.story_id == STANDARD_STORY_ID
+    assert response.story_id == GREETINGS_STORY_ID
+    assert response.continue_flow is True
     assert GREETING_PENDING_SESSION_KEY not in interactive_session
 
 

@@ -76,26 +76,26 @@ class ProgressEntry:
 class AssistantTurn:
     """Declarative output plus state changes for one conversation transition."""
 
-    story_id: str
-    scene_id: str
-    lines: tuple[AssistantLine, ...] = ()
-    choices: tuple[AssistantChoice, ...] = ()
-    choice_label: str = ""
-    control_kind: ControlKind = "choices"
-    record_selection: bool = True
-    statuses: tuple[str, ...] = ()
-    progress: tuple[ProgressEntry, ...] = ()
-    assistant_leaves: bool = False
-    destination: str | None = None
-    completed: bool = False
-    continue_flow: bool = False
-    advance_sequences: tuple[str, ...] = ()
-    knowledge_updates: Mapping[str, bool] = field(default_factory=dict)
-    event_updates: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
-    clear_events: tuple[str, ...] = ()
-    state_story: str | None = None
-    state_scene: str | None = None
-    state_status: str | None = None
+    story_id: str  # Story that owns this turn.
+    scene_id: str  # Scene that produced this turn.
+    lines: tuple[AssistantLine, ...] = ()  # Assistant messages to show.
+    choices: tuple[AssistantChoice, ...] = ()  # Choice buttons to show.
+    choice_label: str = ""  # Label above the choices.
+    control_kind: ControlKind = "choices"  # Control UI to render.
+    record_selection: bool = True  # Whether to add the choice to history.
+    statuses: tuple[str, ...] = ()  # Status messages to show.
+    progress: tuple[ProgressEntry, ...] = ()  # Progress indicators to show.
+    assistant_leaves: bool = False  # Whether the assistant leaves the chat.
+    destination: str | None = None  # Page to open next.
+    completed: bool = False  # Whether to save state durably.
+    continue_flow: bool = False  # Whether to advance again immediately.
+    advance_sequences: tuple[str, ...] = ()  # Sequences to increment.
+    knowledge_updates: Mapping[str, bool] = field(default_factory=dict)  # Knowledge to set.
+    event_updates: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # Events to save.
+    clear_events: tuple[str, ...] = ()  # Events to remove.
+    state_story: str | None = None  # Next active story. where the assistant should resume on a later rerun or page return.
+    state_scene: str | None = None  # Next active scene. where the assistant should resume on a later rerun or page return.
+    state_status: str | None = None  # Next conversation status. the saved lifecycle state, such as active, paused, or completed.
 
     @property
     def has_control(self) -> bool:

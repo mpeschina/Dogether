@@ -19,6 +19,7 @@ from src.assistant.state import (
     save_transient_assistant_state,
 )
 from src.assistant.presentation import ASSISTANT_LEFT_THIS_VISIT_KEY
+from src.assistant.stories.greetings import GREETINGS_STORY_ID
 from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
 from src.assistant.stories.special_examples import SPECIAL_STORY_ID
 from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID
@@ -63,10 +64,15 @@ class AssistantDirector:
         selection: AssistantSelection | None = view.selection
         state_changed = False
         save_durably = False
+        greeting_has_played = False
 
         for _ in range(MAX_AUTOMATIC_TURNS):
             effective_context = self._context_with_state(context, state)
-            story = self._story_for(effective_context, selection)
+            story = self._story_for(
+                effective_context,
+                selection,
+                skip_greeting=greeting_has_played,
+            )
             if story is None:
                 break
             scene_id = (
@@ -83,6 +89,7 @@ class AssistantDirector:
                 break
 
             view.present(turn)
+            greeting_has_played = greeting_has_played or story.story_id == GREETINGS_STORY_ID
             updated_state = apply_turn(state, turn)
             state_changed = state_changed or updated_state != state
             state = updated_state
@@ -117,6 +124,8 @@ class AssistantDirector:
         self,
         context: AssistantContext,
         selection: AssistantSelection | None,
+        *,
+        skip_greeting: bool = False,
     ) -> AssistantStory | None:
         if selection is not None:
             return self.stories.get(selection.story_id)
@@ -140,7 +149,9 @@ class AssistantDirector:
             return self._unseen_tutorial_story(context)
         if self._push_prompt_is_eligible(context):
             return self.stories.get(PUSH_REMINDER_STORY_ID)
-        return self.stories.get("greetings") or self.stories.get(STANDARD_STORY_ID)
+        if not skip_greeting:
+            return self.stories.get(GREETINGS_STORY_ID)
+        return self.stories.get(STANDARD_STORY_ID)
 
     @staticmethod
     def _entry_scene(

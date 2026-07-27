@@ -13,7 +13,6 @@ from src.assistant.core import (
     AssistantStory,
     AssistantTurn,
 )
-from src.assistant.stories.standard import standard_menu_turn
 
 
 GREETINGS_STORY_ID: Final = "greetings"
@@ -79,7 +78,12 @@ class GreetingsStory(AssistantStory):
                     choices=(AssistantChoice(id="continue", label=choice_label),),
                 )
             context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
-            return standard_menu_turn(lines=(AssistantLine(response),))
+            return AssistantTurn(
+                story_id=self.story_id,
+                scene_id=greeting_id,
+                lines=(AssistantLine(response),),
+                continue_flow=True,
+            )
 
         if greeting_id == "date":
             today = _today(context)
@@ -88,7 +92,12 @@ class GreetingsStory(AssistantStory):
             message = "Hello"
         else:
             message = NORMAL_MESSAGES.get(greeting_id, "Hello")
-        return standard_menu_turn(lines=(AssistantLine(message),))
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id=greeting_id,
+            lines=(AssistantLine(message),),
+            continue_flow=True,
+        )
 
     def _choose_greeting_id(self) -> str:
         choices = NORMAL_GREETING_IDS if self._random_source.random() < 0.8 else INTERACTIVE_GREETING_IDS
