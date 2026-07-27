@@ -226,9 +226,15 @@ assistant_destinations = {
     "manage_goals": manage_goals_page_entry,
     "push_notifications": push_notifications_page_entry,
 }
-assistant_destination = st.session_state.pop("assistant.destination", None)
-if isinstance(assistant_destination, str) and assistant_destination in assistant_destinations:
-    st.switch_page(assistant_destinations[assistant_destination])
+
+
+def switch_to_assistant_destination() -> None:
+    destination = st.session_state.pop("assistant.destination", None)
+    if isinstance(destination, str) and destination in assistant_destinations:
+        st.switch_page(assistant_destinations[destination])
+
+
+switch_to_assistant_destination()
 
 page = st.navigation(
     page_entries
@@ -274,3 +280,4 @@ if incoming_friend_requests:
         friend_request_alert(len(incoming_friend_requests), friend_request_signature)
 
 page.run()
+switch_to_assistant_destination()

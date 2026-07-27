@@ -309,7 +309,7 @@ class StreamlitAssistantView:
                 width: min(calc(100% - 2rem), 760px);
                 z-index: 999;
               }
-              [class*="st-key-assistant-choice-bar-"] { bottom: 4.75rem; }
+              [class*="st-key-assistant-choice-bar-"] { bottom: 5.25rem; }
               [class*="st-key-assistant-send-bar-"] { bottom: 0.5rem; }
             </style>
             """,
@@ -337,7 +337,7 @@ class StreamlitAssistantView:
                   const bounds = chatInput.getBoundingClientRect();
                   choiceBar.style.left = `${bounds.left}px`;
                   choiceBar.style.width = `${bounds.width}px`;
-                  choiceBar.style.bottom = `${parentWindow.innerHeight - bounds.top}px`;
+                  choiceBar.style.bottom = `calc(${parentWindow.innerHeight - bounds.top}px + 0.5rem)`;
                   choiceBar.style.transform = 'none';
                 }
                 if (sendBar) {
