@@ -1,12 +1,19 @@
-"""Session-scoped greetings composed from small, independent render functions."""
+"""Session-scoped greetings expressed as declarative conversation turns."""
 from __future__ import annotations
 
 import random
 from datetime import date, datetime
-from typing import Any, Callable, Final
+from typing import Any, Final
 
-from src.assistant.core import AssistantContext, AssistantEvent, AssistantView, EventOutcome
-from src.assistant.state import AssistantCategory
+from src.assistant.core import (
+    AssistantChoice,
+    AssistantContext,
+    AssistantLine,
+    AssistantSelection,
+    AssistantStory,
+    AssistantTurn,
+)
+from src.assistant.stories.standard import standard_menu_turn
 
 
 GREETINGS_STORY_ID: Final = "greetings"
@@ -18,136 +25,74 @@ GREETING_PENDING_SESSION_KEY: Final = "greetings.pending"
 NORMAL_GREETING_IDS: Final = ("hello", "date", "good_to_see_you", "goal_getter", "tiny_win")
 INTERACTIVE_GREETING_IDS: Final = ("cowboy", "spark", "tiny_step")
 
-GreetingRenderer = Callable[[AssistantContext, AssistantView, AssistantEvent], EventOutcome]
-
-
-def render_default_greeting(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    view.say("Hello")
-    return menu_event.render(context, view)
-
-
-def render_hello(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    view.say("Hello my friend.")
-    return menu_event.render(context, view)
-
-
-def render_date_greeting(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    today = _today(context)
-    view.say(f"Hello, today is {today.strftime('%B')} {today.day}.")
-    return menu_event.render(context, view)
-
-
-def render_good_to_see_you(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    view.say("Good to see you.")
-    return menu_event.render(context, view)
-
-
-def render_goal_getter(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    view.say("Hello, goal getter.")
-    return menu_event.render(context, view)
-
-
-def render_tiny_win(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    view.say("Ready for a tiny win?")
-    return menu_event.render(context, view)
-
-
-def render_cowboy(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    choice = view.selected_choice(GREETING_INTERACTION_EVENT_ID, "Are you a Cowboy today?")
-    if choice is None:
-        view.say("Howdy my friend!")
-        choice = view.choices(GREETING_INTERACTION_EVENT_ID, "", "Are you a Cowboy today?")
-    if choice is None:
-        return EventOutcome()
-
-    context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
-    view.say("I am just in a good mood. How can I help you?")
-    return menu_event.render(context, view)
-
-
-def render_spark(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    choice = view.selected_choice(GREETING_INTERACTION_EVENT_ID, "Is today a good day?")
-    if choice is None:
-        view.say("I brought a little sparkle.")
-        choice = view.choices(GREETING_INTERACTION_EVENT_ID, "", "Is today a good day?")
-    if choice is None:
-        return EventOutcome()
-
-    context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
-    view.say("Excellent. Let's make it count.")
-    return menu_event.render(context, view)
-
-
-def render_tiny_step(context: AssistantContext, view: AssistantView, menu_event: AssistantEvent) -> EventOutcome:
-    choice = view.selected_choice(GREETING_INTERACTION_EVENT_ID, "Want to make one?")
-    if choice is None:
-        view.say("A tiny step still counts.")
-        choice = view.choices(GREETING_INTERACTION_EVENT_ID, "", "Want to make one?")
-    if choice is None:
-        return EventOutcome()
-
-    context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
-    view.say("That is the spirit. I am cheering for you.")
-    return menu_event.render(context, view)
-
-
-GREETING_RENDERERS: Final[dict[str, GreetingRenderer]] = {
-    "hello": render_hello,
-    "date": render_date_greeting,
-    "good_to_see_you": render_good_to_see_you,
-    "goal_getter": render_goal_getter,
-    "tiny_win": render_tiny_win,
-    "cowboy": render_cowboy,
-    "spark": render_spark,
-    "tiny_step": render_tiny_step,
+NORMAL_MESSAGES: Final = {
+    "hello": "Hello my friend.",
+    "good_to_see_you": "Good to see you.",
+    "goal_getter": "Hello, goal getter.",
+    "tiny_win": "Ready for a tiny win?",
+}
+INTERACTIVE_MESSAGES: Final = {
+    "cowboy": ("Howdy my friend!", "Are you a Cowboy today?", "I am just in a good mood. How can I help you?"),
+    "spark": ("I brought a little sparkle.", "Is today a good day?", "Excellent. Let's make it count."),
+    "tiny_step": ("A tiny step still counts.", "Want to make one?", "That is the spirit. I am cheering for you."),
 }
 
-class GreetingEvent(AssistantEvent):
-    """Small adapter that lets a selected function participate in the story engine."""
 
-    category = AssistantCategory.STANDARD
-
-    def __init__(self, greeting_id: str | None, menu_event: AssistantEvent) -> None:
-        self.greeting_id = greeting_id
-        self.menu_event = menu_event
-        self.event_id = GREETING_INTERACTION_EVENT_ID if greeting_id in INTERACTIVE_GREETING_IDS else "greetings.message"
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        renderer = GREETING_RENDERERS.get(self.greeting_id or "", render_default_greeting)
-        return renderer(context, view, self.menu_event)
-
-
-class GreetingsStory:
-    """Choose one greeting per session-day, then use a plain fallback."""
-
+class GreetingsStory(AssistantStory):
     story_id = GREETINGS_STORY_ID
 
-    def __init__(self, menu_event: AssistantEvent, *, random_source: Any = random) -> None:
-        self._menu_event = menu_event
+    def __init__(self, _menu_story: object | None = None, *, random_source: Any = random) -> None:
         self._random_source = random_source
 
-    def next_event(self, context: AssistantContext) -> AssistantEvent:
-        today = _today(context)
-        session_state = context.session_state
-        if session_state.get(GREETING_DATE_SESSION_KEY) != today.isoformat():
-            session_state[GREETING_DATE_SESSION_KEY] = today.isoformat()
-            session_state.pop(GREETING_SELECTION_SESSION_KEY, None)
-            session_state.pop(GREETING_PENDING_SESSION_KEY, None)
+    def entry_scene(self, context: AssistantContext) -> str:
+        today = _today(context).isoformat()
+        session = context.session_state
+        if session.get(GREETING_DATE_SESSION_KEY) != today:
+            session[GREETING_DATE_SESSION_KEY] = today
+            session.pop(GREETING_SELECTION_SESSION_KEY, None)
+            session.pop(GREETING_PENDING_SESSION_KEY, None)
             greeting_id = self._choose_greeting_id()
-            session_state[GREETING_SELECTION_SESSION_KEY] = greeting_id
+            session[GREETING_SELECTION_SESSION_KEY] = greeting_id
             if greeting_id in INTERACTIVE_GREETING_IDS:
-                session_state[GREETING_PENDING_SESSION_KEY] = greeting_id
-            return GreetingEvent(greeting_id, self._menu_event)
+                session[GREETING_PENDING_SESSION_KEY] = greeting_id
+            return greeting_id
 
-        pending_id = session_state.get(GREETING_PENDING_SESSION_KEY)
-        if isinstance(pending_id, str) and pending_id in INTERACTIVE_GREETING_IDS:
-            return GreetingEvent(pending_id, self._menu_event)
-        session_state.pop(GREETING_PENDING_SESSION_KEY, None)
-        return GreetingEvent(None, self._menu_event)
+        pending = session.get(GREETING_PENDING_SESSION_KEY)
+        if isinstance(pending, str) and pending in INTERACTIVE_GREETING_IDS:
+            return pending
+        return "default"
+
+    def advance(
+        self,
+        context: AssistantContext,
+        scene_id: str | None,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn:
+        greeting_id = scene_id or self.entry_scene(context)
+        if greeting_id in INTERACTIVE_GREETING_IDS:
+            intro, choice_label, response = INTERACTIVE_MESSAGES[greeting_id]
+            if selection is None:
+                return AssistantTurn(
+                    story_id=self.story_id,
+                    scene_id=greeting_id,
+                    lines=(AssistantLine(intro),),
+                    choices=(AssistantChoice(id="continue", label=choice_label),),
+                )
+            context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
+            return standard_menu_turn(lines=(AssistantLine(response),))
+
+        if greeting_id == "date":
+            today = _today(context)
+            message = f"Hello, today is {today.strftime('%B')} {today.day}."
+        elif greeting_id == "default":
+            message = "Hello"
+        else:
+            message = NORMAL_MESSAGES.get(greeting_id, "Hello")
+        return standard_menu_turn(lines=(AssistantLine(message),))
 
     def _choose_greeting_id(self) -> str:
-        greeting_ids = NORMAL_GREETING_IDS if self._random_source.random() < 0.8 else INTERACTIVE_GREETING_IDS
-        return self._random_source.choice(greeting_ids)
+        choices = NORMAL_GREETING_IDS if self._random_source.random() < 0.8 else INTERACTIVE_GREETING_IDS
+        return self._random_source.choice(choices)
 
 
 def _today(context: AssistantContext) -> date:

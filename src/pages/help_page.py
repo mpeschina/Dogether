@@ -17,8 +17,8 @@ from src.push.storage import PushStorage
 
 """Explanation of the RPG Assistant: 
 
-Each event is deliberately written as a small, readable scene. The director module 
-persists the flow/node only when the scene completes; unfinished progress is session-scoped.
+Each story is deliberately written as small, declarative scenes. The director
+persists completed state; unfinished scene progress remains session-scoped.
 
 Core interaction style:
     The assistant should feel like a friendly NPC.
@@ -104,9 +104,6 @@ def render_help(
     view = StreamlitAssistantView()
     director = AssistantDirector(persistence, default_stories())
     director.render(context, view)
-
-    if not view.input_rendered:
-        st.chat_input("Message the assistant", disabled=True, key="help_assistant_dummy_input")
 
 
 def _completed_goal_period_count(goals: list[dict], user_id: str) -> int:

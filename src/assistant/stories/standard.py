@@ -1,158 +1,114 @@
-"""The default, user-directed assistant experience."""
+"""The default, user-directed declarative assistant story."""
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Final
 
-from src.assistant.core import AssistantContext, AssistantEvent, AssistantView, EventOutcome
-from src.assistant.state import AssistantCategory
+from src.assistant.core import (
+    AssistantChoice,
+    AssistantContext,
+    AssistantLine,
+    AssistantSelection,
+    AssistantStory,
+    AssistantTurn,
+)
 from src.assistant.stories.tutorial import (
+    EXPLANATION_SCENES,
     FRIENDS_EXPLANATION_NODE,
-    FRIENDS_NODE,
-    FRIENDS_EXPLANATION_STEP_KEY,
-    FriendlistExplanationStepEvent,
     GOALS_EXPLANATION_NODE,
-    GOALS_EXPLANATION_STEP_KEY,
-    GOALS_NODE,
-    GoalExplanationStepEvent,
-    NotificationExplanationStepEvent,
     PUSH_EXPLANATION_NODE,
-    PUSH_EXPLANATION_STEP_KEY,
     READY_NODE,
-    STANDARD_FLOW,
+    STANDARD_STORY_ID,
+    explanation_turn,
 )
 
 
-STANDARD_STORY_ID: Final = "standard"
 STANDARD_MENU_EVENT_ID: Final = "standard.tutorial_menu"
-STANDARD_TUTORIAL_FLOW: Final = "standard.tutorial"
-STANDARD_PUSH_FLOW: Final = "standard.push_reminder"
+STANDARD_MENU_SCENE: Final = "standard.menu"
+STANDARD_TUTORIAL_FLOW: Final = STANDARD_STORY_ID
+STANDARD_PUSH_FLOW: Final = "push_reminder"
 STANDARD_PUSH_NODE: Final = "push.offer_enable"
 PUSH_PROMPT_EVENT_ID: Final = "standard.push_prompt"
 
 TUTORIAL_OPTIONS: Final = (
-    ("How do I add friends?", "tutorial.friends.seen", FRIENDS_EXPLANATION_NODE),
-    ("How do goals work?", "tutorial.goals.seen", GOALS_EXPLANATION_NODE),
-    ("How do notifications work?", "tutorial.notifications.seen", PUSH_EXPLANATION_NODE),
-    ("How do I track progress?", "tutorial.progress.seen", None),
+    ("friends", "How do I add friends?", "tutorial.friends.seen", FRIENDS_EXPLANATION_NODE),
+    ("goals", "How do goals work?", "tutorial.goals.seen", GOALS_EXPLANATION_NODE),
+    (
+        "notifications",
+        "How do notifications work?",
+        "tutorial.notifications.seen",
+        PUSH_EXPLANATION_NODE,
+    ),
+    ("progress", "How do I track progress?", "tutorial.progress.seen", None),
 )
 
 
-class StandardMenuEvent(AssistantEvent):
-    """A deliberately small fallback; it does not decide when to interrupt."""
-
-    event_id = STANDARD_MENU_EVENT_ID
-    category = AssistantCategory.STANDARD
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        options = tuple(label for label, _, _ in TUTORIAL_OPTIONS)
-        choice = view.selected_choice(self.event_id, *options)
-        if choice is None:
-            choice = view.choices(self.event_id, "Tutorials", *options)
-        if choice is None:
-            if (
-                context.state.flow == STANDARD_TUTORIAL_FLOW
-                and context.previous_page_key != "help"
-                and context.state.node in {
-                    FRIENDS_EXPLANATION_NODE,
-                    GOALS_EXPLANATION_NODE,
-                    PUSH_EXPLANATION_NODE,
-                }
-            ):
-                context.session_state.pop(FRIENDS_EXPLANATION_STEP_KEY, None)
-                context.session_state.pop(GOALS_EXPLANATION_STEP_KEY, None)
-                context.session_state.pop(PUSH_EXPLANATION_STEP_KEY, None)
-                return EventOutcome.complete(
-                    flow=STANDARD_FLOW,
-                    node=READY_NODE,
-                    status="completed",
-                )
-            return EventOutcome()
-
-        _, knowledge_key, tutorial_node = next(
-            item for item in TUTORIAL_OPTIONS if item[0] == choice
-        )
-        if tutorial_node is not None:
-            return EventOutcome.pending(
-                knowledge_updates={knowledge_key: True},
-                flow=STANDARD_TUTORIAL_FLOW,
-                node=tutorial_node,
-                status="active",
-                continue_flow=True,
-            )
-
-        view.say("That tutorial is coming soon.")
-        return EventOutcome.pending(knowledge_updates={knowledge_key: True})
+def standard_menu_turn(
+    *,
+    lines: tuple[AssistantLine, ...] = (),
+    knowledge_updates=None,
+) -> AssistantTurn:
+    return AssistantTurn(
+        story_id=STANDARD_STORY_ID,
+        scene_id=STANDARD_MENU_SCENE,
+        lines=lines,
+        choices=tuple(
+            AssistantChoice(id=choice_id, label=label)
+            for choice_id, label, _, _ in TUTORIAL_OPTIONS
+        ),
+        choice_label="",
+        knowledge_updates=knowledge_updates or {},
+    )
 
 
-class StandardTutorialEvent(AssistantEvent):
-    """Run one reusable onboarding check without advancing onboarding."""
-
-    category = AssistantCategory.TUTORIAL
-
-    def __init__(self, node: str, event: AssistantEvent) -> None:
-        self.node = node
-        self.event = event
-        self.event_id = event.event_id
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        outcome = self.event.render(context, view)
-        if outcome == EventOutcome():
-            return outcome
-        stays_in_explanation = isinstance(
-            self.event,
-            (FriendlistExplanationStepEvent, GoalExplanationStepEvent, NotificationExplanationStepEvent),
-        )
-        if outcome.status == "paused" or stays_in_explanation:
-            if stays_in_explanation and outcome.node != self.node:
-                return EventOutcome.complete(
-                    knowledge_updates=outcome.knowledge_updates,
-                    clear_events=outcome.clear_events,
-                    flow=STANDARD_FLOW,
-                    node=READY_NODE,
-                    status="completed",
-                    continue_flow=outcome.continue_flow,
-                )
-            return EventOutcome.pending(
-                event_updates=outcome.event_updates,
-                knowledge_updates=outcome.knowledge_updates,
-                flow=STANDARD_TUTORIAL_FLOW,
-                node=outcome.node or self.node,
-                status=outcome.status or "active",
-                continue_flow=outcome.continue_flow,
-            )
-        return EventOutcome.complete(
-            event_updates=outcome.event_updates,
-            knowledge_updates=outcome.knowledge_updates,
-            clear_events=outcome.clear_events,
-            flow=STANDARD_FLOW,
-            node=READY_NODE,
-            status="completed",
-        )
-
-
-class StandardStory:
-    """Owns the default menu and its standalone tutorials."""
-
+class StandardStory(AssistantStory):
     story_id = STANDARD_STORY_ID
 
-    def __init__(self) -> None:
-        self._menu = StandardMenuEvent()
-        self._tutorials = {
-            FRIENDS_EXPLANATION_NODE: StandardTutorialEvent(FRIENDS_EXPLANATION_NODE, FriendlistExplanationStepEvent()),
-            GOALS_EXPLANATION_NODE: StandardTutorialEvent(GOALS_EXPLANATION_NODE, GoalExplanationStepEvent()),
-            PUSH_EXPLANATION_NODE: StandardTutorialEvent(PUSH_EXPLANATION_NODE, NotificationExplanationStepEvent()),
-        }
+    def entry_scene(self, context: AssistantContext) -> str:
+        if context.state.story == self.story_id and context.state.scene in EXPLANATION_SCENES:
+            return context.state.scene or STANDARD_MENU_SCENE
+        return STANDARD_MENU_SCENE
 
-    def next_event(self, context: AssistantContext) -> AssistantEvent:
-        if context.state.flow == STANDARD_TUTORIAL_FLOW:
-            if (
-                context.previous_page_key != "help"
-                and context.state.node in {
-                    FRIENDS_EXPLANATION_NODE,
-                    GOALS_EXPLANATION_NODE,
-                    PUSH_EXPLANATION_NODE,
-                }
-            ):
-                return self._menu
-            return self._tutorials.get(context.state.node or "", self._menu)
-        return self._menu
+    def advance(
+        self,
+        context: AssistantContext,
+        scene_id: str | None,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn:
+        scene_id = scene_id or self.entry_scene(context)
+        if scene_id in EXPLANATION_SCENES:
+            if context.previous_page_key != "help" and selection is None:
+                return replace(
+                    standard_menu_turn(),
+                    state_story=self.story_id,
+                    state_scene=READY_NODE,
+                    state_status="completed",
+                    completed=True,
+                )
+            return explanation_turn(context, self.story_id, scene_id, selection)
+
+        if selection is None:
+            return standard_menu_turn()
+
+        selected = next(
+            (item for item in TUTORIAL_OPTIONS if item[0] == selection.choice_id),
+            None,
+        )
+        if selected is None:
+            return standard_menu_turn()
+
+        _, _, knowledge_key, tutorial_scene = selected
+        if tutorial_scene is None:
+            return standard_menu_turn(
+                lines=(AssistantLine("That tutorial is coming soon."),),
+                knowledge_updates={knowledge_key: True},
+            )
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id=tutorial_scene,
+            knowledge_updates={knowledge_key: True},
+            state_story=self.story_id,
+            state_scene=tutorial_scene,
+            state_status="active",
+            continue_flow=True,
+        )

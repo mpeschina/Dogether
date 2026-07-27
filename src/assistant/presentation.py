@@ -1,32 +1,52 @@
 from __future__ import annotations
 
-import time
 import random
+import time
 from collections.abc import Iterator, MutableMapping
 from html import escape
 from typing import Any
 
 import streamlit as st
 
+from src.assistant.core import (
+    AssistantLine,
+    AssistantSelection,
+    AssistantTurn,
+    ProgressEntry,
+)
+
 
 WORD_DELAY_SECONDS = 0.01
 TYPING_DELAY_MIN = 0.6
 TYPING_DELAY_MAX = 2.5
 TRANSCRIPT_KEY = "assistant.transcript"
-# Events that deliberately span page hops can set this session flag before the
-# user leaves Help.  It is consumed on the next entry to Help.
+ACTIVE_CONTROL_KEY = "assistant.active_control"
+PENDING_SELECTION_KEY = "assistant.pending_selection"
+CONTROL_ROUND_KEY = "assistant.control_round"
+ASSISTANT_LEFT_THIS_VISIT_KEY = "assistant.left_this_visit"
 PERSIST_TRANSCRIPT_ACROSS_PAGE_HOPS_KEY = "assistant.persist_transcript_across_page_hops"
+LEGACY_EXPLANATION_STEP_KEYS = (
+    "assistant.friends_explanation_step",
+    "assistant.goals_explanation_step",
+    "assistant.push_explanation_step",
+)
 
 
 def clear_transcript_for_new_help_visit(
     session_state: MutableMapping[str, Any], previous_page_key: str | None
 ) -> None:
-    """Discard transient chat history after leaving Help, unless explicitly retained."""
+    """Discard transient conversation UI after leaving Help unless retained."""
     if previous_page_key == "help":
         return
     if session_state.pop(PERSIST_TRANSCRIPT_ACROSS_PAGE_HOPS_KEY, False):
         return
     session_state.pop(TRANSCRIPT_KEY, None)
+    session_state.pop(ACTIVE_CONTROL_KEY, None)
+    session_state.pop(PENDING_SELECTION_KEY, None)
+    session_state.pop(CONTROL_ROUND_KEY, None)
+    session_state.pop(ASSISTANT_LEFT_THIS_VISIT_KEY, None)
+    for key in LEGACY_EXPLANATION_STEP_KEYS:
+        session_state.pop(key, None)
 
 
 def response_generator(
@@ -34,71 +54,231 @@ def response_generator(
     *,
     delay_seconds: float = WORD_DELAY_SECONDS,
 ) -> Iterator[str]:
-    """Yield an assistant response at a constant delay between words."""
-
     for word in response.split():
         yield f"{word} "
         time.sleep(delay_seconds)
 
 
 class StreamlitAssistantView:
+    """Transcript renderer and owner of the single active control round."""
+
     def __init__(self) -> None:
         self.input_rendered = False
-        self._transcript: list[tuple[str, str]] = st.session_state.setdefault(TRANSCRIPT_KEY, [])
-        for kind, content in self._transcript:
-            if kind == "say":
-                self._render_assistant_message(content)
-            elif kind == "user_choice":
-                self._render_user_choice(content)
-            else:
-                st.markdown(f"<div class='assistant-status'>{content}</div>", unsafe_allow_html=True)
+        self.selection = self._take_pending_selection()
+        self._finished = False
+        self._transcript: list[tuple[str, Any]] = st.session_state.setdefault(
+            TRANSCRIPT_KEY, []
+        )
 
-    def say(self, message: str) -> None:
-        self._transcript.append(("say", message))
+        self._render_control_styles()
+        for kind, content in self._transcript:
+            self._render_transcript_entry(kind, content)
+
+        self._live_transcript = st.container()
+        self._control_bar = st.empty()
+        active_control = st.session_state.get(ACTIVE_CONTROL_KEY)
+        if isinstance(active_control, dict):
+            self._render_control(active_control)
+
+    @property
+    def waiting_for_input(self) -> bool:
+        return (
+            isinstance(st.session_state.get(ACTIVE_CONTROL_KEY), dict)
+            and self.selection is None
+        )
+
+    def present(self, turn: AssistantTurn) -> None:
+        """Commit and animate one turn, then expose its next control."""
+        self.clear_control()
+        with self._live_transcript:
+            for line in turn.lines:
+                self._present_line(line)
+            for message in turn.statuses:
+                self._append_and_render("status", message)
+            for progress in turn.progress:
+                self._append_and_render(
+                    "progress",
+                    {"value": progress.value, "text": progress.text},
+                )
+            if turn.assistant_leaves:
+                self._append_and_render("status", "Assistant left the chat")
+                st.session_state[ASSISTANT_LEFT_THIS_VISIT_KEY] = True
+
+        if turn.destination:
+            st.session_state["assistant.destination"] = turn.destination
+        if turn.has_control:
+            self._set_control(turn)
+
+    def clear_control(self) -> None:
+        st.session_state.pop(ACTIVE_CONTROL_KEY, None)
+        self._control_bar.empty()
+
+    def finish(self) -> None:
+        if self._finished:
+            return
+        self._finished = True
+        if not self.input_rendered:
+            st.chat_input(
+                "Message the assistant",
+                disabled=True,
+                key="help_assistant_dummy_input",
+            )
+            self.input_rendered = True
+        self._scroll_and_position_controls()
+
+    def _present_line(self, line: AssistantLine) -> None:
+        if line.wait_before > 0:
+            time.sleep(line.wait_before)
+        self._transcript.append(("assistant", line.text))
+        if line.typing_delay is not None:
+            self._typing_indicator(line.typing_delay)
         placeholder = st.empty()
         response = ""
-        for part in response_generator(message):
+        for part in response_generator(line.text):
             response += part
             self._render_assistant_message(response, placeholder=placeholder)
         if not response:
-            self._render_assistant_message(message, placeholder=placeholder)
+            self._render_assistant_message(line.text, placeholder=placeholder)
+        if line.wait_after > 0:
+            time.sleep(line.wait_after)
 
-    def typing_indicator(self, duration_seconds: float = 0) -> None:
+    def _typing_indicator(self, duration_seconds: float) -> None:
+        duration = (
+            random.uniform(TYPING_DELAY_MIN, TYPING_DELAY_MAX)
+            if duration_seconds == 0
+            else duration_seconds
+        )
         placeholder = st.empty()
-        if duration_seconds == 0:
-            duration_seconds = TYPING_DELAY_MIN + (random.random()*(TYPING_DELAY_MAX-TYPING_DELAY_MIN))
-            if duration_seconds < 1:
-                return
-        if duration_seconds > 0.4:
-            time.sleep(0.4)
-            duration_seconds -= 0.4
         placeholder.markdown(
             "<div class='assistant-typing' aria-label='Assistant is typing'>"
             "<span></span><span></span><span></span></div>",
             unsafe_allow_html=True,
         )
-        time.sleep(duration_seconds)
+        time.sleep(max(0, duration))
         placeholder.empty()
 
-    def wait(self, duration_seconds: float) -> None:
-        if duration_seconds < 0:
-            raise ValueError("Wait duration must not be negative.")
-        time.sleep(duration_seconds)
+    def _set_control(self, turn: AssistantTurn) -> None:
+        round_id = int(st.session_state.get(CONTROL_ROUND_KEY, 0)) + 1
+        st.session_state[CONTROL_ROUND_KEY] = round_id
+        control = {
+            "story_id": turn.story_id,
+            "scene_id": turn.scene_id,
+            "round_id": round_id,
+            "kind": turn.control_kind,
+            "label": turn.choice_label,
+            "record_selection": turn.record_selection,
+            "choices": [
+                {"id": choice.id, "label": choice.label} for choice in turn.choices
+            ],
+        }
+        st.session_state[ACTIVE_CONTROL_KEY] = control
+        self._render_control(control)
 
-    def assistant_leave(self) -> None:
-        self.status("Assistant left the chat")
+    def _render_control(self, control: dict[str, Any]) -> None:
+        if control.get("kind") == "send":
+            self._render_send_control(control)
+            return
 
-    def go_to(self, destination: str) -> None:
-        """Switch screens on the next app rerun after an assistant action."""
-        st.session_state["assistant.destination"] = destination
+        choices = control.get("choices")
+        if not isinstance(choices, list) or not choices:
+            return
+        with self._control_bar.container():
+            with st.container(
+                key=f"assistant-choice-bar-{control.get('round_id')}"
+            ):
+                label = str(control.get("label", ""))
+                if label:
+                    st.markdown(
+                        f"<div class='assistant-choice-label'>{escape(label)}</div>",
+                        unsafe_allow_html=True,
+                    )
+                columns = st.columns(len(choices))
+                for index, (column, raw_choice) in enumerate(zip(columns, choices)):
+                    if not isinstance(raw_choice, dict):
+                        continue
+                    choice_id = str(raw_choice.get("id", ""))
+                    choice_label = str(raw_choice.get("label", choice_id))
+                    column.button(
+                        choice_label,
+                        key=f"assistant_choice_{control.get('round_id')}_{index}",
+                        use_container_width=True,
+                        on_click=self._queue_selection,
+                        args=(control, choice_id, choice_label),
+                    )
 
-    def status(self, message: str) -> None:
-        self._transcript.append(("status", message))
-        st.markdown(f"<div class='assistant-status'>{message}</div>", unsafe_allow_html=True)
+    def _render_send_control(self, control: dict[str, Any]) -> None:
+        self.input_rendered = True
+        with self._control_bar.container():
+            with st.container(
+                key=f"assistant-send-bar-{control.get('round_id')}"
+            ):
+                with st.form(
+                    f"assistant_send_{control.get('round_id')}",
+                    clear_on_submit=True,
+                ):
+                    st.text_input(
+                        "Message the assistant",
+                        label_visibility="collapsed",
+                        placeholder="Message the assistant",
+                    )
+                    st.form_submit_button(
+                        "Send",
+                        use_container_width=True,
+                        on_click=self._queue_selection,
+                        args=(control, "send", "Send"),
+                    )
+
+    def _queue_selection(
+        self,
+        control: dict[str, Any],
+        choice_id: str,
+        label: str,
+    ) -> None:
+        st.session_state.pop(ACTIVE_CONTROL_KEY, None)
+        st.session_state[PENDING_SELECTION_KEY] = {
+            "story_id": str(control.get("story_id", "")),
+            "scene_id": str(control.get("scene_id", "")),
+            "choice_id": choice_id,
+            "label": label,
+            "control_kind": str(control.get("kind", "choices")),
+        }
+        if bool(control.get("record_selection", True)):
+            self._transcript.append(("user", label))
 
     @staticmethod
-    def _render_assistant_message(message: str, *, placeholder: Any | None = None) -> None:
-        """Render an incoming message as a neutral chat bubble without an avatar."""
+    def _take_pending_selection() -> AssistantSelection | None:
+        raw = st.session_state.pop(PENDING_SELECTION_KEY, None)
+        if not isinstance(raw, dict):
+            return None
+        return AssistantSelection(
+            story_id=str(raw.get("story_id", "")),
+            scene_id=str(raw.get("scene_id", "")),
+            choice_id=str(raw.get("choice_id", "")),
+            label=str(raw.get("label", "")),
+            control_kind=str(raw.get("control_kind", "choices")),  # type: ignore[arg-type]
+        )
+
+    def _append_and_render(self, kind: str, content: Any) -> None:
+        self._transcript.append((kind, content))
+        self._render_transcript_entry(kind, content)
+
+    def _render_transcript_entry(self, kind: str, content: Any) -> None:
+        if kind in {"assistant", "say"}:
+            self._render_assistant_message(str(content))
+        elif kind in {"user", "user_choice"}:
+            self._render_user_choice(str(content))
+        elif kind == "progress" and isinstance(content, dict):
+            st.progress(float(content.get("value", 0)), text=str(content.get("text", "")))
+        else:
+            st.markdown(
+                f"<div class='assistant-status'>{escape(str(content))}</div>",
+                unsafe_allow_html=True,
+            )
+
+    @staticmethod
+    def _render_assistant_message(
+        message: str, *, placeholder: Any | None = None
+    ) -> None:
         target = st if placeholder is None else placeholder
         target.markdown(
             f"<div class='assistant-message'><p>{escape(message).replace(chr(10), '<br>')}</p></div>",
@@ -107,47 +287,88 @@ class StreamlitAssistantView:
 
     @staticmethod
     def _render_user_choice(message: str) -> None:
-        """Render a selected assistant option as an outgoing chat bubble."""
         st.markdown(
             f"<div class='assistant-user-choice'><span>{escape(message)}</span></div>",
             unsafe_allow_html=True,
         )
 
-    def selected_choice(self, event_id: str, *options: str) -> str | None:
-        """Read and record a clicked choice without rendering its button again."""
-        for index, option in enumerate(options):
-            if st.session_state.get(f"assistant_choice_{event_id}_{index}", False):
-                self._transcript.append(("user_choice", option))
-                self._render_user_choice(option)
-                return option
-        return None
+    @staticmethod
+    def _render_control_styles() -> None:
+        st.markdown(
+            """
+            <style>
+              [data-testid="stMainBlockContainer"] { padding-bottom: 9rem; }
+              [class*="st-key-assistant-choice-bar-"],
+              [class*="st-key-assistant-send-bar-"] {
+                background: var(--background-color, #ffffff);
+                box-sizing: border-box;
+                left: 50%;
+                padding: 0.5rem 0 0.25rem;
+                position: fixed;
+                transform: translateX(-50%);
+                width: min(calc(100% - 2rem), 760px);
+                z-index: 999;
+              }
+              [class*="st-key-assistant-choice-bar-"] { bottom: 4.75rem; }
+              [class*="st-key-assistant-send-bar-"] { bottom: 0.5rem; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    def choices(self, event_id: str, label: str, *options: str) -> str | None:
-        st.markdown(f"<div class='assistant-choice-label'>{label}</div>", unsafe_allow_html=True)
-        columns = st.columns(len(options))
-        for index, (column, option) in enumerate(zip(columns, options)):
-            if column.button(
-                option,
-                key=f"assistant_choice_{event_id}_{index}",
-                use_container_width=True,
-            ):
-                self._transcript.append(("user_choice", option))
-                self._render_user_choice(option)
-                return option
-        return None
-
-    def send_control(self, event_id: str) -> bool:
-        self.input_rendered = True
-        with st.form(f"assistant_send_control_{event_id}", clear_on_submit=True):
-            st.text_input(
-                "Message the assistant",
-                label_visibility="collapsed",
-                placeholder="Message the assistant",
-            )
-            return st.form_submit_button("Send", use_container_width=True)
-
-    def progress(self, value: float, text: str) -> None:
-        st.progress(value, text=text)
-
-    def rerun(self) -> None:
-        st.rerun()
+    @staticmethod
+    def _scroll_and_position_controls() -> None:
+        st.iframe(
+            """
+            <script>
+              const parentWindow = window.parent;
+              const parentDocument = parentWindow.document;
+              const positionControls = () => {
+                const choiceBar = parentDocument.querySelector(
+                  '[class*="st-key-assistant-choice-bar-"]'
+                );
+                const sendBar = parentDocument.querySelector(
+                  '[class*="st-key-assistant-send-bar-"]'
+                );
+                const chatInput = parentDocument.querySelector(
+                  '[data-testid="stChatInput"]'
+                );
+                if (choiceBar && chatInput) {
+                  const bounds = chatInput.getBoundingClientRect();
+                  choiceBar.style.left = `${bounds.left}px`;
+                  choiceBar.style.width = `${bounds.width}px`;
+                  choiceBar.style.bottom = `${parentWindow.innerHeight - bounds.top}px`;
+                  choiceBar.style.transform = 'none';
+                }
+                if (sendBar) {
+                  const main = parentDocument.querySelector(
+                    '[data-testid="stMainBlockContainer"]'
+                  );
+                  if (main) {
+                    const bounds = main.getBoundingClientRect();
+                    sendBar.style.left = `${bounds.left}px`;
+                    sendBar.style.width = `${bounds.width}px`;
+                    sendBar.style.transform = 'none';
+                  }
+                }
+              };
+              const scrollToBottom = () => {
+                const container = parentDocument.querySelector(
+                  '[data-testid="stAppViewContainer"]'
+                );
+                if (container) {
+                  container.scrollTo({ top: container.scrollHeight });
+                }
+                parentWindow.scrollTo({
+                  top: parentDocument.body.scrollHeight
+                });
+              };
+              requestAnimationFrame(() => setTimeout(() => {
+                positionControls();
+                scrollToBottom();
+              }, 50));
+            </script>
+            """,
+            height=1,
+            tab_index=-1,
+        )

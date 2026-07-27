@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timedelta, timezone
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from src.assistant.core import (
     AssistantContext,
+    AssistantSelection,
     AssistantStory,
-    AssistantView,
-    EventOutcome,
+    AssistantTurn,
     SharedStoryStateStore,
 )
 from src.assistant.state import (
@@ -18,136 +18,173 @@ from src.assistant.state import (
     clear_transient_assistant_state,
     save_transient_assistant_state,
 )
-from src.assistant.stories.standard import (
-    PUSH_PROMPT_EVENT_ID,
-    STANDARD_PUSH_FLOW,
-    STANDARD_TUTORIAL_FLOW,
+from src.assistant.presentation import ASSISTANT_LEFT_THIS_VISIT_KEY
+from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
+from src.assistant.stories.special_examples import SPECIAL_STORY_ID
+from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID
+from src.assistant.stories.tutorial import (
+    EXPLANATION_SCENES,
+    READY_NODE,
+    STANDARD_STORY_ID,
+    TUTORIAL_STORY_ID,
 )
-from src.assistant.stories.tutorial import ONBOARDING_FLOW, PROFILE_ANALYSIS_FLOW, TOUR_FLOW
-from src.db.persistence import Persistence
+
+
+MAX_AUTOMATIC_TURNS = 24
 
 
 class AssistantDirector:
+    """Advance declarative stories and own every state/persistence boundary."""
+
     def __init__(
         self,
-        persistence: Persistence,
+        persistence,
         stories: Mapping[AssistantMode | str, AssistantStory],
         *,
         shared_story_state_store: SharedStoryStateStore | None = None,
     ) -> None:
         self.persistence = persistence
-        self.stories = dict(stories)
         self.shared_story_state_store = shared_story_state_store
+        self.stories: dict[str, AssistantStory] = {}
+        for key, story in stories.items():
+            self.stories[str(key)] = story
+            self.stories[story.story_id] = story
 
-    def render(self, context: AssistantContext, view: AssistantView) -> AssistantState:
-        # A user who explicitly dismisses the assistant must never be advanced
-        # into another story by a later condition or mode change.
-        if context.state.status == "dismissed":
+    def render(self, context: AssistantContext, view) -> AssistantState:
+        if (
+            context.state.status == "dismissed"
+            or view.waiting_for_input
+            or context.session_state.get(ASSISTANT_LEFT_THIS_VISIT_KEY) is True
+        ):
+            view.finish()
             return context.state
 
-        effective_context = context
+        state = context.state
+        selection: AssistantSelection | None = view.selection
+        state_changed = False
+        save_durably = False
+
+        for _ in range(MAX_AUTOMATIC_TURNS):
+            effective_context = self._context_with_state(context, state)
+            story = self._story_for(effective_context, selection)
+            if story is None:
+                break
+            scene_id = (
+                selection.scene_id
+                if selection is not None
+                else self._entry_scene(story, effective_context)
+            )
+            if scene_id is None:
+                break
+
+            turn = story.advance(effective_context, scene_id, selection)
+            selection = None
+            if turn is None:
+                break
+
+            view.present(turn)
+            updated_state = apply_turn(state, turn)
+            state_changed = state_changed or updated_state != state
+            state = updated_state
+            save_durably = save_durably or turn.completed
+
+            if turn.destination or turn.has_control or not turn.continue_flow:
+                break
+        else:
+            raise RuntimeError("Assistant story exceeded the automatic transition limit.")
+
+        if state_changed:
+            state = self._save_state(context, state, durably=save_durably)
+
+        view.finish()
+        return state
+
+    def _context_with_state(
+        self, context: AssistantContext, state: AssistantState
+    ) -> AssistantContext:
+        effective = replace(context, state=state)
         if (
-            effective_context.shared_story_state_store is None
+            effective.shared_story_state_store is None
             and self.shared_story_state_store is not None
         ):
-            effective_context = replace(
-                context,
+            effective = replace(
+                effective,
                 shared_story_state_store=self.shared_story_state_store,
             )
+        return effective
 
-        event = self._next_event(effective_context)
-        if event is None:
-            return context.state
+    def _story_for(
+        self,
+        context: AssistantContext,
+        selection: AssistantSelection | None,
+    ) -> AssistantStory | None:
+        if selection is not None:
+            return self.stories.get(selection.story_id)
 
-        outcome = event.render(effective_context, view)
-        updated_state = apply_event_outcome(context.state, outcome)
-        if updated_state == context.state:
-            return context.state
+        state = context.state
+        if state.mode is AssistantMode.SPECIAL:
+            return self.stories.get(SPECIAL_STORY_ID)
 
-        if outcome.completed:
-            stored_state = self.persistence.save_assistant_state(
-                context.user_id,
-                updated_state.to_dict(),
-                now=context.now,
-            )
-            normalized_state = AssistantState.from_value(stored_state)
-            context.current_user["assistant_state"] = normalized_state.to_dict()
-            clear_transient_assistant_state(context.session_state, context.user_id)
-        else:
-            save_transient_assistant_state(context.session_state, context.user_id, updated_state)
-            normalized_state = updated_state
-        if outcome.continue_flow:
-            rerun = getattr(view, "rerun", None)
-            if callable(rerun):
-                rerun()
-        return normalized_state
+        if state.story == TUTORIAL_STORY_ID and state.scene not in {None, READY_NODE}:
+            return self.stories.get(TUTORIAL_STORY_ID)
+        if state.story == PUSH_REMINDER_STORY_ID:
+            return self.stories.get(PUSH_REMINDER_STORY_ID)
+        if state.story == STANDARD_STORY_ID and state.scene in EXPLANATION_SCENES:
+            return self.stories.get(STANDARD_STORY_ID)
 
-    def _next_event(self, context: AssistantContext):
-        """Choose one intervention. Stories only advance the work selected here."""
-        if context.state.mode is AssistantMode.SPECIAL:
-            story = self.stories.get(AssistantMode.SPECIAL)
-            return story.next_event(context) if story is not None else None
-
-        # 1. Resume a durable flow before looking for anything new.
-        if context.state.flow in {ONBOARDING_FLOW, PROFILE_ANALYSIS_FLOW, TOUR_FLOW}:
-            tutorial = self.stories.get("tutorial")
-            return tutorial.next_event(context) if tutorial is not None else None
-        if context.state.flow == STANDARD_PUSH_FLOW:
-            push_story = self.stories.get("push_reminder")
-            return push_story.next_event(context) if push_story is not None else None
-        if context.state.flow == STANDARD_TUTORIAL_FLOW:
-            standard = self.stories.get(AssistantMode.NORMAL)
-            return standard.next_event(context) if standard is not None else None
-
-        # 2. Fresh users are deliberately the only users sent into onboarding.
-        if self._is_fully_fresh(context.state):
-            tutorial = self.stories.get("tutorial")
-            initial_event = getattr(tutorial, "initial_event", None)
-            return initial_event() if callable(initial_event) else None
-
-        # 3 and 4 are explicit extension points for future guided events.
-        issue_event = self._important_issue_event(context)
-        if issue_event is not None:
-            return issue_event
-        tutorial_event = self._unseen_tutorial_event(context)
-        if tutorial_event is not None:
-            return tutorial_event
-
-        # 5. Optional push prompting follows meaningful use and durable backoff.
+        if self._is_fully_fresh(state):
+            return self.stories.get(TUTORIAL_STORY_ID)
+        if self._important_issue_story(context) is not None:
+            return self._important_issue_story(context)
+        if self._unseen_tutorial_story(context) is not None:
+            return self._unseen_tutorial_story(context)
         if self._push_prompt_is_eligible(context):
-            push_story = self.stories.get("push_reminder")
-            return push_story.next_event(context) if push_story is not None else None
+            return self.stories.get(PUSH_REMINDER_STORY_ID)
+        return self.stories.get("greetings") or self.stories.get(STANDARD_STORY_ID)
 
-        # 6. A session-scoped greeting decorates the standard fallback.
-        greetings = self.stories.get("greetings")
-        if greetings is not None:
-            greeting_event = greetings.next_event(context)
-            if greeting_event is not None:
-                return greeting_event
+    @staticmethod
+    def _entry_scene(
+        story: AssistantStory, context: AssistantContext
+    ) -> str | None:
+        return story.entry_scene(context)
 
-        # 7. The standard story is the non-proactive fallback.
-        standard = self.stories.get(AssistantMode.NORMAL)
-        return standard.next_event(context) if standard is not None else None
+    def _save_state(
+        self,
+        context: AssistantContext,
+        state: AssistantState,
+        *,
+        durably: bool,
+    ) -> AssistantState:
+        if not durably:
+            save_transient_assistant_state(context.session_state, context.user_id, state)
+            return state
+
+        stored = self.persistence.save_assistant_state(
+            context.user_id,
+            state.to_dict(),
+            now=context.now,
+        )
+        normalized = AssistantState.from_value(stored)
+        context.current_user["assistant_state"] = normalized.to_dict()
+        clear_transient_assistant_state(context.session_state, context.user_id)
+        return normalized
 
     @staticmethod
     def _is_fully_fresh(state: AssistantState) -> bool:
         return (
             state.status == "new"
-            and state.flow is None
-            and state.node is None
-            and not state.events
-            and not state.knowledge
-            and not state.sequences
+            and state.story is None
+            and state.scene is None
         )
 
     @staticmethod
-    def _important_issue_event(context: AssistantContext):
-        """Reserved for product-defined urgent conditions."""
+    def _important_issue_story(context: AssistantContext):
+        del context
         return None
 
     @staticmethod
-    def _unseen_tutorial_event(context: AssistantContext):
-        """Reserved for feature-specific tutorial eligibility."""
+    def _unseen_tutorial_story(context: AssistantContext):
+        del context
         return None
 
     @staticmethod
@@ -159,11 +196,15 @@ class AssistantDirector:
         if dismissed >= 3 or prompt.get("awaiting"):
             return False
 
-        completed = _non_negative_int(context.user_state.get("completed_goal_count"))
+        completed = _non_negative_int(
+            context.user_state.get("completed_goal_count")
+        )
         if dismissed == 0:
             return completed >= 1
 
-        since_dismissal = completed - _non_negative_int(prompt.get("dismissed_at_completed_goal_count"))
+        since_dismissal = completed - _non_negative_int(
+            prompt.get("dismissed_at_completed_goal_count")
+        )
         if dismissed == 1:
             return since_dismissal >= 1
         if since_dismissal < 3:
@@ -175,6 +216,30 @@ class AssistantDirector:
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
         return now >= dismissed_at + timedelta(days=30)
+
+
+def apply_turn(state: AssistantState, turn: AssistantTurn) -> AssistantState:
+    sequences = copy.deepcopy(state.sequences)
+    knowledge = copy.deepcopy(state.knowledge)
+    events = copy.deepcopy(state.events)
+
+    for sequence_id in turn.advance_sequences:
+        sequences[sequence_id] = sequences.get(sequence_id, 0) + 1
+    knowledge.update(turn.knowledge_updates)
+    for event_id, event_state in turn.event_updates.items():
+        events[event_id] = copy.deepcopy(dict(event_state))
+    for event_id in turn.clear_events:
+        events.pop(event_id, None)
+
+    return replace(
+        state,
+        sequences=sequences,
+        knowledge=knowledge,
+        events=events,
+        story=turn.state_story if turn.state_story is not None else state.story,
+        scene=turn.state_scene if turn.state_scene is not None else state.scene,
+        status=turn.state_status if turn.state_status is not None else state.status,
+    )
 
 
 def _non_negative_int(value: Any) -> int:
@@ -194,25 +259,5 @@ def _parse_datetime(value: Any) -> datetime | None:
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
 
 
-def apply_event_outcome(state: AssistantState, outcome: EventOutcome) -> AssistantState:
-    sequences = copy.deepcopy(state.sequences)
-    knowledge = copy.deepcopy(state.knowledge)
-    events = copy.deepcopy(state.events)
-
-    for sequence_id in outcome.advance_sequences:
-        sequences[sequence_id] = sequences.get(sequence_id, 0) + 1
-    knowledge.update(outcome.knowledge_updates)
-    for event_id, event_state in outcome.event_updates.items():
-        events[event_id] = copy.deepcopy(dict(event_state))
-    for event_id in outcome.clear_events:
-        events.pop(event_id, None)
-
-    return replace(
-        state,
-        sequences=sequences,
-        knowledge=knowledge,
-        events=events,
-        flow=outcome.flow if outcome.flow is not None else state.flow,
-        node=outcome.node if outcome.node is not None else state.node,
-        status=outcome.status if outcome.status is not None else state.status,
-    )
+# Legacy test/import name.
+apply_event_outcome = apply_turn

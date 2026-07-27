@@ -1,13 +1,23 @@
+"""Declarative versions of the prototype special-mode scenes."""
 from __future__ import annotations
 
 from typing import Final
 
-from src.assistant.core import AssistantContext, AssistantEvent, AssistantView, EventOutcome
-from src.assistant.state import AssistantCategory
+from src.assistant.core import (
+    AssistantChoice,
+    AssistantContext,
+    AssistantLine,
+    AssistantSelection,
+    AssistantStory,
+    AssistantTurn,
+    ProgressEntry,
+)
 
 
+SPECIAL_STORY_ID: Final = "special_examples"
 SPECIAL_SEQUENCE_ID: Final = "special_examples"
 HELP_PAGE_KEY: Final = "help"
+WELCOME_EVENT_ID: Final = "special.welcome"
 BUTTON_TEST_EVENT_ID: Final = "special.button_test"
 CLICK_CHALLENGE_EVENT_ID: Final = "special.click_challenge"
 
@@ -16,97 +26,135 @@ PROGRESS_BAR_CLICK_COUNT: Final = 40
 PROGRESS_BAR_COUNT: Final = 3
 
 
-class WelcomeExampleEvent(AssistantEvent):
-    event_id = "special.welcome"
-    category = AssistantCategory.JOKE
+class SpecialExampleStory(AssistantStory):
+    story_id = SPECIAL_STORY_ID
 
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        view.say("Hey, welcome to our app!")
-        view.wait(1)
-        view.typing_indicator(4)
-        view.wait(2)
-        view.typing_indicator(3)
-        view.say("Ok, I just let you time to arrive and organize yourself.")
-        view.wait(1)
-        view.assistant_leave()
-        return EventOutcome.complete(advance_sequence=SPECIAL_SEQUENCE_ID)
+    def entry_scene(self, context: AssistantContext) -> str | None:
+        position = context.state.sequences.get(SPECIAL_SEQUENCE_ID, 0)
+        scenes = (WELCOME_EVENT_ID, BUTTON_TEST_EVENT_ID, CLICK_CHALLENGE_EVENT_ID)
+        if position < 0 or position >= len(scenes):
+            return None
+        scene = scenes[position]
+        if position == 0:
+            return scene
+        event_state = context.state.events.get(scene, {})
+        if context.previous_page_key != HELP_PAGE_KEY or event_state.get("active") is True:
+            return scene
+        return None
 
+    def advance(
+        self,
+        context: AssistantContext,
+        scene_id: str | None,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn | None:
+        scene_id = scene_id or self.entry_scene(context)
+        if scene_id is None:
+            return None
+        if scene_id == WELCOME_EVENT_ID:
+            return AssistantTurn(
+                story_id=self.story_id,
+                scene_id=scene_id,
+                lines=(
+                    AssistantLine("Hey, welcome to our app!"),
+                    AssistantLine(
+                        "Ok, I just let you time to arrive and organize yourself.",
+                        typing_delay=3,
+                        wait_before=7,
+                        wait_after=1,
+                    ),
+                ),
+                assistant_leaves=True,
+                completed=True,
+                advance_sequences=(SPECIAL_SEQUENCE_ID,),
+            )
+        if scene_id == BUTTON_TEST_EVENT_ID:
+            return self._button_test(selection)
+        return self._click_challenge(context, selection)
 
-class ButtonTestExampleEvent(AssistantEvent):
-    event_id = BUTTON_TEST_EVENT_ID
-    category = AssistantCategory.JOKE
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        view.say("Would you like to help us test the buttons? Pick a number below.")
-        selected_choice = view.choices(self.event_id, "Choose a number", "1", "2", "3")
-        if selected_choice is None:
-            return EventOutcome.pending(event_updates={self.event_id: {"active": True}})
-
-        view.say(f"Thanks — you selected {selected_choice}.")
-        view.assistant_leave()
-        return EventOutcome.complete(
-            advance_sequence=SPECIAL_SEQUENCE_ID,
-            clear_events=(self.event_id,),
+    def _button_test(
+        self, selection: AssistantSelection | None
+    ) -> AssistantTurn:
+        if selection is None:
+            return AssistantTurn(
+                story_id=self.story_id,
+                scene_id=BUTTON_TEST_EVENT_ID,
+                lines=(
+                    AssistantLine(
+                        "Would you like to help us test the buttons? Pick a number below."
+                    ),
+                ),
+                choices=tuple(
+                    AssistantChoice(id=value, label=value) for value in ("1", "2", "3")
+                ),
+                choice_label="Choose a number",
+                event_updates={BUTTON_TEST_EVENT_ID: {"active": True}},
+                state_status="paused",
+            )
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id=BUTTON_TEST_EVENT_ID,
+            lines=(
+                AssistantLine(f"Thanks — you selected {selection.label}."),
+            ),
+            assistant_leaves=True,
+            completed=True,
+            advance_sequences=(SPECIAL_SEQUENCE_ID,),
+            clear_events=(BUTTON_TEST_EVENT_ID,),
         )
 
-
-class ClickChallengeExampleEvent(AssistantEvent):
-    event_id = CLICK_CHALLENGE_EVENT_ID
-    category = AssistantCategory.JOKE
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        stored_event = context.state.events.get(self.event_id, {})
-        clicks = _non_negative_int(stored_event.get("clicks", 0))
-        if view.send_control(self.event_id):
+    def _click_challenge(
+        self,
+        context: AssistantContext,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn:
+        event = dict(context.state.events.get(CLICK_CHALLENGE_EVENT_ID, {}))
+        clicks = _non_negative_int(event.get("clicks"))
+        if selection is not None:
             clicks += 1
 
         if clicks <= STATUS_CLICK_COUNT:
-            if clicks:
-                view.status(f"{clicks}x")
-            return EventOutcome.pending(
-                event_updates={self.event_id: {"active": True, "clicks": clicks}}
-            )
+            statuses = (f"{clicks}x",) if clicks else ()
+            return self._send_turn(clicks, statuses=statuses)
 
         progress_clicks = clicks - STATUS_CLICK_COUNT
-        _render_progress_bars(view, progress_clicks)
+        progress = _progress_entries(progress_clicks)
         if progress_clicks < PROGRESS_BAR_CLICK_COUNT * PROGRESS_BAR_COUNT:
-            return EventOutcome.pending(
-                event_updates={self.event_id: {"active": True, "clicks": clicks}}
-            )
+            return self._send_turn(clicks, progress=progress)
 
-        view.say("Come on.")
-        view.typing_indicator(4)
-        view.say("I AM NOT HERE!")
-        view.assistant_leave()
-        return EventOutcome.complete(
-            advance_sequence=SPECIAL_SEQUENCE_ID,
-            clear_events=(self.event_id,),
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id=CLICK_CHALLENGE_EVENT_ID,
+            lines=(
+                AssistantLine("Come on."),
+                AssistantLine("I AM NOT HERE!", typing_delay=4),
+            ),
+            progress=progress,
+            assistant_leaves=True,
+            completed=True,
+            advance_sequences=(SPECIAL_SEQUENCE_ID,),
+            clear_events=(CLICK_CHALLENGE_EVENT_ID,),
         )
 
-
-class SpecialExampleStory:
-    story_id = "special_examples"
-
-    def __init__(self) -> None:
-        self._events: tuple[AssistantEvent, ...] = (
-            WelcomeExampleEvent(),
-            ButtonTestExampleEvent(),
-            ClickChallengeExampleEvent(),
+    def _send_turn(
+        self,
+        clicks: int,
+        *,
+        statuses: tuple[str, ...] = (),
+        progress: tuple[ProgressEntry, ...] = (),
+    ) -> AssistantTurn:
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id=CLICK_CHALLENGE_EVENT_ID,
+            control_kind="send",
+            record_selection=False,
+            statuses=statuses,
+            progress=progress,
+            event_updates={
+                CLICK_CHALLENGE_EVENT_ID: {"active": True, "clicks": clicks}
+            },
+            state_status="paused",
         )
-
-    def next_event(self, context: AssistantContext) -> AssistantEvent | None:
-        position = context.state.sequences.get(SPECIAL_SEQUENCE_ID, 0)
-        if position < 0 or position >= len(self._events):
-            return None
-
-        event = self._events[position]
-        if position == 0:
-            return event
-
-        event_state = context.state.events.get(event.event_id, {})
-        if context.previous_page_key != HELP_PAGE_KEY or event_state.get("active") is True:
-            return event
-        return None
 
 
 def _non_negative_int(value: object) -> int:
@@ -116,17 +164,21 @@ def _non_negative_int(value: object) -> int:
         return 0
 
 
-def _render_progress_bars(view: AssistantView, progress_clicks: int) -> None:
+def _progress_entries(progress_clicks: int) -> tuple[ProgressEntry, ...]:
     bar_count = min(
         PROGRESS_BAR_COUNT,
         (progress_clicks + PROGRESS_BAR_CLICK_COUNT - 1) // PROGRESS_BAR_CLICK_COUNT,
     )
+    entries: list[ProgressEntry] = []
     for index in range(bar_count):
-        bar_clicks = min(
+        clicks = min(
             PROGRESS_BAR_CLICK_COUNT,
             max(0, progress_clicks - index * PROGRESS_BAR_CLICK_COUNT),
         )
-        view.progress(
-            bar_clicks / PROGRESS_BAR_CLICK_COUNT,
-            text=f"{bar_clicks} / {PROGRESS_BAR_CLICK_COUNT}",
+        entries.append(
+            ProgressEntry(
+                clicks / PROGRESS_BAR_CLICK_COUNT,
+                f"{clicks} / {PROGRESS_BAR_CLICK_COUNT}",
+            )
         )
+    return tuple(entries)

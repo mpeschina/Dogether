@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Literal, Mapping, Protocol
 
-from src.assistant.state import AssistantCategory, AssistantState
+from src.assistant.state import AssistantState
+
+
+ControlKind = Literal["choices", "send"]
+TranscriptKind = Literal["assistant", "user", "status", "progress"]
 
 
 class SharedStoryStateStore(Protocol):
@@ -31,91 +36,86 @@ class AssistantContext:
 
 
 @dataclass(frozen=True)
-class EventOutcome:
+class AssistantLine:
+    """One assistant bubble and the pause shown immediately before it."""
+
+    text: str
+    typing_delay: float | None = None
+    wait_before: float = 0
+    wait_after: float = 0
+
+
+@dataclass(frozen=True)
+class AssistantChoice:
+    """A stable transition value and its user-facing button label."""
+
+    id: str
+    label: str
+
+    @classmethod
+    def from_label(cls, label: str) -> "AssistantChoice":
+        return cls(id=label, label=label)
+
+
+@dataclass(frozen=True)
+class AssistantSelection:
+    story_id: str
+    scene_id: str
+    choice_id: str
+    label: str
+    control_kind: ControlKind = "choices"
+
+
+@dataclass(frozen=True)
+class ProgressEntry:
+    value: float
+    text: str
+
+
+@dataclass(frozen=True)
+class AssistantTurn:
+    """Declarative output plus state changes for one conversation transition."""
+
+    story_id: str
+    scene_id: str
+    lines: tuple[AssistantLine, ...] = ()
+    choices: tuple[AssistantChoice, ...] = ()
+    choice_label: str = ""
+    control_kind: ControlKind = "choices"
+    record_selection: bool = True
+    statuses: tuple[str, ...] = ()
+    progress: tuple[ProgressEntry, ...] = ()
+    assistant_leaves: bool = False
+    destination: str | None = None
     completed: bool = False
+    continue_flow: bool = False
     advance_sequences: tuple[str, ...] = ()
     knowledge_updates: Mapping[str, bool] = field(default_factory=dict)
     event_updates: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     clear_events: tuple[str, ...] = ()
-    flow: str | None = None
-    node: str | None = None
-    status: str | None = None
-    continue_flow: bool = False
+    state_story: str | None = None
+    state_scene: str | None = None
+    state_status: str | None = None
 
-    @classmethod
-    def pending(
-        cls,
-        *,
-        event_updates: Mapping[str, Mapping[str, Any]] | None = None,
-        knowledge_updates: Mapping[str, bool] | None = None,
-        flow: str | None = None,
-        node: str | None = None,
-        status: str | None = None,
-        continue_flow: bool = False,
-    ) -> "EventOutcome":
-        return cls(
-            event_updates=event_updates or {}, knowledge_updates=knowledge_updates or {}, flow=flow, node=node, status=status,
-            continue_flow=continue_flow,
-        )
-
-    @classmethod
-    def complete(
-        cls,
-        *,
-        advance_sequence: str | None = None,
-        knowledge_updates: Mapping[str, bool] | None = None,
-        event_updates: Mapping[str, Mapping[str, Any]] | None = None,
-        clear_events: tuple[str, ...] = (),
-        flow: str | None = None,
-        node: str | None = None,
-        status: str | None = None,
-        continue_flow: bool = False,
-    ) -> "EventOutcome":
-        return cls(
-            completed=True,
-            advance_sequences=(advance_sequence,) if advance_sequence else (),
-            knowledge_updates=knowledge_updates or {},
-            event_updates=event_updates or {},
-            clear_events=clear_events,
-            flow=flow,
-            node=node,
-            status=status,
-            continue_flow=continue_flow,
-        )
+    @property
+    def has_control(self) -> bool:
+        return self.control_kind == "send" or bool(self.choices)
 
 
-class AssistantView(Protocol):
-    input_rendered: bool
+class AssistantStory(ABC):
+    """Common interface implemented by every assistant story."""
 
-    def say(self, message: str) -> None: ...
-
-    def typing_indicator(self, duration_seconds: float) -> None: ...
-
-    def wait(self, duration_seconds: float) -> None: ...
-
-    def assistant_leave(self) -> None: ...
-
-    def go_to(self, destination: str) -> None: ...
-
-    def status(self, message: str) -> None: ...
-
-    def choices(self, event_id: str, label: str, *options: str) -> str | None: ...
-
-    def selected_choice(self, event_id: str, *options: str) -> str | None: ...
-
-    def send_control(self, event_id: str) -> bool: ...
-
-    def progress(self, value: float, text: str) -> None: ...
-
-
-class AssistantEvent(Protocol):
-    event_id: str
-    category: AssistantCategory
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome: ...
-
-
-class AssistantStory(Protocol):
     story_id: str
 
-    def next_event(self, context: AssistantContext) -> AssistantEvent | None: ...
+    @abstractmethod
+    def entry_scene(self, context: AssistantContext) -> str | None:
+        """Return the scene where this story should currently begin."""
+
+    @abstractmethod
+    def advance(
+        self,
+        context: AssistantContext,
+        scene_id: str | None,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn | None:
+        """Produce the next declarative conversation turn."""

@@ -1,26 +1,43 @@
-"""The deliberately small, NPC-like Dogether onboarding story."""
+"""Declarative onboarding and reusable tutorial scenes."""
 from __future__ import annotations
 
 from typing import Final
 
-from src.assistant.core import AssistantContext, AssistantEvent, AssistantView, EventOutcome
-from src.assistant.state import AssistantCategory
+from src.assistant.core import (
+    AssistantChoice,
+    AssistantContext,
+    AssistantLine,
+    AssistantSelection,
+    AssistantStory,
+    AssistantTurn,
+)
 
 
-ONBOARDING_FLOW: Final = "onboarding"
-PROFILE_ANALYSIS_FLOW: Final = "onboarding_analysis"
-TOUR_FLOW: Final = "tour"
-STANDARD_FLOW: Final = "standard"
+TUTORIAL_STORY_ID: Final = "tutorial"
+STANDARD_STORY_ID: Final = "standard"
 
-WELCOME_NODE: Final = "onboarding_intro"
-# These are durable resume points, not generic screen names.  For example a
-# user who leaves to create a goal returns to ``goals.offer_create``.
+WELCOME_NODE: Final = "onboarding.welcome"
+RESUME_NODE: Final = "onboarding.resume"
 FRIENDS_NODE: Final = "friends.offer_invite"
-FRIENDS_EXPLANATION_NODE: Final = "friends.explain"
+FRIENDS_EXPLANATION_NODE: Final = "friends.explain.intro"
+FRIENDS_EXPLANATION_OPTIONS_NODE: Final = "friends.explain.options"
+FRIENDS_EXPLANATION_LINK_NODE: Final = "friends.explain.link"
+FRIENDS_EXPLANATION_GOODBYE_NODE: Final = "friends.explain.goodbye"
 GOALS_NODE: Final = "goals.offer_create"
-GOALS_EXPLANATION_NODE: Final = "goals.explain"
+GOALS_EXPLANATION_NODE: Final = "goals.explain.intro"
+GOALS_EXPLANATION_HOW_NODE: Final = "goals.explain.how"
+GOALS_EXPLANATION_PROGRESS_NODE: Final = "goals.explain.progress"
+GOALS_EXPLANATION_FRIENDS_NODE: Final = "goals.explain.friends"
+GOALS_EXPLANATION_REACTIONS_NODE: Final = "goals.explain.reactions"
+GOALS_EXPLANATION_FINISH_NODE: Final = "goals.explain.finish"
 PUSH_NODE: Final = "push.offer_enable"
-PUSH_EXPLANATION_NODE: Final = "push.explain"
+PUSH_EXPLANATION_NODE: Final = "push.explain.intro"
+PUSH_EXPLANATION_SHARED_NODE: Final = "push.explain.shared_goals"
+PUSH_EXPLANATION_MOBILE_NODE: Final = "push.explain.mobile_installation"
+PUSH_EXPLANATION_CONSENT_NODE: Final = "push.explain.os_consent"
+PUSH_EXPLANATION_CONTROLS_NODE: Final = "push.explain.goal_controls"
+PUSH_EXPLANATION_SETTINGS_NODE: Final = "push.explain.available_settings"
+PUSH_EXPLANATION_FINISH_NODE: Final = "push.explain.finish"
 ANALYSIS_COMPLETE_NODE: Final = "analysis.complete"
 TOUR_NODE: Final = "tour"
 READY_NODE: Final = "ready"
@@ -28,645 +45,773 @@ READY_NODE: Final = "ready"
 FRIENDS_EVENT_ID: Final = "friends_check"
 GOALS_EVENT_ID: Final = "goals_check"
 PUSH_EVENT_ID: Final = "push_check"
-ASSISTANT_DISMISSED_KEY: Final = "assistant.dismissed"  # legacy compatibility
-GOALS_EXPLANATION_STEP_KEY: Final = "assistant.goals_explanation_step"
-FRIENDS_EXPLANATION_STEP_KEY: Final = "assistant.friends_explanation_step"
-PUSH_EXPLANATION_STEP_KEY: Final = "assistant.push_explanation_step"
 
 
-def _pending(flow: str, node: str, *, continue_flow: bool = False) -> EventOutcome:
-    return EventOutcome.pending(flow=flow, node=node, status="paused", continue_flow=continue_flow)
+def _lines(*items: str | tuple[str, float]) -> tuple[AssistantLine, ...]:
+    result: list[AssistantLine] = []
+    for item in items:
+        if isinstance(item, tuple):
+            result.append(AssistantLine(item[0], typing_delay=item[1]))
+        else:
+            result.append(AssistantLine(item))
+    return tuple(result)
 
 
-def _event_outcome(event_id: str, outcome: str, next_node: str, *, continue_flow: bool = True) -> EventOutcome:
-    """Record a check's reusable outcome without exposing its UI to the parent."""
-    return EventOutcome.pending(
-        event_updates={event_id: {"outcome": outcome}},
-        flow=PROFILE_ANALYSIS_FLOW,
-        node=next_node,
-        status="active",
-        continue_flow=continue_flow,
+def _choices(*labels: str) -> tuple[AssistantChoice, ...]:
+    return tuple(AssistantChoice.from_label(label) for label in labels)
+
+
+def _scene(
+    owner: str,
+    scene_id: str,
+    *,
+    lines: tuple[AssistantLine, ...] = (),
+    choices: tuple[AssistantChoice, ...] = (),
+    label: str = "",
+    status: str = "paused",
+    **changes,
+) -> AssistantTurn:
+    return AssistantTurn(
+        story_id=owner,
+        scene_id=scene_id,
+        lines=lines,
+        choices=choices,
+        choice_label=label,
+        state_story=owner,
+        state_scene=scene_id,
+        state_status=status,
+        **changes,
     )
 
 
-class WelcomeEvent(AssistantEvent):
-    event_id = "onboarding_intro"
-    category = AssistantCategory.TUTORIAL
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        choice = view.selected_choice(self.event_id, "Analyse my profile", "Give me a tour", "I'm good")
-        if choice is not None:
-            return self._choose(choice, view)
-
-        view.say("Hi, welcome!")
-        view.typing_indicator(1.2)
-        view.say("Great to have you here.")
-        view.typing_indicator(1.5)
-        view.say("Want some help?")
-        choice = view.choices(self.event_id, "", "Analyse my profile", "Give me a tour", "I'm good")
-        return _pending(ONBOARDING_FLOW, WELCOME_NODE) if choice is None else self._choose(choice, view)
-
-    def _choose(self, choice: str, view: AssistantView) -> EventOutcome:
-        if choice == "Analyse my profile":
-            return EventOutcome.pending(flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="active", continue_flow=True)
-        if choice == "Give me a tour":
-            return EventOutcome.pending(flow=TOUR_FLOW, node=TOUR_NODE, status="active", continue_flow=True)
-        view.say("Fair enough.")
-        view.typing_indicator(1.2)
-        view.say("Have fun in there. 👋")
-        view.assistant_leave()
-        return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="declined")
+def _transition(
+    owner: str,
+    scene_id: str,
+    *,
+    status: str = "active",
+    **changes,
+) -> AssistantTurn:
+    return AssistantTurn(
+        story_id=owner,
+        scene_id=scene_id,
+        state_story=owner,
+        state_scene=scene_id,
+        state_status=status,
+        continue_flow=True,
+        **changes,
+    )
 
 
-class ResumeEvent(AssistantEvent):
-    event_id = "onboarding_resume"
-    category = AssistantCategory.TUTORIAL
+def _complete(
+    scene_id: str,
+    *,
+    owner: str = STANDARD_STORY_ID,
+    status: str = "completed",
+    **changes,
+) -> AssistantTurn:
+    return AssistantTurn(
+        story_id=owner,
+        scene_id=scene_id,
+        state_story=STANDARD_STORY_ID,
+        state_scene=READY_NODE,
+        state_status=status,
+        completed=True,
+        **changes,
+    )
 
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        choice = view.selected_choice(self.event_id, "Yes", "Start over")
+
+def _selected(selection: AssistantSelection | None) -> str | None:
+    return selection.choice_id if selection is not None else None
+
+
+class InitialTutorialStory(AssistantStory):
+    """One explicit transition per onboarding scene."""
+
+    story_id = TUTORIAL_STORY_ID
+
+    def entry_scene(self, context: AssistantContext) -> str:
+        if (
+            context.state.status == "paused"
+            and context.state.story == self.story_id
+            and context.previous_page_key != "help"
+        ):
+            return RESUME_NODE
+        return context.state.scene or WELCOME_NODE
+
+    def advance(
+        self,
+        context: AssistantContext,
+        scene_id: str | None,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn | None:
+        scene_id = scene_id or self.entry_scene(context)
+        if scene_id == WELCOME_NODE:
+            return self._welcome(selection)
+        if scene_id == RESUME_NODE:
+            return self._resume(context, selection)
+        if scene_id == FRIENDS_NODE:
+            return self._friends(context, selection)
+        if scene_id in FRIEND_SCENES:
+            return explanation_turn(context, self.story_id, scene_id, selection)
+        if scene_id == GOALS_NODE:
+            return self._goals(context, selection)
+        if scene_id in GOAL_SCENES:
+            return explanation_turn(context, self.story_id, scene_id, selection)
+        if scene_id == PUSH_NODE:
+            return self._push(context, selection)
+        if scene_id in PUSH_SCENES:
+            return explanation_turn(context, self.story_id, scene_id, selection)
+        if scene_id == ANALYSIS_COMPLETE_NODE:
+            return self._analysis_complete(selection)
+        if scene_id == TOUR_NODE:
+            return self._tour(selection)
+        return _transition(self.story_id, WELCOME_NODE)
+
+    def _welcome(self, selection: AssistantSelection | None) -> AssistantTurn:
+        choice = _selected(selection)
         if choice is None:
-            view.say("Hey, you're back.")
-            view.typing_indicator(1.2)
-            view.say("Continue where we stopped?")
-            choice = view.choices(self.event_id, "", "Yes", "Start over")
-        if choice is None:
-            return EventOutcome()
-        if choice == "Start over":
-            return EventOutcome.pending(flow=ONBOARDING_FLOW, node=WELCOME_NODE, status="active", continue_flow=True)
-        view.say("Perfect.")
-        return EventOutcome.pending(flow=context.state.flow, node=context.state.node, status="active", continue_flow=True)
-
-
-class CheckFriendsEvent(AssistantEvent):
-    """Reusable friends check; its result is independent of the parent flow."""
-    event_id = FRIENDS_EVENT_ID
-    category = AssistantCategory.TUTORIAL
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        count = int(context.user_state.get("friend_count", 0))
-        prior = context.state.events.get(self.event_id, {})
-        if count >= 2:
-            view.say("Friends look good. ✓")
-            return _event_outcome(self.event_id, "not_needed", GOALS_NODE)
-        if count == 1:
-            if prior.get("awaiting") == "invite":
-                view.say("Nice.")
-                view.typing_indicator(1.2)
-                view.say("Company acquired. ✓")
-            else:
-                view.say("You already found someone.")
-                view.say("Good start.")
-                choice = view.choices(self.event_id, "Want another?", "Invite someone", "I'm good")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, FRIENDS_NODE)
-                if choice == "Invite someone":
-                    return self._await_invite(context, view)
-            return _event_outcome(self.event_id, "completed", GOALS_NODE)
-
-        choice = view.selected_choice(self.event_id, "Invite a friend", "Explain the Friendlist to me", "Later")
-        if choice is None:
-            view.say("First: your people.")
-            view.typing_indicator(1.2)
-            view.say("It's quiet in here.")
-            choice = view.choices(self.event_id, "Invite someone?", "Invite a friend", "Explain the Friendlist to me", "Later")
-        if choice is None:
-            return _pending(PROFILE_ANALYSIS_FLOW, FRIENDS_NODE)
-        if choice == "Invite a friend":
-            return self._await_invite(context, view)
-        if choice == "Explain the Friendlist to me":
-            return EventOutcome.pending(
-                flow=PROFILE_ANALYSIS_FLOW,
-                node=FRIENDS_EXPLANATION_NODE,
-                status="active",
-                continue_flow=True,
+            return _scene(
+                self.story_id,
+                WELCOME_NODE,
+                lines=_lines(
+                    "Hi, welcome!",
+                    ("Great to have you here.", 1.2),
+                    ("Want some help?", 1.5),
+                ),
+                choices=_choices("Analyse my profile", "Give me a tour", "I'm good"),
             )
-        return _event_outcome(self.event_id, "skipped", GOALS_NODE)
-
-    def _await_invite(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        view.go_to("friends")
-        return EventOutcome.pending(
-            event_updates={self.event_id: {"outcome": "interrupted", "awaiting": "invite"}},
-            flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="paused", continue_flow=True,
+        if choice == "Analyse my profile":
+            return _transition(self.story_id, FRIENDS_NODE)
+        if choice == "Give me a tour":
+            return _transition(self.story_id, TOUR_NODE)
+        return _complete(
+            READY_NODE,
+            status="declined",
+            lines=_lines("Fair enough.", ("Have fun in there. 👋", 1.2)),
+            assistant_leaves=True,
         )
 
+    def _resume(
+        self,
+        context: AssistantContext,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn:
+        choice = _selected(selection)
+        if choice is None:
+            return AssistantTurn(
+                story_id=self.story_id,
+                scene_id=RESUME_NODE,
+                lines=_lines("Hey, you're back.", ("Continue where we stopped?", 1.2)),
+                choices=_choices("Yes", "Start over"),
+            )
+        if choice == "Start over":
+            return _transition(self.story_id, WELCOME_NODE)
+        return _transition(
+            self.story_id,
+            context.state.scene or WELCOME_NODE,
+            lines=_lines("Perfect."),
+        )
 
-class FriendlistExplanationStepEvent(AssistantEvent):
-    """The optional, transient Friendlist explanation conversation."""
-    event_id = "friends_explanation"
-    category = AssistantCategory.TUTORIAL
+    def _friends(
+        self,
+        context: AssistantContext,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn:
+        count = int(context.user_state.get("friend_count", 0))
+        prior = context.state.events.get(FRIENDS_EVENT_ID, {})
+        choice = _selected(selection)
 
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        current_step = str(context.session_state.get(FRIENDS_EXPLANATION_STEP_KEY, "intro"))
-        choice_event_id = f"{self.event_id}.{current_step}"
-        if current_step == "intro":
-            choice = view.selected_choice(choice_event_id, "How do I add friends?", "Got it")
+        if count >= 2:
+            return _transition(
+                self.story_id,
+                GOALS_NODE,
+                lines=_lines("Friends look good. ✓"),
+                event_updates={FRIENDS_EVENT_ID: {"outcome": "not_needed"}},
+            )
+
+        if count == 1 and prior.get("awaiting") == "invite":
+            return _transition(
+                self.story_id,
+                GOALS_NODE,
+                lines=_lines("Nice.", ("Company acquired. ✓", 1.2)),
+                event_updates={FRIENDS_EVENT_ID: {"outcome": "completed"}},
+            )
+
+        if count == 1:
             if choice is None:
-                view.typing_indicator()
-                view.say("Sure, I'll explain it to you:")
-                view.typing_indicator()
-                view.say("Friends unlock shared goals.")
-                choice = view.choices(choice_event_id, "", "How do I add friends?", "Got it")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, FRIENDS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[FRIENDS_EXPLANATION_STEP_KEY] = "options"
-            return self.render(context, view)
+                return _scene(
+                    self.story_id,
+                    FRIENDS_NODE,
+                    lines=_lines("You already found someone.", "Good start."),
+                    label="Want another?",
+                    choices=_choices("Invite someone", "I'm good"),
+                )
+            if choice == "Invite someone":
+                return self._navigate_to_friends()
+            return _transition(
+                self.story_id,
+                GOALS_NODE,
+                event_updates={FRIENDS_EVENT_ID: {"outcome": "completed"}},
+            )
 
-        if current_step == "options":
-            choice = view.selected_choice(choice_event_id, "How does the link work?", "Makes sense")
-            if choice is None:
-                view.typing_indicator()
-                view.say("You have two options to add friends here.")
-                view.typing_indicator()
-                view.say("Invite them by email.")
-                view.typing_indicator()
-                view.say("Or share your invite link.")
-                choice = view.choices(choice_event_id, "", "How does the link work?", "Makes sense")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, FRIENDS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[FRIENDS_EXPLANATION_STEP_KEY] = "link"
-            return self.render(context, view)
+        if choice is None:
+            return _scene(
+                self.story_id,
+                FRIENDS_NODE,
+                lines=_lines("First: your people.", ("It's quiet in here.", 1.2)),
+                label="Invite someone?",
+                choices=_choices("Invite a friend", "Explain the Friendlist to me", "Later"),
+            )
+        if choice == "Invite a friend":
+            return self._navigate_to_friends()
+        if choice == "Explain the Friendlist to me":
+            return _transition(self.story_id, FRIENDS_EXPLANATION_NODE)
+        return _transition(
+            self.story_id,
+            GOALS_NODE,
+            event_updates={FRIENDS_EVENT_ID: {"outcome": "skipped"}},
+        )
 
-        if current_step == "link":
-            choice = view.selected_choice(choice_event_id, "Create a Link for me", "Show me the Friends Page", "Got it")
-            if choice is None:
-                view.typing_indicator()
-                view.say("Your link belongs to you.")
-                view.say("Someone opens it.")
-                view.typing_indicator(3)
-                view.say("You get a friend invite that you can accept or deny. Only Friends can share goals.")
-                view.typing_indicator()
-                view.say("And it is at the heart of the app to work on a shared goal together with your friends.")
-                choice = view.choices(choice_event_id, "", "Create a Link for me", "Show me the Friends Page", "Got it")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, FRIENDS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
+    def _navigate_to_friends(self) -> AssistantTurn:
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id=FRIENDS_NODE,
+            destination="friends",
+            event_updates={
+                FRIENDS_EVENT_ID: {"outcome": "interrupted", "awaiting": "invite"}
+            },
+            state_story=self.story_id,
+            state_scene=FRIENDS_NODE,
+            state_status="paused",
+        )
 
-            context.session_state.pop(FRIENDS_EXPLANATION_STEP_KEY, None)
-            if choice == "Create a Link for me":
-                if context.create_friend_share_link is None:
-                    view.typing_indicator()
-                    view.status("I couldn't create a link right now.")
-                    return EventOutcome()
-                view.typing_indicator()
-                view.say(f"Here’s your invite link:\n\n{context.create_friend_share_link()}")
-                context.session_state[FRIENDS_EXPLANATION_STEP_KEY] = "goodbye"
-                return self.render(context, view)
-            if choice == "Show me the Friends Page":
-                view.go_to("friends")
-                return EventOutcome.pending(flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_NODE, status="paused", continue_flow=True)
-
-            context.session_state[FRIENDS_EXPLANATION_STEP_KEY] = "goodbye"
-            return self.render(context, view)
-
-        if current_step == "goodbye":
-            choice = view.selected_choice(choice_event_id, "Ciao, thanks for the explanation")
-            if choice is None:
-                choice = view.choices(choice_event_id, "", "Ciao, thanks for the explanation")
-            if choice is None:
-                return _pending(PROFILE_ANALYSIS_FLOW, FRIENDS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state.pop(FRIENDS_EXPLANATION_STEP_KEY, None)
-            view.assistant_leave()
-            return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
-
-        context.session_state.pop(FRIENDS_EXPLANATION_STEP_KEY, None)
-        return EventOutcome.pending(flow=PROFILE_ANALYSIS_FLOW, node=FRIENDS_EXPLANATION_NODE, status="active", continue_flow=True)
-
-
-class CheckGoalsEvent(AssistantEvent):
-    """Reusable goals check; it does not assume that more goals are better."""
-    event_id = GOALS_EVENT_ID
-    category = AssistantCategory.TUTORIAL
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+    def _goals(
+        self,
+        context: AssistantContext,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn:
         count = int(context.user_state.get("goal_count", 0))
-        prior = context.state.events.get(self.event_id, {})
+        prior = context.state.events.get(GOALS_EVENT_ID, {})
+        choice = _selected(selection)
         if count == 0:
-            choice = view.selected_choice(self.event_id, "Create a goal", "Explain Goals to me", "Later")
             if choice is None:
-                view.typing_indicator()
-                view.say("Next: goals.")
-                view.typing_indicator()
-                view.say("You don't have one yet.")
-                view.typing_indicator()
-                view.say("Let's make that useful.")
-                choice = view.choices(self.event_id, "", "Create a goal", "Explain Goals to me", "Later")
-            if choice is None:
-                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_NODE)
+                return _scene(
+                    self.story_id,
+                    GOALS_NODE,
+                    lines=_lines(
+                        ("Next: goals.", 0),
+                        ("You don't have one yet.", 0),
+                        ("Let's make that useful.", 0),
+                    ),
+                    choices=_choices("Create a goal", "Explain Goals to me", "Later"),
+                )
             if choice == "Create a goal":
-                view.go_to("manage_goals")
-                return EventOutcome.pending(
-                    event_updates={self.event_id: {"outcome": "interrupted", "awaiting": "create"}},
-                    flow=PROFILE_ANALYSIS_FLOW, node=GOALS_NODE, status="paused", continue_flow=True,
+                return AssistantTurn(
+                    story_id=self.story_id,
+                    scene_id=GOALS_NODE,
+                    destination="manage_goals",
+                    event_updates={
+                        GOALS_EVENT_ID: {"outcome": "interrupted", "awaiting": "create"}
+                    },
+                    state_story=self.story_id,
+                    state_scene=GOALS_NODE,
+                    state_status="paused",
                 )
             if choice == "Explain Goals to me":
-                return EventOutcome.pending(
-                    flow=PROFILE_ANALYSIS_FLOW,
-                    node=GOALS_EXPLANATION_NODE,
-                    status="active",
-                    continue_flow=True,
-                )
-            return _event_outcome(self.event_id, "skipped", PUSH_NODE)
-        if prior.get("awaiting") == "create":
-            view.typing_indicator()
-            view.say("There we go. ✓")
-        elif count == 1:
-            view.typing_indicator()
-            view.say("You have one goal.")
-            view.typing_indicator()
-            view.say("Perfect place to start. ✓")
-        else:
-            view.typing_indicator()
-            view.say("Goals are looking busy.")
-            view.typing_indicator()
-            view.say("I like it. ✓")
-        return _event_outcome(self.event_id, "completed" if prior.get("awaiting") else "not_needed", PUSH_NODE)
-
-
-class GoalExplanationStepEvent(AssistantEvent):
-    """The optional, transient goals explanation conversation."""
-    event_id = "goals_explanation"
-    category = AssistantCategory.TUTORIAL
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        current_step = str(context.session_state.get(GOALS_EXPLANATION_STEP_KEY, "intro"))
-        choice_event_id = f"{self.event_id}.{current_step}"
-        if current_step == "intro":
-            choice = view.selected_choice(choice_event_id, "Ok, whats more?", "Got it")
-            if choice is not None:
-                current_step = "how_goals_work"
-                context.session_state[GOALS_EXPLANATION_STEP_KEY] = current_step
-                choice_event_id = f"{self.event_id}.{current_step}"
-            else:
-                view.say("Sure.")
-                view.typing_indicator()
-                view.say("Goals are the heart of Dogether.")
-                view.typing_indicator()
-                view.say("You work on them every day.")
-                view.typing_indicator()
-                view.say("And your friends help you stay on track.")
-                choice = view.choices(choice_event_id, "", "Ok, whats more?", "Got it")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-                current_step = "how_goals_work"
-                context.session_state[GOALS_EXPLANATION_STEP_KEY] = current_step
-                choice_event_id = f"{self.event_id}.{current_step}"
-
-        if current_step == "how_goals_work":
-            choice = view.selected_choice(choice_event_id, "Makes sense", "What about progress?")
-            if choice is not None:
-                context.session_state[GOALS_EXPLANATION_STEP_KEY] = "progress"
-                return self.render(context, view)
-            view.typing_indicator()
-            view.say("Every goal has participants.")
-            view.typing_indicator()
-            view.say("Anyone can invite friends.")
-            view.typing_indicator()
-            view.say("But you only see your friends.")
-            view.typing_indicator()
-            view.say("There may be others too.")
-            choice = view.choices(choice_event_id, "", "Makes sense", "What about progress?")
-            if choice is None:
-                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[GOALS_EXPLANATION_STEP_KEY] = "progress"
-            return self.render(context, view)
-
-        if current_step == "progress":
-            choice = view.selected_choice(choice_event_id, "Nice", "What do friends do?")
-            if choice is not None:
-                context.session_state[GOALS_EXPLANATION_STEP_KEY] = "friends"
-                return self.render(context, view)
-            view.typing_indicator()
-            view.say("Everyone tracks their own progress.")
-            view.typing_indicator()
-            view.say("And everyone can have their own maximum.")
-            view.typing_indicator()
-            view.say("So the goal stays personal.")
-            choice = view.choices(choice_event_id, "", "Nice", "What do friends do?")
-            if choice is None:
-                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[GOALS_EXPLANATION_STEP_KEY] = "friends"
-            return self.render(context, view)
-
-        if current_step == "friends":
-            choice = view.selected_choice(choice_event_id, "And then?")
-            if choice is not None:
-                context.session_state[GOALS_EXPLANATION_STEP_KEY] = "reactions"
-                return self.render(context, view)
-            view.typing_indicator()
-            view.say("This is where it gets fun.")
-            view.typing_indicator()
-            view.say("When a friend completes the goal…")
-            view.typing_indicator()
-            view.say("You can get a notification.")
-            choice = view.choices(choice_event_id, "", "And then?")
-            if choice is None:
-                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[GOALS_EXPLANATION_STEP_KEY] = "reactions"
-            return self.render(context, view)
-
-        if current_step == "reactions":
-            choice = view.selected_choice(choice_event_id, "Got it")
-            if choice is not None:
-                context.session_state[GOALS_EXPLANATION_STEP_KEY] = "finish"
-                return self.render(context, view)
-            view.typing_indicator()
-            view.say("Send them a reaction.")
-            view.typing_indicator()
-            view.say("A little celebration.")
-            view.typing_indicator()
-            view.say("Or some friendly pressure.")
-            choice = view.choices(choice_event_id, "", "Got it")
-            if choice is None:
-                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[GOALS_EXPLANATION_STEP_KEY] = "finish"
-            return self.render(context, view)
-
-        choice = view.selected_choice(choice_event_id, "Create a goal", "Cool, thank you for the explanation.")
-        if choice is None:
-            view.typing_indicator()
-            view.say("That’s basically goals.")
-            choice = view.choices(choice_event_id, "", "Create a goal", "Cool, thank you for the explanation.")
-            if choice is None:
-                return _pending(PROFILE_ANALYSIS_FLOW, GOALS_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-        context.session_state.pop(GOALS_EXPLANATION_STEP_KEY, None)
-        if choice == "Cool, thank you for the explanation.":
-            view.say("Ciao.")
-            view.assistant_leave()
-            return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
-        if choice == "Create a goal":
-            view.go_to("manage_goals")
-            return EventOutcome.pending(
-                event_updates={GOALS_EVENT_ID: {"outcome": "interrupted", "awaiting": "create"}},
-                flow=PROFILE_ANALYSIS_FLOW, node=GOALS_NODE, status="paused", continue_flow=True,
+                return _transition(self.story_id, GOALS_EXPLANATION_NODE)
+            return _transition(
+                self.story_id,
+                PUSH_NODE,
+                event_updates={GOALS_EVENT_ID: {"outcome": "skipped"}},
             )
-        return EventOutcome.pending(flow=PROFILE_ANALYSIS_FLOW, node=GOALS_NODE, status="active", continue_flow=True)
 
+        if prior.get("awaiting") == "create":
+            lines = _lines(("There we go. ✓", 0))
+            outcome = "completed"
+        elif count == 1:
+            lines = _lines(("You have one goal.", 0), ("Perfect place to start. ✓", 0))
+            outcome = "not_needed"
+        else:
+            lines = _lines(("Goals are looking busy.", 0), ("I like it. ✓", 0))
+            outcome = "not_needed"
+        return _transition(
+            self.story_id,
+            PUSH_NODE,
+            lines=lines,
+            event_updates={GOALS_EVENT_ID: {"outcome": outcome}},
+        )
 
-class CheckPushEvent(AssistantEvent):
-    event_id = PUSH_EVENT_ID
-    category = AssistantCategory.TUTORIAL
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
+    def _push(
+        self,
+        context: AssistantContext,
+        selection: AssistantSelection | None,
+    ) -> AssistantTurn:
         enabled = bool(context.user_state.get("push_enabled", False))
-        prior = context.state.events.get(self.event_id, {})
+        prior = context.state.events.get(PUSH_EVENT_ID, {})
+        choice = _selected(selection)
         if enabled:
             if prior.get("awaiting") == "enable":
-                view.say("Perfect. ✓")
-                view.say("I'll be gentle.")
+                lines = _lines("Perfect. ✓", "I'll be gentle.")
                 outcome = "completed"
             else:
-                view.say("Notifications are ready. ✓")
+                lines = _lines("Notifications are ready. ✓")
                 outcome = "not_needed"
-            return _event_outcome(self.event_id, outcome, ANALYSIS_COMPLETE_NODE)
-        choice = view.selected_choice(self.event_id, "Enable notifications", "Explain notifications to me", "Not now")
+            return _transition(
+                self.story_id,
+                ANALYSIS_COMPLETE_NODE,
+                lines=lines,
+                event_updates={PUSH_EVENT_ID: {"outcome": outcome}},
+            )
+
         if choice is None:
-            view.say("One last thing.")
-            view.typing_indicator()
-            view.say("I can nudge you.")
-            view.typing_indicator()
-            view.say("But I need permission.")
-            choice = view.choices(self.event_id, "", "Enable notifications", "Explain notifications to me", "Not now")
-        if choice is None:
-            return _pending(PROFILE_ANALYSIS_FLOW, PUSH_NODE)
+            return _scene(
+                self.story_id,
+                PUSH_NODE,
+                lines=_lines(
+                    "One last thing.",
+                    ("I can nudge you.", 0),
+                    ("But I need permission.", 0),
+                ),
+                choices=_choices(
+                    "Enable notifications", "Explain notifications to me", "Not now"
+                ),
+            )
         if choice == "Enable notifications":
-            view.go_to("push_notifications")
-            return EventOutcome.pending(
-                event_updates={self.event_id: {"outcome": "interrupted", "awaiting": "enable"}},
-                flow=PROFILE_ANALYSIS_FLOW, node=PUSH_NODE, status="paused", continue_flow=True,
+            return AssistantTurn(
+                story_id=self.story_id,
+                scene_id=PUSH_NODE,
+                destination="push_notifications",
+                event_updates={
+                    PUSH_EVENT_ID: {"outcome": "interrupted", "awaiting": "enable"}
+                },
+                state_story=self.story_id,
+                state_scene=PUSH_NODE,
+                state_status="paused",
             )
         if choice == "Explain notifications to me":
-            return EventOutcome.pending(
-                flow=PROFILE_ANALYSIS_FLOW,
-                node=PUSH_EXPLANATION_NODE,
-                status="active",
-                continue_flow=True,
+            return _transition(self.story_id, PUSH_EXPLANATION_NODE)
+        return _transition(
+            self.story_id,
+            ANALYSIS_COMPLETE_NODE,
+            event_updates={PUSH_EVENT_ID: {"outcome": "skipped"}},
+        )
+
+    def _analysis_complete(
+        self, selection: AssistantSelection | None
+    ) -> AssistantTurn:
+        if selection is None:
+            return _scene(
+                self.story_id,
+                ANALYSIS_COMPLETE_NODE,
+                lines=_lines(
+                    "That's it.",
+                    ("You're ready. ✓", 0),
+                    ("I'll get out of your way.", 0),
+                ),
+                choices=_choices("Thanks!"),
             )
-        return _event_outcome(self.event_id, "skipped", ANALYSIS_COMPLETE_NODE)
+        return _complete(
+            READY_NODE,
+            assistant_leaves=True,
+        )
 
-
-class NotificationExplanationStepEvent(AssistantEvent):
-    """The optional, transient notification explanation conversation."""
-    event_id = "notifications_explanation"
-    category = AssistantCategory.TUTORIAL
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        current_step = str(context.session_state.get(PUSH_EXPLANATION_STEP_KEY, "intro"))
-        choice_event_id = f"{self.event_id}.{current_step}"
-
-        if current_step == "intro":
-            choice = view.selected_choice(choice_event_id, "Why do they matter?", "Got it")
-            if choice is None:
-                view.say("Sure.")
-                view.typing_indicator()
-                view.say("Notifications are an integral part. They keep shared goals moving.")
-                choice = view.choices(choice_event_id, "", "Why do they matter?", "Got it")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "shared_goals"
-            return self.render(context, view)
-
-        if current_step == "shared_goals":
-            choice = view.selected_choice(choice_event_id, "How do I enable them?", "Makes sense")
-            if choice is None:
-                view.typing_indicator()
-                view.say("Friends can finish a shared goal.")
-                view.typing_indicator()
-                view.say("You can celebrate right away.")
-                view.typing_indicator()
-                view.say("They can react when you finish too.")
-                choice = view.choices(choice_event_id, "", "How do I enable them?", "Makes sense")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "mobile_installation"
-            return self.render(context, view)
-
-        if current_step == "mobile_installation":
-            choice = view.selected_choice(choice_event_id, "Why install it?", "Got it")
-            if choice is None:
-                view.typing_indicator()
-                view.say("Desktop is straightforward.")
-                view.typing_indicator()
-                view.say("On iPhone and Android, install Dogether to your Home Screen first.")
-                choice = view.choices(choice_event_id, "", "Why install it?", "Got it")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "os_consent"
-            return self.render(context, view)
-
-        if current_step == "os_consent":
-            choice = view.selected_choice(choice_event_id, "What can I control?", "Makes sense")
-            if choice is None:
-                view.typing_indicator()
-                view.say("The installed app can ask your phone for permission.")
-                view.typing_indicator(3)
-                view.say("Your operating system shows the consent prompt. Only you can approve it.")
-                choice = view.choices(choice_event_id, "", "What can I control?", "Makes sense")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "goal_controls"
-            return self.render(context, view)
-
-        if current_step == "goal_controls":
-            choice = view.selected_choice(choice_event_id, "Which settings?", "Got it")
-            if choice is None:
-                view.typing_indicator()
-                view.say("Notifications are not all-or-nothing.")
-                view.typing_indicator()
-                view.say("Each goal has its own settings.")
-                choice = view.choices(choice_event_id, "", "Which settings?", "Got it")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "available_settings"
-            return self.render(context, view)
-
-        if current_step == "available_settings":
-            choice = view.selected_choice(choice_event_id, "Where are those controls?", "Makes sense")
-            if choice is None:
-                view.typing_indicator(3.5)
-                view.say("Choose alerts when friends complete it and cap completion alerts per day. Also, choose alerts for reactions.")
-                choice = view.choices(choice_event_id, "", "Where are those controls?", "Makes sense")
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-            context.session_state[PUSH_EXPLANATION_STEP_KEY] = "finish"
-            return self.render(context, view)
-
-        if current_step == "finish":
-            options = ("Enable notifications", "Show me Manage Goals", "Cool, thank you for the explanation.")
-            choice = view.selected_choice(choice_event_id, *options)
-            if choice is None:
-                view.typing_indicator()
-                view.say("They live on Manage Goals.")
-                view.typing_indicator()
-                view.say("Open a goal.")
-                view.typing_indicator()
-                view.say("Adjust what works for you.")
-                choice = view.choices(choice_event_id, "", *options)
-                if choice is None:
-                    return _pending(PROFILE_ANALYSIS_FLOW, PUSH_EXPLANATION_NODE) if context.state.flow == PROFILE_ANALYSIS_FLOW else EventOutcome()
-
-            context.session_state.pop(PUSH_EXPLANATION_STEP_KEY, None)
-            if choice == "Enable notifications":
-                view.go_to("push_notifications")
-                return EventOutcome.pending(
-                    event_updates={PUSH_EVENT_ID: {"outcome": "interrupted", "awaiting": "enable"}},
-                    flow=PROFILE_ANALYSIS_FLOW, node=PUSH_NODE, status="paused", continue_flow=True,
-                )
-            if choice == "Show me Manage Goals":
-                view.go_to("manage_goals")
-                return EventOutcome.pending(
-                    flow=PROFILE_ANALYSIS_FLOW, node=PUSH_NODE, status="paused", continue_flow=True,
-                )
-            view.typing_indicator()
-            view.say("Ciao.")
-            view.assistant_leave()
-            return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
-
-        context.session_state.pop(PUSH_EXPLANATION_STEP_KEY, None)
-        return EventOutcome.pending(
-            flow=PROFILE_ANALYSIS_FLOW,
-            node=PUSH_EXPLANATION_NODE,
-            status="active",
-            continue_flow=True,
+    def _tour(self, selection: AssistantSelection | None) -> AssistantTurn:
+        if selection is None:
+            return _scene(
+                self.story_id,
+                TOUR_NODE,
+                lines=_lines(
+                    "Sure.",
+                    ("Dogether is simple.", 0),
+                    ("Pick something worth doing.", 0),
+                    ("Bring someone along.", 0),
+                    ("Keep each other moving.", 0),
+                    ("That's basically it.", 0),
+                    ("You'll figure out the rest.", 0),
+                ),
+                choices=_choices("Got it"),
+            )
+        return _complete(
+            READY_NODE,
+            lines=_lines("Enjoy. 👋"),
+            assistant_leaves=True,
         )
 
 
-class AnalysisCompleteEvent(AssistantEvent):
-    event_id = "analysis_complete"
-    category = AssistantCategory.TUTORIAL
+FRIEND_SCENES = {
+    FRIENDS_EXPLANATION_NODE,
+    FRIENDS_EXPLANATION_OPTIONS_NODE,
+    FRIENDS_EXPLANATION_LINK_NODE,
+    FRIENDS_EXPLANATION_GOODBYE_NODE,
+}
+GOAL_SCENES = {
+    GOALS_EXPLANATION_NODE,
+    GOALS_EXPLANATION_HOW_NODE,
+    GOALS_EXPLANATION_PROGRESS_NODE,
+    GOALS_EXPLANATION_FRIENDS_NODE,
+    GOALS_EXPLANATION_REACTIONS_NODE,
+    GOALS_EXPLANATION_FINISH_NODE,
+}
+PUSH_SCENES = {
+    PUSH_EXPLANATION_NODE,
+    PUSH_EXPLANATION_SHARED_NODE,
+    PUSH_EXPLANATION_MOBILE_NODE,
+    PUSH_EXPLANATION_CONSENT_NODE,
+    PUSH_EXPLANATION_CONTROLS_NODE,
+    PUSH_EXPLANATION_SETTINGS_NODE,
+    PUSH_EXPLANATION_FINISH_NODE,
+}
+EXPLANATION_SCENES = FRIEND_SCENES | GOAL_SCENES | PUSH_SCENES
 
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        choice = view.selected_choice(self.event_id, "Thanks!")
+
+def explanation_turn(
+    context: AssistantContext,
+    owner: str,
+    scene_id: str,
+    selection: AssistantSelection | None,
+) -> AssistantTurn:
+    """Render one reusable explanation scene for onboarding or the standard menu."""
+    if scene_id in FRIEND_SCENES:
+        return _friend_explanation(context, owner, scene_id, selection)
+    if scene_id in GOAL_SCENES:
+        return _goal_explanation(context, owner, scene_id, selection)
+    return _push_explanation(context, owner, scene_id, selection)
+
+
+def _finish_explanation(
+    owner: str,
+    *,
+    lines: tuple[AssistantLine, ...] = (),
+    destination: str | None = None,
+    event_updates=None,
+    assistant_leaves: bool = False,
+) -> AssistantTurn:
+    if owner == STANDARD_STORY_ID:
+        return _complete(
+            READY_NODE,
+            lines=lines,
+            destination=destination,
+            event_updates=event_updates or {},
+            assistant_leaves=assistant_leaves,
+        )
+    return AssistantTurn(
+        story_id=owner,
+        scene_id=READY_NODE,
+        lines=lines,
+        destination=destination,
+        event_updates=event_updates or {},
+        assistant_leaves=assistant_leaves,
+        state_story=STANDARD_STORY_ID,
+        state_scene=READY_NODE,
+        state_status="completed",
+        completed=True,
+    )
+
+
+def _friend_explanation(
+    context: AssistantContext,
+    owner: str,
+    scene_id: str,
+    selection: AssistantSelection | None,
+) -> AssistantTurn:
+    choice = _selected(selection)
+    if scene_id == FRIENDS_EXPLANATION_NODE:
         if choice is None:
-            view.say("That's it.")
-            view.typing_indicator()
-            view.say("You're ready. ✓")
-            view.typing_indicator()
-            view.say("I'll get out of your way.")
-            choice = view.choices(self.event_id, "", "Thanks!")
+            return _scene(
+                owner,
+                scene_id,
+                lines=_lines(
+                    ("Sure, I'll explain it to you:", 0),
+                    ("Friends unlock shared goals.", 0),
+                ),
+                choices=_choices("How do I add friends?", "Got it"),
+            )
+        return _transition(owner, FRIENDS_EXPLANATION_OPTIONS_NODE)
+
+    if scene_id == FRIENDS_EXPLANATION_OPTIONS_NODE:
         if choice is None:
-            return _pending(PROFILE_ANALYSIS_FLOW, ANALYSIS_COMPLETE_NODE)
-        view.assistant_leave()
-        return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+            return _scene(
+                owner,
+                scene_id,
+                lines=_lines(
+                    ("You have two options to add friends here.", 0),
+                    ("Invite them by email.", 0),
+                    ("Or share your invite link.", 0),
+                ),
+                choices=_choices("How does the link work?", "Makes sense"),
+            )
+        return _transition(owner, FRIENDS_EXPLANATION_LINK_NODE)
 
-
-class ProfileAnalysisEvent(AssistantEvent):
-    """Parent coordinator. It only dispatches checks; it owns no check UI."""
-    event_id = "profile_analysis"
-    category = AssistantCategory.TUTORIAL
-
-    def __init__(self) -> None:
-        self._events = {
-            FRIENDS_NODE: CheckFriendsEvent(),
-            FRIENDS_EXPLANATION_NODE: FriendlistExplanationStepEvent(),
-            GOALS_NODE: CheckGoalsEvent(),
-            GOALS_EXPLANATION_NODE: GoalExplanationStepEvent(),
-            PUSH_NODE: CheckPushEvent(),
-            PUSH_EXPLANATION_NODE: NotificationExplanationStepEvent(),
-            ANALYSIS_COMPLETE_NODE: AnalysisCompleteEvent(),
-        }
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        return self._events.get(context.state.node or FRIENDS_NODE, self._events[FRIENDS_NODE]).render(context, view)
-
-
-class TourEvent(AssistantEvent):
-    event_id = "tour"
-    category = AssistantCategory.TUTORIAL
-
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        choice = view.selected_choice(self.event_id, "Got it")
+    if scene_id == FRIENDS_EXPLANATION_LINK_NODE:
         if choice is None:
-            view.say("Sure.")
-            view.typing_indicator()
-            view.say("Dogether is simple.")
-            view.typing_indicator()
-            view.say("Pick something worth doing.")
-            view.typing_indicator()
-            view.say("Bring someone along.")
-            view.typing_indicator()
-            view.say("Keep each other moving.")
-            view.typing_indicator()
-            view.say("That's basically it.")
-            view.typing_indicator()
-            view.say("You'll figure out the rest.")
-            choice = view.choices(self.event_id, "", "Got it")
+            return _scene(
+                owner,
+                scene_id,
+                lines=_lines(
+                    ("Your link belongs to you.", 0),
+                    "Someone opens it.",
+                    (
+                        "You get a friend invite that you can accept or deny. Only Friends can share goals.",
+                        3,
+                    ),
+                    (
+                        "And it is at the heart of the app to work on a shared goal together with your friends.",
+                        0,
+                    ),
+                ),
+                choices=_choices(
+                    "Create a Link for me", "Show me the Friends Page", "Got it"
+                ),
+            )
+        if choice == "Create a Link for me":
+            if context.create_friend_share_link is None:
+                return _scene(
+                    owner,
+                    scene_id,
+                    statuses=("I couldn't create a link right now.",),
+                    choices=_choices(
+                        "Create a Link for me", "Show me the Friends Page", "Got it"
+                    ),
+                )
+            return _transition(
+                owner,
+                FRIENDS_EXPLANATION_GOODBYE_NODE,
+                lines=_lines(
+                    (f"Here’s your invite link:\n\n{context.create_friend_share_link()}", 0)
+                ),
+            )
+        if choice == "Show me the Friends Page":
+            if owner == STANDARD_STORY_ID:
+                return _finish_explanation(owner, destination="friends")
+            return AssistantTurn(
+                story_id=owner,
+                scene_id=FRIENDS_NODE,
+                destination="friends",
+                state_story=owner,
+                state_scene=FRIENDS_NODE,
+                state_status="paused",
+            )
+        return _transition(owner, FRIENDS_EXPLANATION_GOODBYE_NODE)
+
+    if choice is None:
+        return _scene(
+            owner,
+            FRIENDS_EXPLANATION_GOODBYE_NODE,
+            choices=_choices("Ciao, thanks for the explanation"),
+        )
+    return _finish_explanation(owner, assistant_leaves=True)
+
+
+def _goal_explanation(
+    context: AssistantContext,
+    owner: str,
+    scene_id: str,
+    selection: AssistantSelection | None,
+) -> AssistantTurn:
+    del context
+    choice = _selected(selection)
+    scenes = {
+        GOALS_EXPLANATION_NODE: (
+            _lines(
+                "Sure.",
+                ("Goals are the heart of Dogether.", 0),
+                ("You work on them every day.", 0),
+                ("And your friends help you stay on track.", 0),
+            ),
+            _choices("Ok, whats more?", "Got it"),
+            GOALS_EXPLANATION_HOW_NODE,
+        ),
+        GOALS_EXPLANATION_HOW_NODE: (
+            _lines(
+                ("Every goal has participants.", 0),
+                ("Anyone can invite friends.", 0),
+                ("But you only see your friends.", 0),
+                ("There may be others too.", 0),
+            ),
+            _choices("Makes sense", "What about progress?"),
+            GOALS_EXPLANATION_PROGRESS_NODE,
+        ),
+        GOALS_EXPLANATION_PROGRESS_NODE: (
+            _lines(
+                ("Everyone tracks their own progress.", 0),
+                ("And everyone can have their own maximum.", 0),
+                ("So the goal stays personal.", 0),
+            ),
+            _choices("Nice", "What do friends do?"),
+            GOALS_EXPLANATION_FRIENDS_NODE,
+        ),
+        GOALS_EXPLANATION_FRIENDS_NODE: (
+            _lines(
+                ("This is where it gets fun.", 0),
+                ("When a friend completes the goal…", 0),
+                ("You can get a notification.", 0),
+            ),
+            _choices("And then?"),
+            GOALS_EXPLANATION_REACTIONS_NODE,
+        ),
+        GOALS_EXPLANATION_REACTIONS_NODE: (
+            _lines(
+                ("Send them a reaction.", 0),
+                ("A little celebration.", 0),
+                ("Or some friendly pressure.", 0),
+            ),
+            _choices("Got it"),
+            GOALS_EXPLANATION_FINISH_NODE,
+        ),
+    }
+    if scene_id in scenes:
+        lines, choices, next_scene = scenes[scene_id]
         if choice is None:
-            return _pending(TOUR_FLOW, TOUR_NODE)
-        view.say("Enjoy. 👋")
-        view.assistant_leave()
-        return EventOutcome.complete(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+            return _scene(owner, scene_id, lines=lines, choices=choices)
+        return _transition(owner, next_scene)
+
+    if choice is None:
+        return _scene(
+            owner,
+            GOALS_EXPLANATION_FINISH_NODE,
+            lines=_lines(("That’s basically goals.", 0)),
+            choices=_choices("Create a goal", "Cool, thank you for the explanation."),
+        )
+    if choice == "Create a goal":
+        if owner == STANDARD_STORY_ID:
+            return _finish_explanation(owner, destination="manage_goals")
+        return AssistantTurn(
+            story_id=owner,
+            scene_id=GOALS_NODE,
+            destination="manage_goals",
+            event_updates={
+                GOALS_EVENT_ID: {"outcome": "interrupted", "awaiting": "create"}
+            },
+            state_story=owner,
+            state_scene=GOALS_NODE,
+            state_status="paused",
+        )
+    return _finish_explanation(
+        owner,
+        lines=_lines("Ciao."),
+        assistant_leaves=True,
+    )
 
 
-class AssistantReadyEvent(AssistantEvent):
-    event_id = "standard.ready"
-    category = AssistantCategory.STANDARD
-    def render(self, context: AssistantContext, view: AssistantView) -> EventOutcome:
-        return EventOutcome()
+def _push_explanation(
+    context: AssistantContext,
+    owner: str,
+    scene_id: str,
+    selection: AssistantSelection | None,
+) -> AssistantTurn:
+    del context
+    choice = _selected(selection)
+    scenes = {
+        PUSH_EXPLANATION_NODE: (
+            _lines(
+                "Sure.",
+                (
+                    "Notifications are an integral part. They keep shared goals moving.",
+                    0,
+                ),
+            ),
+            _choices("Why do they matter?", "Got it"),
+            PUSH_EXPLANATION_SHARED_NODE,
+        ),
+        PUSH_EXPLANATION_SHARED_NODE: (
+            _lines(
+                ("Friends can finish a shared goal.", 0),
+                ("You can celebrate right away.", 0),
+                ("They can react when you finish too.", 0),
+            ),
+            _choices("How do I enable them?", "Makes sense"),
+            PUSH_EXPLANATION_MOBILE_NODE,
+        ),
+        PUSH_EXPLANATION_MOBILE_NODE: (
+            _lines(
+                ("Desktop is straightforward.", 0),
+                (
+                    "On iPhone and Android, install Dogether to your Home Screen first.",
+                    0,
+                ),
+            ),
+            _choices("Why install it?", "Got it"),
+            PUSH_EXPLANATION_CONSENT_NODE,
+        ),
+        PUSH_EXPLANATION_CONSENT_NODE: (
+            _lines(
+                ("The installed app can ask your phone for permission.", 0),
+                (
+                    "Your operating system shows the consent prompt. Only you can approve it.",
+                    3,
+                ),
+            ),
+            _choices("What can I control?", "Makes sense"),
+            PUSH_EXPLANATION_CONTROLS_NODE,
+        ),
+        PUSH_EXPLANATION_CONTROLS_NODE: (
+            _lines(
+                ("Notifications are not all-or-nothing.", 0),
+                ("Each goal has its own settings.", 0),
+            ),
+            _choices("Which settings?", "Got it"),
+            PUSH_EXPLANATION_SETTINGS_NODE,
+        ),
+        PUSH_EXPLANATION_SETTINGS_NODE: (
+            _lines(
+                (
+                    "Choose alerts when friends complete it and cap completion alerts per day. Also, choose alerts for reactions.",
+                    3.5,
+                )
+            ),
+            _choices("Where are those controls?", "Makes sense"),
+            PUSH_EXPLANATION_FINISH_NODE,
+        ),
+    }
+    if scene_id in scenes:
+        lines, choices, next_scene = scenes[scene_id]
+        if choice is None:
+            return _scene(owner, scene_id, lines=lines, choices=choices)
+        return _transition(owner, next_scene)
 
-
-class PushSetupReminderEvent(AssistantReadyEvent):
-    """Retained as an import-compatible no-op; onboarding owns the push prompt."""
-    event_id = "standard.push_setup_reminder"
-
-
-class InitialTutorialStory:
-    story_id = "dogether_assistant"
-
-    def __init__(self) -> None:
-        self._welcome, self._resume = WelcomeEvent(), ResumeEvent()
-        self._profile_analysis, self._tour = ProfileAnalysisEvent(), TourEvent()
-
-    def initial_event(self) -> AssistantEvent:
-        """Return onboarding's entry scene after the director selects this flow."""
-        return self._welcome
-
-    def next_event(self, context: AssistantContext) -> AssistantEvent | None:
-        state = context.state
-        if state.status == "paused" and state.flow not in (None, STANDARD_FLOW) and context.previous_page_key != "help":
-            return self._resume
-        if state.flow == ONBOARDING_FLOW:
-            return self._welcome
-        if state.flow == PROFILE_ANALYSIS_FLOW:
-            return self._profile_analysis
-        if state.flow == TOUR_FLOW:
-            return self._tour
-        return None
+    options = _choices(
+        "Enable notifications",
+        "Show me Manage Goals",
+        "Cool, thank you for the explanation.",
+    )
+    if choice is None:
+        return _scene(
+            owner,
+            PUSH_EXPLANATION_FINISH_NODE,
+            lines=_lines(
+                ("They live on Manage Goals.", 0),
+                ("Open a goal.", 0),
+                ("Adjust what works for you.", 0),
+            ),
+            choices=options,
+        )
+    if choice == "Enable notifications":
+        if owner == STANDARD_STORY_ID:
+            return _finish_explanation(owner, destination="push_notifications")
+        return AssistantTurn(
+            story_id=owner,
+            scene_id=PUSH_NODE,
+            destination="push_notifications",
+            event_updates={
+                PUSH_EVENT_ID: {"outcome": "interrupted", "awaiting": "enable"}
+            },
+            state_story=owner,
+            state_scene=PUSH_NODE,
+            state_status="paused",
+        )
+    if choice == "Show me Manage Goals":
+        if owner == STANDARD_STORY_ID:
+            return _finish_explanation(owner, destination="manage_goals")
+        return AssistantTurn(
+            story_id=owner,
+            scene_id=PUSH_NODE,
+            destination="manage_goals",
+            state_story=owner,
+            state_scene=PUSH_NODE,
+            state_status="paused",
+        )
+    return _finish_explanation(
+        owner,
+        lines=_lines(("Ciao.", 0)),
+        assistant_leaves=True,
+    )
