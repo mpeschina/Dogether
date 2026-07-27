@@ -12,7 +12,12 @@ from src.assistant.core import (
     EventOutcome,
     SharedStoryStateStore,
 )
-from src.assistant.state import AssistantMode, AssistantState
+from src.assistant.state import (
+    AssistantMode,
+    AssistantState,
+    clear_transient_assistant_state,
+    save_transient_assistant_state,
+)
 from src.assistant.stories.standard import (
     PUSH_PROMPT_EVENT_ID,
     STANDARD_PUSH_FLOW,
@@ -59,13 +64,18 @@ class AssistantDirector:
         if updated_state == context.state:
             return context.state
 
-        stored_state = self.persistence.save_assistant_state(
-            context.user_id,
-            updated_state.to_dict(),
-            now=context.now,
-        )
-        normalized_state = AssistantState.from_value(stored_state)
-        context.current_user["assistant_state"] = normalized_state.to_dict()
+        if outcome.completed:
+            stored_state = self.persistence.save_assistant_state(
+                context.user_id,
+                updated_state.to_dict(),
+                now=context.now,
+            )
+            normalized_state = AssistantState.from_value(stored_state)
+            context.current_user["assistant_state"] = normalized_state.to_dict()
+            clear_transient_assistant_state(context.session_state, context.user_id)
+        else:
+            save_transient_assistant_state(context.session_state, context.user_id, updated_state)
+            normalized_state = updated_state
         if outcome.continue_flow:
             rerun = getattr(view, "rerun", None)
             if callable(rerun):

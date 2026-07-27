@@ -10,7 +10,12 @@ from src.assistant.presentation import (
     TRANSCRIPT_KEY,
     clear_transcript_for_new_help_visit,
 )
-from src.assistant.state import AssistantMode, AssistantState
+from src.assistant.state import (
+    TRANSIENT_ASSISTANT_STATE_SESSION_KEY,
+    AssistantMode,
+    AssistantState,
+    transient_assistant_state_for_user,
+)
 from src.assistant.stories import default_stories
 from src.assistant.stories.greetings import (
     GREETING_DATE_SESSION_KEY,
@@ -181,14 +186,17 @@ def test_assistant_transcript_is_cleared_after_leaving_help_unless_retained() ->
     assert PERSIST_TRANSCRIPT_ACROSS_PAGE_HOPS_KEY not in retained_state
 
 
-def test_first_visit_persists_a_paused_welcome_and_returning_user_can_resume() -> None:
+def test_first_visit_keeps_a_paused_welcome_in_session_and_can_resume() -> None:
     persistence = RecordingPersistence()
     profile = {"user_id": "alice"}
     state = AssistantState.from_profile(profile)
     director = AssistantDirector(persistence, default_stories())
     introduction_view = RecordingView()
+    session_state = {}
 
-    updated = director.render(context_for(state, profile=profile), introduction_view)
+    updated = director.render(
+        context_for(state, profile=profile, session_state=session_state), introduction_view
+    )
 
     assert isinstance(director._next_event(context_for(state)), WelcomeEvent)
     assert updated.flow == ONBOARDING_FLOW
@@ -197,20 +205,46 @@ def test_first_visit_persists_a_paused_welcome_and_returning_user_can_resume() -
     assert ("say", "Hi, welcome!") in introduction_view.calls
     assert ("say", "Want some help?") in introduction_view.calls
     assert ("choices", "onboarding_intro", "", ("Analyse my profile", "Give me a tour", "I'm good")) in introduction_view.calls
-    assert len(persistence.saved_states) == 1
+    assert persistence.saved_states == []
+    assert transient_assistant_state_for_user(session_state, "alice") == updated
 
     resume_view = RecordingView()
     ready_context = context_for(
-        AssistantState.from_profile(profile),
+        transient_assistant_state_for_user(session_state, "alice") or AssistantState(),
         profile=profile,
         previous_page_key="goals",
+        session_state=session_state,
     )
     unchanged = director.render(ready_context, resume_view)
 
     assert isinstance(director._next_event(ready_context), ResumeEvent)
     assert unchanged == updated
     assert ("say", "Hey, you're back.") in resume_view.calls
-    assert len(persistence.saved_states) == 1
+    assert persistence.saved_states == []
+
+    new_session_state = {}
+    assert transient_assistant_state_for_user(new_session_state, "alice") is None
+    assert TRANSIENT_ASSISTANT_STATE_SESSION_KEY in session_state
+
+
+def test_pending_push_prompt_is_kept_in_session_without_a_database_write() -> None:
+    persistence = RecordingPersistence()
+    session_state = {}
+    state = AssistantState(flow=STANDARD_FLOW, node=READY_NODE, status="completed")
+    director = AssistantDirector(persistence, default_stories())
+
+    updated = director.render(
+        context_for(
+            state,
+            session_state=session_state,
+            user_state={"push_enabled": False, "completed_goal_count": 1},
+        ),
+        RecordingView(),
+    )
+
+    assert persistence.saved_states == []
+    assert updated.events[PUSH_PROMPT_EVENT_ID]["shown_count"] == 1
+    assert transient_assistant_state_for_user(session_state, "alice") == updated
 
 
 def test_profile_analysis_checks_real_state_in_order_and_completes() -> None:
@@ -258,6 +292,7 @@ def test_im_good_leaves_the_assistant_and_prevents_follow_up_events() -> None:
 
     assert dismissed.status == "declined"
     assert ("leave",) in leaving_view.calls
+    assert persistence.saved_states == [dismissed.to_dict()]
     assert InitialTutorialStory().next_event(context_for(dismissed)) is None
     next_visit = RecordingView()
     assert director.render(context_for(dismissed, profile=profile), next_visit) == dismissed
@@ -269,18 +304,23 @@ def test_im_good_click_is_processed_after_the_welcome_rerun() -> None:
     profile = {"user_id": "alice"}
     director = AssistantDirector(persistence, default_stories())
 
-    # The initial render persists a paused welcome while its choice buttons
-    # remain on screen.  Clicking one reruns Help with Help as the previous
-    # page, so it must return to WelcomeEvent instead of showing ResumeEvent.
-    paused = director.render(context_for(AssistantState(), profile=profile), RecordingView())
+    # The initial render keeps the paused welcome in this Streamlit session.
+    # Clicking one reruns Help with Help as the previous page, so it must
+    # return to WelcomeEvent instead of showing ResumeEvent.
+    session_state = {}
+    paused = director.render(
+        context_for(AssistantState(), profile=profile, session_state=session_state), RecordingView()
+    )
     assert paused.status == "paused"
+    assert persistence.saved_states == []
 
     leaving_view = RecordingView(selected_choice="I'm good")
     dismissed = director.render(
         context_for(
-            AssistantState.from_profile(profile),
+            transient_assistant_state_for_user(session_state, "alice") or AssistantState(),
             profile=profile,
             previous_page_key="help",
+            session_state=session_state,
         ),
         leaving_view,
     )
@@ -289,6 +329,8 @@ def test_im_good_click_is_processed_after_the_welcome_rerun() -> None:
     assert ("leave",) in leaving_view.calls
     assert not any(call[0] == "choices" for call in leaving_view.calls)
     assert ("say", "Hey, you're back.") not in leaving_view.calls
+    assert persistence.saved_states == [dismissed.to_dict()]
+    assert TRANSIENT_ASSISTANT_STATE_SESSION_KEY not in session_state
 
 
 def test_standard_mode_shows_the_default_tutorial_menu_after_onboarding() -> None:

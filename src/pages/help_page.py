@@ -6,7 +6,7 @@ import streamlit as st
 
 from src.assistant.core import AssistantContext
 from src.assistant.director import AssistantDirector
-from src.assistant.state import AssistantState
+from src.assistant.state import AssistantState, transient_assistant_state_for_user
 from src.assistant.presentation import StreamlitAssistantView, clear_transcript_for_new_help_visit
 from src.assistant.stories import default_stories
 from src.friends.share_links import create_friend_share_link
@@ -18,7 +18,7 @@ from src.push.storage import PushStorage
 """Explanation of the RPG Assistant: 
 
 Each event is deliberately written as a small, readable scene. The director module 
-persists the flow/node returned by the scene.
+persists the flow/node only when the scene completes; unfinished progress is session-scoped.
 
 Core interaction style:
     The assistant should feel like a friendly NPC.
@@ -72,7 +72,9 @@ def render_help(
     )
     st.caption("Dogether Assistant")
 
-    state = AssistantState.from_profile(current_user)
+    state = transient_assistant_state_for_user(st.session_state, user_id)
+    if state is None:
+        state = AssistantState.from_profile(current_user)
     friends = persistence.list_friends(user_id)
     goals = persistence.list_goals_for_user(user_id, now=now)
     user_state = {

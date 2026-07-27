@@ -3,10 +3,12 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field, replace
 from enum import Enum
+from collections.abc import MutableMapping
 from typing import Any, Mapping
 
 
 ASSISTANT_STATE_SCHEMA_VERSION = 1
+TRANSIENT_ASSISTANT_STATE_SESSION_KEY = "assistant.transient_state"
 
 
 class AssistantMode(str, Enum):
@@ -114,3 +116,36 @@ class AssistantState:
     @classmethod
     def reset(cls) -> "AssistantState":
         return cls()
+
+
+def transient_assistant_state_for_user(
+    session_state: Mapping[str, Any], user_id: str
+) -> AssistantState | None:
+    """Return this user's unfinished assistant state from the browser session."""
+    value = session_state.get(TRANSIENT_ASSISTANT_STATE_SESSION_KEY)
+    if not isinstance(value, Mapping) or value.get("user_id") != user_id:
+        return None
+    raw_state = value.get("assistant_state")
+    if not isinstance(raw_state, Mapping):
+        return None
+    return AssistantState.from_value(raw_state)
+
+
+def save_transient_assistant_state(
+    session_state: MutableMapping[str, Any], user_id: str, state: AssistantState
+) -> None:
+    """Keep unfinished assistant progress only for the active browser session."""
+    session_state[TRANSIENT_ASSISTANT_STATE_SESSION_KEY] = {
+        "user_id": user_id,
+        "assistant_state": state.to_dict(),
+    }
+
+
+def clear_transient_assistant_state(
+    session_state: MutableMapping[str, Any], user_id: str | None = None
+) -> None:
+    """Clear transient progress, optionally without disturbing another user."""
+    value = session_state.get(TRANSIENT_ASSISTANT_STATE_SESSION_KEY)
+    if user_id is not None and isinstance(value, Mapping) and value.get("user_id") != user_id:
+        return
+    session_state.pop(TRANSIENT_ASSISTANT_STATE_SESSION_KEY, None)

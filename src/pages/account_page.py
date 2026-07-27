@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from html import escape
 import streamlit as st
 
-from src.assistant.state import AssistantMode, AssistantState
+from src.assistant.state import AssistantMode, AssistantState, clear_transient_assistant_state
 from src.assistant.stories.greetings import (
     GREETING_DATE_SESSION_KEY,
     GREETING_PENDING_SESSION_KEY,
@@ -87,11 +87,13 @@ def render_assistant_settings(
             now=now,
         )
         current_user["assistant_state"] = stored_state
+        clear_transient_assistant_state(st.session_state, user_id)
         st.rerun()
 
     if st.button("Reset assistant", key=f"reset_assistant_{user_id}"):
         reset_state = persistence.reset_assistant_state(user_id, now=now)
         current_user["assistant_state"] = reset_state
+        clear_transient_assistant_state(st.session_state, user_id)
         st.session_state.pop(widget_key, None)
         st.rerun()
 
