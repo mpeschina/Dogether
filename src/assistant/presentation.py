@@ -168,6 +168,7 @@ class StreamlitAssistantView:
             "kind": turn.control_kind,
             "label": turn.choice_label,
             "record_selection": turn.record_selection,
+            "send_placeholder": turn.send_placeholder,
             "choices": [
                 {"id": choice.id, "label": choice.label} for choice in turn.choices
             ],
@@ -210,25 +211,29 @@ class StreamlitAssistantView:
 
     def _render_send_control(self, control: dict[str, Any]) -> None:
         self.input_rendered = True
+        round_id = control.get("round_id")
+        input_key = f"assistant_send_input_{round_id}"
+        placeholder = str(control.get("send_placeholder", "Message the assistant"))
         with self._control_bar.container():
             with st.container(
-                key=f"assistant-send-bar-{control.get('round_id')}"
+                key=f"assistant-send-bar-{round_id}"
             ):
                 with st.form(
-                    f"assistant_send_{control.get('round_id')}",
+                    f"assistant_send_{round_id}",
                     clear_on_submit=True,
                 ):
                     st.text_input(
                         "Message the assistant",
                         label_visibility="collapsed",
-                        placeholder="Message the assistant",
+                        placeholder=placeholder,
+                        key=input_key,
                     )
                     st.form_submit_button(
                         "Send",
                         type="primary",
                         use_container_width=True,
                         on_click=self._queue_selection,
-                        args=(control, "send", "Send"),
+                        args=(control, "send", "Send", input_key),
                     )
 
     def _queue_selection(
@@ -236,7 +241,12 @@ class StreamlitAssistantView:
         control: dict[str, Any],
         choice_id: str,
         label: str,
+        input_key: str | None = None,
     ) -> None:
+        if input_key is not None:
+            submitted = str(st.session_state.get(input_key, "")).strip()
+            if submitted:
+                label = submitted
         st.session_state.pop(ACTIVE_CONTROL_KEY, None)
         st.session_state[PENDING_SELECTION_KEY] = {
             "story_id": str(control.get("story_id", "")),

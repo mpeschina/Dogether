@@ -90,3 +90,28 @@ def test_send_control_is_restored_without_recording_player_bubbles() -> None:
     assert app.session_state.filtered_state["assistant.transcript"] == [
         ("status", "Sent"),
     ]
+
+
+def test_send_control_records_submitted_message_and_uses_turn_placeholder() -> None:
+    app_source = """
+import src.assistant.presentation as presentation
+from src.assistant.core import AssistantTurn
+
+view = presentation.StreamlitAssistantView()
+if view.selection is not None:
+    view.present(AssistantTurn(story_id='test', scene_id='done', statuses=('Done',)))
+elif not view.waiting_for_input:
+    view.present(AssistantTurn(
+        story_id='test', scene_id='start', control_kind='send',
+        send_placeholder='Say something…',
+    ))
+view.finish()
+"""
+    app = AppTest.from_string(app_source, default_timeout=10).run()
+    assert app.text_input[0].placeholder == "Say something…"
+    app.text_input[0].set_value("Hello there")
+    app.button[0].click().run()
+    assert app.session_state.filtered_state["assistant.transcript"] == [
+        ("user", "Hello there"),
+        ("status", "Done"),
+    ]

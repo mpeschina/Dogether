@@ -82,6 +82,7 @@ class AssistantTurn:
     choices: tuple[AssistantChoice, ...] = ()  # Choice buttons to show.
     choice_label: str = ""  # Label above the choices.
     control_kind: ControlKind = "choices"  # Control UI to render.
+    send_placeholder: str = "Message the assistant"  # Placeholder for a send control.
     record_selection: bool = True  # Whether to add the choice to history.
     statuses: tuple[str, ...] = ()  # Status messages to show.
     progress: tuple[ProgressEntry, ...] = ()  # Progress indicators to show.

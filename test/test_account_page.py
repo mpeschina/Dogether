@@ -2,8 +2,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from src.assistant.stories.greetings import (
-    GREETING_DATE_SESSION_KEY,
     GREETING_PENDING_SESSION_KEY,
+    GREETING_RANDOMIZED_AT_SESSION_KEY,
     GREETING_SELECTION_SESSION_KEY,
 )
 from src.pages.account_page import activity_diagram_html, clear_greeting_session, greeting_debug_info
@@ -55,7 +55,7 @@ def test_activity_diagram_html_renders_full_past_365_days() -> None:
 
 def test_greeting_debug_info_shows_and_clears_only_session_greeting_state() -> None:
     session_state = {
-        GREETING_DATE_SESSION_KEY: "2026-07-26",
+        GREETING_RANDOMIZED_AT_SESSION_KEY: "2026-07-26T12:00:00+00:00",
         GREETING_SELECTION_SESSION_KEY: "cowboy",
         GREETING_PENDING_SESSION_KEY: "cowboy",
         "unrelated": "kept",
@@ -66,7 +66,7 @@ def test_greeting_debug_info_shows_and_clears_only_session_greeting_state() -> N
     assert debug_info == {
         "greeting": "cowboy",
         "current_greeting_variable": "cowboy",
-        "greeting_date": "2026-07-26",
+        "randomized_at": "2026-07-26T12:00:00+00:00",
         "pending_interaction": "cowboy",
     }
 

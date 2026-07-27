@@ -21,8 +21,8 @@ from src.assistant.state import (
 )
 from src.assistant.stories import default_stories
 from src.assistant.stories.greetings import (
-    GREETING_DATE_SESSION_KEY,
     GREETING_PENDING_SESSION_KEY,
+    GREETING_RANDOMIZED_AT_SESSION_KEY,
     GREETING_SELECTION_SESSION_KEY,
     GREETINGS_STORY_ID,
     GreetingsStory,
@@ -396,7 +396,7 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
     assert updated.knowledge["tutorial.friends.seen"] is True
 
 
-def test_greetings_keep_daily_random_selection_and_forward_to_menu() -> None:
+def test_greetings_choose_a_randomized_greeting_once_per_hour_and_forward_to_menu() -> None:
     state = AssistantState(
         story=STANDARD_STORY_ID,
         scene=READY_NODE,
@@ -408,30 +408,66 @@ def test_greetings_keep_daily_random_selection_and_forward_to_menu() -> None:
         session_state=session,
         now=datetime(2026, 7, 26, tzinfo=timezone.utc),
     )
-    normal = GreetingsStory(random_source=StubRandom(0.1, 1))
+    normal = GreetingsStory(random_source=StubRandom(0.1, 0))
     scene = normal.entry_scene(context)
     turn = normal.advance(context, scene, None)
     assert turn.story_id == GREETINGS_STORY_ID
     assert turn.continue_flow is True
-    assert turn.lines[0].text == "Hello, today is July 26."
-    assert session[GREETING_DATE_SESSION_KEY] == "2026-07-26"
-    assert session[GREETING_SELECTION_SESSION_KEY] == "date"
+    assert turn.lines[0].text == "Tiny progress time."
+    assert session[GREETING_SELECTION_SESSION_KEY] == "tiny_progress"
+    randomized_at = session[GREETING_RANDOMIZED_AT_SESSION_KEY]
+
+    within_hour = replace(
+        context,
+        now=datetime(2026, 7, 26, 0, 59, tzinfo=timezone.utc),
+    )
+    assert normal.entry_scene(within_hour) == "default"
+    hello = normal.advance(within_hour, "default", None)
+    assert hello.lines[0].text == "Hello"
+    assert session[GREETING_SELECTION_SESSION_KEY] == "tiny_progress"
+    assert session[GREETING_RANDOMIZED_AT_SESSION_KEY] == randomized_at
+
+    after_hour = replace(
+        context,
+        now=datetime(2026, 7, 26, 1, 0, tzinfo=timezone.utc),
+    )
+    assert normal.entry_scene(after_hour) == "tiny_progress"
+    assert session[GREETING_RANDOMIZED_AT_SESSION_KEY] != randomized_at
 
     interactive_session = {}
     interactive_context = replace(context, session_state=interactive_session)
     interactive = GreetingsStory(random_source=StubRandom(0.8, 0))
     scene = interactive.entry_scene(interactive_context)
-    assert interactive_session[GREETING_PENDING_SESSION_KEY] == "cowboy"
+    assert interactive_session[GREETING_PENDING_SESSION_KEY] == "mood_check"
     prompt = interactive.advance(interactive_context, scene, None)
-    assert prompt.choices[0].label == "Are you a Cowboy today?"
+    assert [choice.label for choice in prompt.choices] == ["Ready.", "Absolutely not."]
     response = interactive.advance(
         interactive_context,
         scene,
-        selection("greetings", scene, "continue", "Are you a Cowboy today?"),
+        selection("greetings", scene, "ready", "Ready."),
     )
     assert response.story_id == GREETINGS_STORY_ID
     assert response.continue_flow is True
     assert GREETING_PENDING_SESSION_KEY not in interactive_session
+
+
+def test_greetings_choose_interactive_rare_variants_and_keep_them_pending() -> None:
+    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
+    context = context_for(state, now=datetime(2026, 7, 26, tzinfo=timezone.utc))
+
+    interactive = GreetingsStory(random_source=StubRandom(0.6, 1))
+    interactive_scene = interactive.entry_scene(context)
+    assert interactive_scene == "cowboy"
+    assert interactive.advance(context, interactive_scene, None).choices[0].label == "Howdy."
+
+    rare_context = replace(context, session_state={})
+    rare = GreetingsStory(random_source=StubRandom(0.9, 0))
+    rare_scene = rare.entry_scene(rare_context)
+    assert rare_scene == "silent"
+    silent = rare.advance(rare_context, rare_scene, None)
+    assert [choice.label for choice in silent.choices] == ["Hello.", "Hi.", "Hey."]
+    reply = rare.advance(rare_context, rare_scene, selection("greetings", rare_scene, "hello", "Hello."))
+    assert [line.text for line in reply.lines][0] == "Oh! Hello."
 
 
 def test_push_reminder_backoff_and_turn_updates() -> None:

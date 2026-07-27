@@ -7,9 +7,10 @@ import streamlit as st
 
 from src.assistant.state import AssistantMode, AssistantState, clear_transient_assistant_state
 from src.assistant.stories.greetings import (
-    GREETING_DATE_SESSION_KEY,
     GREETING_PENDING_SESSION_KEY,
+    GREETING_RANDOMIZED_AT_SESSION_KEY,
     GREETING_SELECTION_SESSION_KEY,
+    GREETING_SILENT_REPLY_SESSION_KEY,
 )
 from src.db.persistence import Persistence
 from src.pages.common_helpers import (
@@ -108,7 +109,7 @@ def greeting_debug_info(session_state: Mapping[str, object]) -> dict[str, object
     return {
         "greeting": current_greeting,
         "current_greeting_variable": current_greeting,
-        "greeting_date": session_state.get(GREETING_DATE_SESSION_KEY),
+        "randomized_at": session_state.get(GREETING_RANDOMIZED_AT_SESSION_KEY),
         "pending_interaction": session_state.get(GREETING_PENDING_SESSION_KEY),
     }
 
@@ -116,9 +117,10 @@ def greeting_debug_info(session_state: Mapping[str, object]) -> dict[str, object
 def clear_greeting_session(session_state: MutableMapping[str, object]) -> None:
     """Reset only the session-scoped greeting keys used for Help testing."""
     for key in (
-        GREETING_DATE_SESSION_KEY,
         GREETING_SELECTION_SESSION_KEY,
         GREETING_PENDING_SESSION_KEY,
+        GREETING_RANDOMIZED_AT_SESSION_KEY,
+        GREETING_SILENT_REPLY_SESSION_KEY,
     ):
         session_state.pop(key, None)
 
