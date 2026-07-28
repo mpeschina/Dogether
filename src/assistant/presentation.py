@@ -419,8 +419,8 @@ class StreamlitAssistantView:
               .assistant-weekly-chart-bar { box-sizing:border-box; flex:1; min-width:.3rem; }
               .assistant-weekly-chart-bar-current { background:var(--primary-color, #1f2937); border:1px solid var(--primary-color, #1f2937); border-radius:2px 2px 0 0; }
               .assistant-weekly-chart-bar-history { background:transparent; border:1px solid var(--primary-color, #1f2937); border-radius:2px 2px 0 0; }
-              .assistant-recent-activity .mini-activity-dots { gap:4px; }
-              .assistant-recent-activity .mini-activity-dot { height:16px; width:16px; }
+              .assistant-recent-activity .mini-activity-dots { gap:3px; }
+              .assistant-recent-activity .mini-activity-dot { height:12px; width:12px; }
               .assistant-recent-activity .mini-activity-dot-current { box-shadow:inset 0 0 0 1px rgba(27,31,36,0.14); }
               MINI_ACTIVITY_STYLES
             </style>
