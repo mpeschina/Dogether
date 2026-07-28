@@ -642,7 +642,7 @@ def _reaction_insight(result: WeekResult) -> AdditionalInsight | None:
         detail = f"{total} reactions received"
         text = "Your friends noticed the week."
     return AdditionalInsight("friend_support:" + ":".join(ordered), frozenset(), (
-        AssistantLine("Your friends noticed the week."),
+        AssistantLine("Here’s who cheered you on."),
         AssistantCard("FRIEND SUPPORT", detail, "", rows),
         AssistantLine(text),
     ))
