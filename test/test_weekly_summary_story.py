@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from src.assistant.core import AssistantCard, AssistantContext, AssistantLine, AssistantSelection
 from src.assistant.state import AssistantState
@@ -89,6 +89,71 @@ def test_completed_summary_groups_analysis_and_keeps_cards_adjacent() -> None:
     assert not turn.content[4].text.startswith("**")
     assert "\n" in turn.content[-1].text
     assert len(turn.lines) <= 12
+
+
+def test_week_to_week_chart_shows_selected_week_and_nineteen_prior_weeks() -> None:
+    first_week = date(2026, 5, 18)
+    outcomes = {}
+    for week_offset in range(10):
+        start = first_week + timedelta(days=week_offset * 7)
+        completions = week_offset % 8
+        outcomes.update({
+            (start + timedelta(days=day)).isoformat(): {
+                "completed": day < completions,
+                "fulfilled": day < completions,
+            }
+            for day in range(7)
+        })
+    context = AssistantContext(
+        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="help",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={"goals": [{"description": "Walking", "participants": {"alice": {"period_outcomes": outcomes}}}]},
+    )
+
+    turn = WeeklySummaryStory().advance(context, SELECT_SCENE, None)
+    chart = next(card.weekly_chart for card in turn.cards if card.title == "WEEK TO WEEK")
+
+    assert len(chart) == 20
+    assert [start for start, _, _ in chart] == [
+        date(2026, 3, 9) + timedelta(days=week_offset * 7)
+        for week_offset in range(20)
+    ]
+    assert [round(rate) for _, rate, _ in chart] == [0] * 11 + [14, 29, 43, 57, 71, 86, 100, 0, 14]
+    assert [selected for _, _, selected in chart] == [False] * 19 + [True]
+
+
+def test_week_to_week_chart_renders_missing_weeks_as_zero_bars() -> None:
+    outcomes = {
+        (date(2026, 7, 13) + timedelta(days=day)).isoformat(): {
+            "completed": True,
+            "fulfilled": True,
+        }
+        for day in range(7)
+    }
+    outcomes.update({
+        (date(2026, 7, 20) + timedelta(days=day)).isoformat(): {
+            "completed": day != 2,
+            "fulfilled": day != 2,
+        }
+        for day in range(7)
+    })
+    context = AssistantContext(
+        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="help",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={"goals": [{"description": "Walking", "participants": {"alice": {"period_outcomes": outcomes}}}]},
+    )
+    result = _analyse(
+        context,
+        date(2026, 7, 20),
+        False,
+    )
+    turn = WeeklySummaryStory()._opening_summary(result)
+    chart = next(card.weekly_chart for card in turn.cards if card.title == "WEEK TO WEEK")
+
+    assert len(chart) == 20
+    assert chart[0] == (date(2026, 3, 9), 0, False)
+    assert chart[-2] == (date(2026, 7, 13), 100, False)
+    assert chart[-1] == (date(2026, 7, 20), 85.71428571428571, True)
 
 
 def test_allowance_skip_preserves_daily_streak_without_claiming_completion() -> None:

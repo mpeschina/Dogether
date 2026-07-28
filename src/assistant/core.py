@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Callable, Literal, Mapping, Protocol
 
 from src.assistant.state import AssistantState
@@ -68,6 +68,8 @@ class AssistantCard:
     detail: str = ""
     rows: tuple[tuple[str, str], ...] = ()
     progress: float | None = None
+    # Each bar is (week start, completion percentage, is selected week).
+    weekly_chart: tuple[tuple[date, float, bool], ...] = ()
 
 
 @dataclass(frozen=True)

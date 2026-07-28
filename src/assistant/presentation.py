@@ -351,11 +351,25 @@ class StreamlitAssistantView:
         if card.progress is not None:
             value = min(100, max(0, card.progress))
             bar = f"<div class='assistant-card-track'><span style='width:{value}%'></span></div>"
+        weekly_chart = ""
+        if card.weekly_chart:
+            bars = "".join(
+                "<span "
+                f"class='assistant-weekly-chart-bar {'assistant-weekly-chart-bar-current' if selected else 'assistant-weekly-chart-bar-history'}' "
+                f"style='height:{min(100, max(0, rate))}%' "
+                f"aria-label='Week of {escape(start.isoformat())}: {rate:.0f}% completion{' (selected)' if selected else ''}'></span>"
+                for start, rate, selected in card.weekly_chart
+            )
+            weekly_chart = (
+                "<div class='assistant-weekly-chart' role='img' "
+                "aria-label='Weekly completion history; each bar is a week'>"
+                f"{bars}</div>"
+            )
         st.markdown(
             "<div class='assistant-card'>"
             f"<div class='assistant-card-title'>{escape(card.title)}</div>"
             f"<div class='assistant-card-value'>{escape(card.value)}</div>"
-            f"<div class='assistant-card-detail'>{escape(card.detail)}</div>{bar}{rows}</div>",
+            f"<div class='assistant-card-detail'>{escape(card.detail)}</div>{bar}{weekly_chart}{rows}</div>",
             unsafe_allow_html=True,
         )
 
@@ -394,6 +408,10 @@ class StreamlitAssistantView:
               .assistant-card-track { background:#ebedf0; border-radius:99px; height:.55rem; overflow:hidden; margin:.5rem 0 .7rem; }
               .assistant-card-track span { background:#216e39; border-radius:99px; display:block; height:100%; }
               .assistant-card-row { border-top:1px solid #e5e7eb; display:flex; font-size:.88rem; justify-content:space-between; padding:.38rem 0 0; margin-top:.38rem; }
+              .assistant-weekly-chart { align-items:end; display:flex; gap:.28rem; height:2.25rem; margin:.45rem 0 .7rem; }
+              .assistant-weekly-chart-bar { box-sizing:border-box; flex:1; min-width:.3rem; }
+              .assistant-weekly-chart-bar-current { background:var(--primary-color, #1f2937); border:1px solid var(--primary-color, #1f2937); border-radius:2px 2px 0 0; }
+              .assistant-weekly-chart-bar-history { background:transparent; border:1px solid var(--primary-color, #1f2937); border-radius:2px 2px 0 0; }
             </style>
             """
         st.markdown(

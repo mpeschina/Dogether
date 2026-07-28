@@ -133,6 +133,7 @@ class WeeklySummaryStory(AssistantStory):
                         ("Selected week", f"{result.rate:.0f}% · {result.active} active"),
                         ("Workload", f"{workload:+d} active periods"),
                     ),
+                    weekly_chart=_week_to_week_chart(result),
                 )
             )
             comparison = _comparison_analysis(result, diff)
@@ -141,7 +142,6 @@ class WeeklySummaryStory(AssistantStory):
         lines = tuple(item for item in content if isinstance(item, AssistantLine))
         cards = tuple(item for item in content if isinstance(item, AssistantCard))
         return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=(AssistantChoice("continue", "Continue"),))
-
     def _remaining_summary(self, result: WeekResult, selected_id: str = "", start: date | None = None, partial: bool = False) -> AssistantTurn:
         """Render the established story after the intentional conversational break."""
         content: list[AssistantLine | AssistantCard] = [AssistantLine("Let’s look a little closer.", typing_delay=0.4)]
@@ -260,6 +260,20 @@ class WeeklySummaryStory(AssistantStory):
         )
         updates = {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial, "extra": extra_id, "details_seen": True}} if start else {}
         return AssistantTurn(self.story_id, DETAILS_SCENE, lines=(AssistantLine("Here’s the goal-by-goal view."),), cards=(AssistantCard("GOAL DETAILS", "", "", rows),), choices=(AssistantChoice("all_insights", "Show all insights"), AssistantChoice("done", "Close analysis")), event_updates=updates, state_story=self.story_id, state_scene=DETAILS_SCENE, state_status="active")
+
+
+def _week_to_week_chart(result: WeekResult) -> tuple[tuple[date, float, bool], ...]:
+    """Return a continuous 20-week series ending with the selected week."""
+    rates = {
+        start: fulfilled * 100 / active
+        for start, fulfilled, active in result.history
+        if active > 0 and start < result.start
+    }
+    starts = tuple(result.start - timedelta(days=7 * offset) for offset in range(19, -1, -1))
+    return tuple(
+        (start, result.rate if start == result.start else rates.get(start, 0), start == result.start)
+        for start in starts
+    )
 
 
 def _detail_streak(streak: StreakResult) -> str:

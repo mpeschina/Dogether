@@ -1,4 +1,8 @@
 from streamlit.testing.v1 import AppTest
+from datetime import date
+
+import src.assistant.presentation as presentation
+from src.assistant.core import AssistantCard
 
 
 CHOICE_APP = """
@@ -154,3 +158,28 @@ view.finish()
         ("user", "Hello there"),
         ("status", "Done"),
     ]
+
+
+def test_weekly_chart_renders_solid_selected_and_outlined_historical_bars(monkeypatch) -> None:
+    rendered: list[str] = []
+    monkeypatch.setattr(
+        presentation.st,
+        "markdown",
+        lambda body, **_: rendered.append(body),
+    )
+
+    presentation.StreamlitAssistantView._render_card(
+        AssistantCard(
+            "WEEK TO WEEK",
+            weekly_chart=(
+                (date(2026, 7, 13), 50, False),
+                (date(2026, 7, 20), 75, True),
+            ),
+        )
+    )
+
+    assert "assistant-weekly-chart" in rendered[0]
+    assert "assistant-weekly-chart-bar-history" in rendered[0]
+    assert "assistant-weekly-chart-bar-current" in rendered[0]
+    assert "Week of 2026-07-13: 50% completion" in rendered[0]
+    assert "Week of 2026-07-20: 75% completion (selected)" in rendered[0]
