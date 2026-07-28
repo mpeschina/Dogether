@@ -21,10 +21,41 @@ class GoalResult:
     active: int
     skipped: int
     previous_rate: float | None
+    streak: "StreakResult"
 
     @property
     def rate(self) -> float:
         return self.fulfilled * 100 / self.active if self.active else 0
+
+
+@dataclass(frozen=True)
+class StreakResult:
+    """A goal-local streak derived from closed base periods only."""
+
+    value: int
+    unit: str
+    start_value: int
+    highest: int
+    added: int
+    started: bool
+    ended: bool
+    ended_value: int
+    ended_on: date | None
+    restarted: bool
+    restart_delay: int | None
+    valid_skips: int
+    fulfilled: int
+    record: bool
+    previous_best: int | None
+    symbols: tuple[str, ...]
+
+    @property
+    def label(self) -> str:
+        return f"{self.value} {self.unit}" if self.value else "No current streak"
+
+    @property
+    def has_skips(self) -> bool:
+        return self.valid_skips > 0
 
 
 @dataclass(frozen=True)
@@ -109,11 +140,15 @@ class WeeklySummaryStory(AssistantStory):
             if comparison:
                 content.append(AssistantLine(comparison))
         strongest = max(result.goals, key=lambda goal: (goal.rate, goal.active))
-        content.extend((
-            AssistantLine(f"{strongest.name} led the way."),
-            AssistantCard("STRONGEST GOAL", strongest.name, f"{strongest.fulfilled} of {strongest.active} periods completed", progress=strongest.rate),
-            AssistantLine(_strongest_analysis(strongest)),
-        ))
+        streak_goal = _select_streak(result.goals, strongest)
+        if streak_goal:
+            content.extend(_streak_content(streak_goal))
+        else:
+            content.extend((
+                AssistantLine(f"{strongest.name} led the way."),
+                AssistantCard("STRONGEST GOAL", strongest.name, f"{strongest.fulfilled} of {strongest.active} periods completed", progress=strongest.rate),
+                AssistantLine(_strongest_analysis(strongest)),
+            ))
         day_rows = tuple((day.strftime("%a").upper(), "—" if active == 0 else f"{round(done * 100 / active)}%") for day, active, done in result.daily)
         content.extend((
             AssistantLine("Here’s how the week moved."),
@@ -133,7 +168,10 @@ class WeeklySummaryStory(AssistantStory):
         return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=(AssistantChoice("details", "See goal details"), AssistantChoice("done", "Done")))
 
     def _details_turn(self, result: WeekResult) -> AssistantTurn:
-        rows = tuple((goal.name, f"{goal.fulfilled} / {goal.active} · {goal.rate:.0f}%") for goal in sorted(result.goals, key=lambda goal: (-goal.active, -goal.rate)))
+        rows = tuple(
+            (goal.name, f"{goal.fulfilled} / {goal.active} · {goal.rate:.0f}%\n{_detail_streak(goal.streak)}")
+            for goal in sorted(result.goals, key=lambda goal: (-goal.active, -goal.rate))
+        )
         return AssistantTurn(self.story_id, DETAILS_SCENE, lines=(AssistantLine("Here’s the goal-by-goal view."),), cards=(AssistantCard("GOAL DETAILS", "", "", rows),), choices=(AssistantChoice("done", "Close analysis"),), state_story=self.story_id, state_scene=DETAILS_SCENE, state_status="active")
 
 
@@ -165,7 +203,8 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
         skipped = sum(bool(item.get("skipped", False)) for _, item in selected)
         active = len(selected)
         previous_rate = (sum(bool(item.get("fulfilled", item.get("completed", False))) for _, item in previous) * 100 / len(previous)) if previous else None
-        goals.append(GoalResult(str(goal.get("description", "Goal")), fulfilled, active, skipped, previous_rate))
+        streak = _analyse_streak(goal, participant, start, end, now)
+        goals.append(GoalResult(str(goal.get("description", "Goal")), fulfilled, active, skipped, previous_rate, streak))
         for when, item in selected:
             if when in daily:
                 daily[when][0] += 1
@@ -174,6 +213,134 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
     previous_active = sum(1 for goal in context.user_state.get("goals", []) for _ in _outcomes_in(goal.get("participants", {}).get(context.user_id, {}).get("period_outcomes", {}), previous_start, previous_start + timedelta(days=6)))
     previous_done = sum(int(bool(item.get("fulfilled", item.get("completed", False)))) for goal in context.user_state.get("goals", []) for _, item in _outcomes_in(goal.get("participants", {}).get(context.user_id, {}).get("period_outcomes", {}), previous_start, previous_start + timedelta(days=6)))
     return WeekResult(start, end, partial, fulfilled, active, skipped, tuple((day, *values) for day, values in daily.items()), tuple(goals), previous_done * 100 / previous_active if previous_active else None)
+
+
+def _analyse_streak(goal: dict[str, Any], participant: dict[str, Any], start: date, end: date, today: date) -> StreakResult:
+    """Derive the story data without treating the open base period as a result."""
+    weekly = goal.get("schedule_class") in {"weekly", "weekly_x_per_month"}
+    step = timedelta(days=7 if weekly else 1)
+    unit = "weeks" if weekly else "days"
+    outcomes = participant.get("period_outcomes", {}) if isinstance(participant.get("period_outcomes"), dict) else {}
+    parsed = {when: value for key, value in outcomes.items() if (when := _date(key)) is not None and isinstance(value, dict)}
+    current_start = _week_start(today) if weekly else today
+    # Retained outcome history is finite.  Beginning at its first known period
+    # avoids inventing failures before the goal was tracked.
+    first = min(parsed, default=None)
+    created = _date(goal.get("created_at"))
+    if created is not None:
+        created = _week_start(created) if weekly else created
+        first = min(first, created) if first else created
+    if first is None:
+        return StreakResult(0, unit, 0, 0, 0, False, False, 0, None, False, None, 0, 0, False, None, ())
+    first = _week_start(first) if weekly else first
+    selected_start = _week_start(start) if weekly else start
+    selected_end = _week_start(end) if weekly else end
+    values: list[tuple[date, str]] = []
+    cursor = first
+    while cursor < current_start:
+        outcome = parsed.get(cursor)
+        if outcome is None:
+            state = "failed"
+        elif bool(outcome.get("fulfilled", outcome.get("completed", False))):
+            state = "skip" if bool(outcome.get("skipped", False)) else "fulfilled"
+        else:
+            state = "failed"
+        values.append((cursor, state))
+        cursor += step
+
+    before = [state for when, state in values if when < selected_start]
+    start_value = _trailing_successes(before)
+    running = start_value
+    highest = running
+    ended = False; ended_value = 0; ended_on = None; restarted = False; restart_delay = None
+    failure_at: int | None = None
+    added = 0
+    symbols: list[str] = []
+    for index, (when, state) in enumerate(values):
+        if not (selected_start <= when <= selected_end):
+            continue
+        if state == "failed":
+            if running:
+                ended = True; ended_value = max(ended_value, running); ended_on = when
+                failure_at = index
+            running = 0
+            symbols.append("○")
+        else:
+            if failure_at is not None and not restarted:
+                restarted = True; restart_delay = index - failure_at
+            running += 1; added += 1; highest = max(highest, running)
+            symbols.append("×" if state == "skip" else "●")
+    current = _trailing_successes([state for _, state in values])
+    # An open period can be shown but never changes the derived count.
+    if selected_start <= current_start <= selected_end:
+        symbols.append("○")
+    current_states: list[str] = []
+    for _, state in reversed(values):
+        if state == "failed": break
+        current_states.append(state)
+    current_states.reverse()
+    valid_skips = sum(state == "skip" for state in current_states)
+    completed = sum(state == "fulfilled" for state in current_states)
+    prior_values = [state for when, state in values if when < selected_start]
+    previous_best = max((_run_length(prior_values)), default=0) if prior_values else None
+    # A record can be reached during the week even if a later closed period
+    # resets it, so compare the week's high-water mark rather than only today.
+    record = previous_best is not None and highest > previous_best
+    return StreakResult(current, unit, start_value, highest, added, start_value == 0 and highest >= (2 if weekly else 3), ended, ended_value, ended_on, restarted, restart_delay, valid_skips, completed, record, previous_best, tuple(symbols))
+
+
+def _trailing_successes(values: list[str]) -> int:
+    total = 0
+    for value in reversed(values):
+        if value == "failed": break
+        total += 1
+    return total
+
+
+def _run_length(values: list[str]) -> list[int]:
+    runs: list[int] = []; current = 0
+    for value in values:
+        if value == "failed":
+            if current: runs.append(current)
+            current = 0
+        else: current += 1
+    if current: runs.append(current)
+    return runs
+
+
+def _detail_streak(streak: StreakResult) -> str:
+    ended = f"{streak.ended_value}-{streak.unit[:-1]} streak ended {streak.ended_on.strftime('%A')}" if streak.ended and streak.ended_on else None
+    current = streak.label
+    return f"{ended}\nCurrent streak: {current}" if ended and streak.value else ended or current
+
+
+def _select_streak(goals: tuple[GoalResult, ...], strongest: GoalResult) -> GoalResult | None:
+    def score(goal: GoalResult) -> tuple[int, int, int, int]:
+        streak = goal.streak
+        milestone = streak.value in ({3, 4, 8, 12, 26, 52} if streak.unit == "weeks" else {3, 7, 14, 30, 50, 100})
+        meaningful = max(streak.value, streak.ended_value, streak.highest) >= (3 if streak.unit == "weeks" else 5)
+        event = streak.record or milestone or streak.started or streak.ended or streak.added > 0
+        return (int(streak.record), int(milestone), int(event and meaningful), streak.added)
+    candidate = max(goals, key=score)
+    return candidate if score(candidate) > (0, 0, 0, 0) and (candidate == strongest or score(candidate)[:3] >= (0, 1, 0)) else None
+
+
+def _streak_content(goal: GoalResult) -> tuple[AssistantLine | AssistantCard, ...]:
+    streak = goal.streak
+    if streak.ended and streak.restarted:
+        title = "STREAK RECOVERY"; detail = f"Ended at {streak.ended_value} {streak.unit}\nRestarted after: {streak.restart_delay} period{'s' if streak.restart_delay != 1 else ''}"
+        text = f"**The {streak.ended_value}-{streak.unit[:-1]} streak ended on {streak.ended_on.strftime('%A')}.**\nYou restarted it {'the next period' if streak.restart_delay == 1 else 'during the week'}."
+    elif streak.record:
+        title = "NEW STREAK RECORD"; detail = f"Previous best: {streak.previous_best} {streak.unit}"
+        text = f"**{goal.name} reached a new record.**\nYou added {streak.added} successful {streak.unit} during the analysed week."
+    elif streak.ended:
+        title = "STREAK UPDATE"; detail = f"Ended at {streak.ended_value} {streak.unit}\nCurrent streak: {streak.value}"
+        text = f"**The streak stopped at {streak.ended_value} {streak.unit}.**\nThose successful {streak.unit} still happened."
+    else:
+        title = "CURRENT STREAK"; detail = f"This week: +{streak.added} {streak.unit}"
+        if streak.has_skips: detail += f"\n{streak.fulfilled} completed · {streak.valid_skips} valid skips"
+        text = (f"**{streak.value}-{streak.unit[:-1]} streak.**\nEvery period was completed or validly skipped." if streak.has_skips else f"**The streak reached {streak.value} {streak.unit}.**\nThis week kept it moving.")
+    return (AssistantLine(f"{goal.name} kept its rhythm."), AssistantCard(title, goal.name, f"{streak.label}\n{detail}", (("Recent", " ".join(streak.symbols)),)), AssistantLine(text))
 
 
 def _outcomes_in(outcomes: Any, start: date, end: date) -> list[tuple[date, dict[str, Any]]]:
