@@ -70,6 +70,8 @@ class AssistantCard:
     progress: float | None = None
     # Each bar is (week start, completion percentage, is selected week).
     weekly_chart: tuple[tuple[date, float, bool], ...] = ()
+    # Trusted inline markup for the Recent row of an insight card.
+    recent_activity_html: str = ""
 
 
 @dataclass(frozen=True)

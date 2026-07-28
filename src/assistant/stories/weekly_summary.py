@@ -1,13 +1,15 @@
 """A short, evidence-based weekly progress story."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 import random
 from typing import Final
 
 from src.assistant.core import AssistantCard, AssistantChoice, AssistantContext, AssistantLine, AssistantSelection, AssistantStory, AssistantTurn
 from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _momentum_halves, _now, _week_start
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _used_existing_insights
+from src.db.persistence_helpers import APP_ZONE
+from src.pages.common_helpers import compact_goal_activity_html
 
 WEEKLY_SUMMARY_STORY_ID: Final = "weekly_summary"
 WEEK_SELECTION_EVENT_ID: Final = "weekly_summary.selection"
@@ -339,7 +341,15 @@ def _streak_content(goal: GoalResult) -> tuple[AssistantLine | AssistantCard, ..
         title = "CURRENT STREAK"; detail = f"This week: +{streak.added} {streak.unit}"
         if streak.has_skips: detail += f"\n{streak.fulfilled} completed · {streak.valid_skips} valid skips"
         text = (f"{streak.value}-{streak.unit[:-1]} streak.\nEvery period was completed or validly skipped." if streak.has_skips else f"The streak reached {streak.value} {streak.unit}.\nThis week kept it moving.")
-    return (AssistantLine(f"{goal.name} kept its rhythm."), AssistantCard(title, goal.name, f"{streak.label}\n{detail}", (("Recent", " ".join(streak.symbols)),)), AssistantLine(text))
+    recent_activity_html = _recent_activity_html(goal) if streak.record else ""
+    return (AssistantLine(f"{goal.name} kept its rhythm."), AssistantCard(title, goal.name, f"{streak.label}\n{detail}", (("Recent", " ".join(streak.symbols)),), recent_activity_html=recent_activity_html), AssistantLine(text))
+
+
+def _recent_activity_html(goal: GoalResult) -> str:
+    if not goal.source_goal or not goal.source_participant or goal.activity_end is None:
+        return ""
+    activity_now = datetime.combine(goal.activity_end, time(hour=12), tzinfo=APP_ZONE)
+    return compact_goal_activity_html(goal.source_goal, goal.source_participant, now=activity_now)
 
 
 def _headline_text(result: WeekResult) -> str:

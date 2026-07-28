@@ -19,6 +19,9 @@ class GoalResult:
     near_misses: tuple[tuple[date, float, int, int], ...] = ()
     schedule_class: str = "daily"
     periods: tuple[tuple[date, bool, int, int], ...] = ()
+    source_goal: dict[str, Any] | None = None
+    source_participant: dict[str, Any] | None = None
+    activity_end: date | None = None
 
     @property
     def rate(self) -> float:
@@ -213,6 +216,9 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
                 near_misses,
                 str(goal.get("schedule_class", "daily")),
                 periods,
+                goal,
+                participant,
+                end,
             )
         )
         weekly = str(goal.get("schedule_class", "daily")) in {

@@ -183,3 +183,20 @@ def test_weekly_chart_renders_solid_selected_and_outlined_historical_bars(monkey
     assert "assistant-weekly-chart-bar-current" in rendered[0]
     assert "Week of 2026-07-13: 50% completion" in rendered[0]
     assert "Week of 2026-07-20: 75% completion (selected)" in rendered[0]
+
+
+def test_recent_activity_markup_replaces_only_the_recent_row(monkeypatch) -> None:
+    rendered: list[str] = []
+    monkeypatch.setattr(presentation.st, "markdown", lambda body, **_: rendered.append(body))
+
+    presentation.StreamlitAssistantView._render_card(
+        AssistantCard(
+            "NEW STREAK RECORD",
+            rows=(("Recent", "● ● ●"), ("Previous best", "3 days")),
+            recent_activity_html="<span class='mini-activity-dots'></span>",
+        )
+    )
+
+    assert "<span class='assistant-recent-activity'><span class='mini-activity-dots'></span></span>" in rendered[0]
+    assert "Previous best" in rendered[0]
+    assert "3 days" in rendered[0]

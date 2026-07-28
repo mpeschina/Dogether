@@ -7,6 +7,7 @@ from src.assistant.stories.weekly_summary import (
     SUMMARY_SCENE,
     WEEKLY_SUMMARY_STORY_ID,
     WeeklySummaryStory,
+    _streak_content,
 )
 from src.assistant.stories.weekly_summary_analysis import _analyse
 from src.assistant.stories.weekly_summary_insights import _additional_insights
@@ -154,6 +155,36 @@ def test_week_to_week_chart_renders_missing_weeks_as_zero_bars() -> None:
     assert chart[0] == (date(2026, 3, 9), 0, False)
     assert chart[-2] == (date(2026, 7, 13), 100, False)
     assert chart[-1] == (date(2026, 7, 20), 85.71428571428571, True)
+
+
+def test_new_streak_record_reuses_the_mini_activity_diagram_for_recent() -> None:
+    outcomes = {
+        (date(2026, 7, 13) + timedelta(days=day)).isoformat(): {
+            "completed": day < 3,
+            "fulfilled": day < 3,
+        }
+        for day in range(7)
+    }
+    outcomes.update({
+        (date(2026, 7, 20) + timedelta(days=day)).isoformat(): {
+            "completed": True,
+            "fulfilled": True,
+        }
+        for day in range(7)
+    })
+    context = AssistantContext(
+        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="help",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={"goals": [{"description": "Walking", "participants": {"alice": {"period_outcomes": outcomes}}}]},
+    )
+    result = _analyse(context, date(2026, 7, 20), False)
+
+    card = _streak_content(result.goals[0])[1]
+
+    assert card.title == "NEW STREAK RECORD"
+    assert card.rows == (("Recent", "● ● ● ● ● ● ●"),)
+    assert "mini-activity-dots" in card.recent_activity_html
+    assert card.recent_activity_html.count("title='") == 7
 
 
 def test_allowance_skip_preserves_daily_streak_without_claiming_completion() -> None:

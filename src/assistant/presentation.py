@@ -16,6 +16,7 @@ from src.assistant.core import (
     AssistantTurn,
     ProgressEntry,
 )
+from src.pages.common_helpers import mini_activity_styles
 
 
 WORD_DELAY_SECONDS = 0.01
@@ -343,8 +344,14 @@ class StreamlitAssistantView:
 
     @staticmethod
     def _render_card(card: AssistantCard) -> None:
+        recent_activity = (
+            f"<span class='assistant-recent-activity'>{card.recent_activity_html}</span>"
+            if card.recent_activity_html
+            else ""
+        )
         rows = "".join(
-            f"<div class='assistant-card-row'><span>{escape(left)}</span><strong>{escape(right)}</strong></div>"
+            f"<div class='assistant-card-row'><span>{escape(left)}</span><strong>"
+            f"{recent_activity if left == 'Recent' and recent_activity else escape(right)}</strong></div>"
             for left, right in card.rows
         )
         bar = ""
@@ -412,12 +419,16 @@ class StreamlitAssistantView:
               .assistant-weekly-chart-bar { box-sizing:border-box; flex:1; min-width:.3rem; }
               .assistant-weekly-chart-bar-current { background:var(--primary-color, #1f2937); border:1px solid var(--primary-color, #1f2937); border-radius:2px 2px 0 0; }
               .assistant-weekly-chart-bar-history { background:transparent; border:1px solid var(--primary-color, #1f2937); border-radius:2px 2px 0 0; }
+              .assistant-recent-activity .mini-activity-dots { gap:4px; }
+              .assistant-recent-activity .mini-activity-dot { height:16px; width:16px; }
+              .assistant-recent-activity .mini-activity-dot-current { box-shadow:inset 0 0 0 1px rgba(27,31,36,0.14); }
+              MINI_ACTIVITY_STYLES
             </style>
             """
         st.markdown(
             styles.replace(
                 "CHOICE_FADE_IN_DURATION_MS", f"{CHOICE_FADE_IN_DURATION_MS}ms"
-            ),
+            ).replace("MINI_ACTIVITY_STYLES", mini_activity_styles()),
             unsafe_allow_html=True,
         )
 
