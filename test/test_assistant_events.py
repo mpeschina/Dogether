@@ -573,7 +573,7 @@ def test_special_story_uses_choice_and_send_control_rounds() -> None:
     assert send.progress[0].text == f"1 / {PROGRESS_BAR_CLICK_COUNT}"
 
 
-def test_special_click_challenge_keeps_statuses_and_reveals_bars_sequentially() -> None:
+def test_special_click_challenge_uses_live_statuses_and_reveals_bars_sequentially() -> None:
     story = SpecialExampleStory()
     state = AssistantState(
         mode=AssistantMode.SPECIAL,
@@ -588,7 +588,7 @@ def test_special_click_challenge_keeps_statuses_and_reveals_bars_sequentially() 
         )
         assert turn.statuses == (f"{clicks}x",)
         assert turn.progress == ()
-        assert turn.keep_statuses_in_history
+        assert not turn.keep_statuses_in_history
         state = apply_turn(state, turn)
 
     first_bar = story.advance(
