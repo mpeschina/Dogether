@@ -92,6 +92,18 @@ def test_completed_summary_groups_analysis_and_keeps_cards_adjacent() -> None:
     assert len(turn.lines) <= 12
 
 
+def test_daily_rhythm_supplies_progress_for_each_active_day() -> None:
+    result = _analyse(
+        _context(datetime(2026, 7, 27, tzinfo=timezone.utc)),
+        datetime(2026, 7, 20, tzinfo=timezone.utc).date(),
+        False,
+    )
+    turn = WeeklySummaryStory()._remaining_summary(result)
+    card = next(card for card in turn.cards if card.title == "DAILY RHYTHM")
+
+    assert card.row_progress == (100, 100, 0, 100, 100, 100, 100)
+
+
 def test_week_to_week_chart_shows_selected_week_and_nineteen_prior_weeks() -> None:
     first_week = date(2026, 5, 18)
     outcomes = {}

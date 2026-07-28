@@ -72,6 +72,8 @@ class AssistantCard:
     weekly_chart: tuple[tuple[date, float, bool], ...] = ()
     # Trusted inline markup for the Recent row of an insight card.
     recent_activity_html: str = ""
+    # Optional percentage fills, aligned with ``rows``.
+    row_progress: tuple[float | None, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -183,9 +183,19 @@ class WeeklySummaryStory(AssistantStory):
                 )
                 for day, active, done in result.daily
             )
+            day_progress = tuple(
+                None if active == 0 else done * 100 / active
+                for _, active, done in result.daily
+            )
             content.extend((
                 AssistantLine("Here’s how the week moved."),
-                AssistantCard("DAILY RHYTHM", "", "No active goals are shown as —", day_rows),
+                AssistantCard(
+                    "DAILY RHYTHM",
+                    "",
+                    "No active goals are shown as —",
+                    day_rows,
+                    row_progress=day_progress,
+                ),
                 AssistantLine(_rhythm_analysis(result)),
             ))
         near_miss = _select_near_miss(result)

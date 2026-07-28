@@ -349,11 +349,23 @@ class StreamlitAssistantView:
             if card.recent_activity_html
             else ""
         )
-        rows = "".join(
-            f"<div class='assistant-card-row'><span>{escape(left)}</span><strong>"
-            f"{recent_activity if left == 'Recent' and recent_activity else escape(right)}</strong></div>"
-            for left, right in card.rows
-        )
+        rows = ""
+        for index, (left, right) in enumerate(card.rows):
+            progress = card.row_progress[index] if index < len(card.row_progress) else None
+            row_bar = ""
+            row_class = "assistant-card-row"
+            if progress is not None:
+                value = min(100, max(0, progress))
+                row_class += " assistant-card-row-with-progress"
+                row_bar = (
+                    "<span class='assistant-card-row-track'>"
+                    f"<span style='width:{value}%'></span></span>"
+                )
+            rendered_right = recent_activity if left == "Recent" and recent_activity else escape(right)
+            rows += (
+                f"<div class='{row_class}'><span>{escape(left)}</span>{row_bar}"
+                f"<strong>{rendered_right}</strong></div>"
+            )
         bar = ""
         if card.progress is not None:
             value = min(100, max(0, card.progress))
@@ -415,6 +427,9 @@ class StreamlitAssistantView:
               .assistant-card-track { background:#ebedf0; border-radius:99px; height:.55rem; overflow:hidden; margin:.5rem 0 .7rem; }
               .assistant-card-track span { background:#216e39; border-radius:99px; display:block; height:100%; }
               .assistant-card-row { border-top:1px solid #e5e7eb; display:flex; font-size:.88rem; justify-content:space-between; padding:.38rem 0 0; margin-top:.38rem; }
+              .assistant-card-row-with-progress { align-items:center; column-gap:.5rem; display:grid; grid-template-columns:1fr minmax(2.5rem, 42%) auto; }
+              .assistant-card-row-track { background:#ebedf0; border-radius:99px; display:block; height:.25rem; overflow:hidden; }
+              .assistant-card-row-track span { background:var(--primary-color, #1f2937); border-radius:99px; display:block; height:100%; }
               .assistant-weekly-chart { align-items:end; display:flex; gap:.28rem; height:2.25rem; margin:.45rem 0 .7rem; }
               .assistant-weekly-chart-bar { box-sizing:border-box; flex:1; min-width:.3rem; }
               .assistant-weekly-chart-bar-current { background:var(--primary-color, #1f2937); border:1px solid var(--primary-color, #1f2937); border-radius:2px 2px 0 0; }

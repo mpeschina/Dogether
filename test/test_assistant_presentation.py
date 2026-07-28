@@ -160,6 +160,21 @@ view.finish()
     ]
 
 
+def test_card_row_progress_renders_a_primary_color_bar(monkeypatch) -> None:
+    import src.assistant.presentation as presentation
+    from src.assistant.core import AssistantCard
+
+    rendered: list[str] = []
+    monkeypatch.setattr(presentation.st, "markdown", lambda body, **_: rendered.append(body))
+
+    presentation.StreamlitAssistantView._render_card(
+        AssistantCard("DAILY RHYTHM", rows=(("MON", "75%"),), row_progress=(75,))
+    )
+
+    assert "assistant-card-row-track" in rendered[0]
+    assert "style='width:75%'" in rendered[0]
+
+
 def test_weekly_chart_renders_solid_selected_and_outlined_historical_bars(monkeypatch) -> None:
     rendered: list[str] = []
     monkeypatch.setattr(
