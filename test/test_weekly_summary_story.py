@@ -114,6 +114,22 @@ def test_closing_analysis_has_the_usual_assistant_departure_status() -> None:
     assert closed.assistant_leaves
 
 
+def test_final_weekly_analysis_done_has_the_usual_assistant_departure_status() -> None:
+    story = WeeklySummaryStory()
+    context = _context(datetime(2026, 7, 27, tzinfo=timezone.utc))
+    initial = story.advance(context, SELECT_SCENE, None)
+    context.state.events.update(initial.event_updates)
+
+    completed = story.advance(
+        context,
+        SUMMARY_SCENE,
+        AssistantSelection(WEEKLY_SUMMARY_STORY_ID, SUMMARY_SCENE, "done", "Done"),
+    )
+
+    assert completed.completed
+    assert completed.assistant_leaves
+
+
 def test_daily_rhythm_supplies_progress_for_each_active_day() -> None:
     result = _analyse(
         _context(datetime(2026, 7, 27, tzinfo=timezone.utc)),

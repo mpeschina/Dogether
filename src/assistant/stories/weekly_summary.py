@@ -60,7 +60,7 @@ class WeeklySummaryStory(AssistantStory):
         if selection and selection.choice_id == "all_insights":
             return self._all_insights_turn(result, extra_id, bool(selected.get("details_seen", False)))
         if selection and selection.choice_id == "done":
-            return AssistantTurn(self.story_id, SUMMARY_SCENE, completed=True, assistant_leaves=selection.label == "Close analysis", state_story=WEEKLY_SUMMARY_STORY_ID, state_scene=SUMMARY_SCENE, state_status="completed")
+            return AssistantTurn(self.story_id, SUMMARY_SCENE, completed=True, assistant_leaves=True, state_story=WEEKLY_SUMMARY_STORY_ID, state_scene=SUMMARY_SCENE, state_status="completed")
         return self._opening_summary(result)
 
     def _summary_turn(self, context: AssistantContext, start: date, partial: bool) -> AssistantTurn:
