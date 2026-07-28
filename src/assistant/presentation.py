@@ -9,6 +9,7 @@ from typing import Any
 import streamlit as st
 
 from src.assistant.core import (
+    AssistantCard,
     AssistantLine,
     AssistantSelection,
     AssistantTurn,
@@ -113,6 +114,8 @@ class StreamlitAssistantView:
         with self._live_transcript:
             for line in turn.lines:
                 self._present_line(line)
+            for card in turn.cards:
+                self._append_and_render("card", card)
             for message in turn.statuses:
                 self._append_and_render(
                     "status" if turn.keep_statuses_in_history else "live_status",
@@ -304,6 +307,8 @@ class StreamlitAssistantView:
             self._render_user_choice(str(content))
         elif kind in {"progress", "live_progress"} and isinstance(content, dict):
             st.progress(float(content.get("value", 0)), text=str(content.get("text", "")))
+        elif kind == "card" and isinstance(content, AssistantCard):
+            self._render_card(content)
         else:
             st.markdown(
                 f"<div class='assistant-status'>{escape(str(content))}</div>",
@@ -324,6 +329,24 @@ class StreamlitAssistantView:
     def _render_user_choice(message: str) -> None:
         st.markdown(
             f"<div class='assistant-user-choice'><span>{escape(message)}</span></div>",
+            unsafe_allow_html=True,
+        )
+
+    @staticmethod
+    def _render_card(card: AssistantCard) -> None:
+        rows = "".join(
+            f"<div class='assistant-card-row'><span>{escape(left)}</span><strong>{escape(right)}</strong></div>"
+            for left, right in card.rows
+        )
+        bar = ""
+        if card.progress is not None:
+            value = min(100, max(0, card.progress))
+            bar = f"<div class='assistant-card-track'><span style='width:{value}%'></span></div>"
+        st.markdown(
+            "<div class='assistant-card'>"
+            f"<div class='assistant-card-title'>{escape(card.title)}</div>"
+            f"<div class='assistant-card-value'>{escape(card.value)}</div>"
+            f"<div class='assistant-card-detail'>{escape(card.detail)}</div>{bar}{rows}</div>",
             unsafe_allow_html=True,
         )
 
@@ -355,6 +378,13 @@ class StreamlitAssistantView:
               @media (prefers-reduced-motion: reduce) {
                 [class*="st-key-assistant-choice-bar-"] { animation: none; }
               }
+              .assistant-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; color:#1f2937; margin:.55rem 0 1rem; padding:1rem; }
+              .assistant-card-title { color:#4b5563; font-size:.72rem; font-weight:700; letter-spacing:.08em; }
+              .assistant-card-value { font-size:1.8rem; font-weight:750; line-height:1.2; margin-top:.25rem; }
+              .assistant-card-detail { color:#4b5563; font-size:.9rem; margin:.2rem 0 .65rem; }
+              .assistant-card-track { background:#ebedf0; border-radius:99px; height:.55rem; overflow:hidden; margin:.5rem 0 .7rem; }
+              .assistant-card-track span { background:#216e39; border-radius:99px; display:block; height:100%; }
+              .assistant-card-row { border-top:1px solid #e5e7eb; display:flex; font-size:.88rem; justify-content:space-between; padding:.38rem 0 0; margin-top:.38rem; }
             </style>
             """
         st.markdown(

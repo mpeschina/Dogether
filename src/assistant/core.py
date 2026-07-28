@@ -60,6 +60,17 @@ class AssistantChoice:
 
 
 @dataclass(frozen=True)
+class AssistantCard:
+    """A compact, data-led card displayed inline in the assistant transcript."""
+
+    title: str
+    value: str = ""
+    detail: str = ""
+    rows: tuple[tuple[str, str], ...] = ()
+    progress: float | None = None
+
+
+@dataclass(frozen=True)
 class AssistantSelection:
     story_id: str
     scene_id: str
@@ -81,6 +92,7 @@ class AssistantTurn:
     story_id: str  # Story that owns this turn.
     scene_id: str  # Scene that produced this turn.
     lines: tuple[AssistantLine, ...] = ()  # Assistant messages to show.
+    cards: tuple[AssistantCard, ...] = ()  # Inline visual result cards.
     choices: tuple[AssistantChoice, ...] = ()  # Choice buttons to show.
     choice_label: str = ""  # Label above the choices.
     control_kind: ControlKind = "choices"  # Control UI to render.

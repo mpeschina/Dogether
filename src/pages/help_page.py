@@ -87,6 +87,7 @@ def render_help(
         "has_goals": bool(goals),
         "push_enabled": bool(push_storage and push_storage.subscriptions_for_user(user_id)),
         "completed_goal_count": _completed_goal_period_count(goals, user_id),
+        "goals": goals,
     }
     context = AssistantContext(
         user_id=user_id,

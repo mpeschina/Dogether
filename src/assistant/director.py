@@ -23,6 +23,7 @@ from src.assistant.stories.greetings import GREETINGS_STORY_ID
 from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
 from src.assistant.stories.special_examples import SPECIAL_STORY_ID
 from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID
+from src.assistant.stories.weekly_summary import WEEKLY_SUMMARY_STORY_ID
 from src.assistant.stories.tutorial import (
     EXPLANATION_SCENES,
     READY_NODE,
@@ -138,6 +139,8 @@ class AssistantDirector:
             return self.stories.get(TUTORIAL_STORY_ID)
         if state.story == PUSH_REMINDER_STORY_ID:
             return self.stories.get(PUSH_REMINDER_STORY_ID)
+        if state.story == WEEKLY_SUMMARY_STORY_ID and state.status == "active":
+            return self.stories.get(WEEKLY_SUMMARY_STORY_ID)
         if state.story == STANDARD_STORY_ID and state.scene in EXPLANATION_SCENES:
             return self.stories.get(STANDARD_STORY_ID)
 

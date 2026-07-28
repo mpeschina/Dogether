@@ -39,6 +39,7 @@ from src.assistant.stories.special_examples import (
 )
 from src.assistant.stories.standard import (
     PUSH_PROMPT_EVENT_ID,
+    STANDARD_HELP_SCENE,
     STANDARD_MENU_SCENE,
     StandardStory,
 )
@@ -387,11 +388,23 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
     )
     context = context_for(state)
     menu = story.advance(context, STANDARD_MENU_SCENE, None)
+    assert [choice.label for choice in menu.choices] == [
+        "Help me with the app",
+        "Analyse my progress",
+    ]
+
+    help_menu = story.advance(
+        context,
+        STANDARD_MENU_SCENE,
+        selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "help", "Help me with the app"),
+    )
+    assert help_menu.continue_flow is True
+    menu = story.advance(context, STANDARD_HELP_SCENE, None)
     assert len(menu.choices) == 4
 
     start = story.advance(
         context,
-        STANDARD_MENU_SCENE,
+        STANDARD_HELP_SCENE,
         selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "friends", "How do I add friends?"),
     )
     updated = apply_turn(state, start)
