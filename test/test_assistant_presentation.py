@@ -200,6 +200,22 @@ def test_weekly_chart_renders_solid_selected_and_outlined_historical_bars(monkey
     assert "Week of 2026-07-20: 75% completion (selected)" in rendered[0]
 
 
+def test_weekly_chart_history_bars_are_slightly_darker_than_the_secondary_theme_color(monkeypatch) -> None:
+    rendered: list[str] = []
+    monkeypatch.setattr(
+        presentation.st,
+        "markdown",
+        lambda body, **_: rendered.append(body),
+    )
+
+    presentation.StreamlitAssistantView._render_control_styles()
+
+    assert (
+        "color-mix(in srgb, var(--secondary-background-color, #f1f5f9) 92%, #1f2937)"
+        in rendered[0]
+    )
+
+
 def test_recent_activity_markup_replaces_only_the_recent_row(monkeypatch) -> None:
     rendered: list[str] = []
     monkeypatch.setattr(presentation.st, "markdown", lambda body, **_: rendered.append(body))
