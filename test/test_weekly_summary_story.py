@@ -7,9 +7,9 @@ from src.assistant.stories.weekly_summary import (
     SUMMARY_SCENE,
     WEEKLY_SUMMARY_STORY_ID,
     WeeklySummaryStory,
-    _analyse,
-    _additional_insights,
 )
+from src.assistant.stories.weekly_summary_analysis import _analyse
+from src.assistant.stories.weekly_summary_insights import _additional_insights
 
 
 def _context(now: datetime) -> AssistantContext:
