@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 import time
 from collections.abc import Iterator, MutableMapping
 from html import escape
@@ -112,10 +113,17 @@ class StreamlitAssistantView:
                 if entry[0] != "live_progress"
             ]
         with self._live_transcript:
-            for line in turn.lines:
-                self._present_line(line)
-            for card in turn.cards:
-                self._append_and_render("card", card)
+            if turn.content:
+                for item in turn.content:
+                    if isinstance(item, AssistantLine):
+                        self._present_line(item)
+                    else:
+                        self._append_and_render("card", item)
+            else:
+                for line in turn.lines:
+                    self._present_line(line)
+                for card in turn.cards:
+                    self._append_and_render("card", card)
             for message in turn.statuses:
                 self._append_and_render(
                     "status" if turn.keep_statuses_in_history else "live_status",
@@ -320,8 +328,9 @@ class StreamlitAssistantView:
         message: str, *, placeholder: Any | None = None
     ) -> None:
         target = st if placeholder is None else placeholder
+        safe_message = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escape(message))
         target.markdown(
-            f"<div class='assistant-message'><p>{escape(message).replace(chr(10), '<br>')}</p></div>",
+            f"<div class='assistant-message'><p>{safe_message.replace(chr(10), '<br>')}</p></div>",
             unsafe_allow_html=True,
         )
 

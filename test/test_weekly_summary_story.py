@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from src.assistant.core import AssistantContext, AssistantSelection
+from src.assistant.core import AssistantCard, AssistantContext, AssistantLine, AssistantSelection
 from src.assistant.state import AssistantState
 from src.assistant.stories.weekly_summary import (
     SELECT_SCENE,
@@ -57,3 +57,22 @@ def test_thursday_offers_this_or_last_week_and_marks_current_week_partial() -> N
     assert [choice.label for choice in prompt.choices] == ["This week", "Last week"]
     assert turn.lines[0].text == "This week is still moving."
     assert turn.cards[0].title == "COMPLETION SO FAR"
+
+
+def test_completed_summary_groups_analysis_and_keeps_cards_adjacent() -> None:
+    turn = WeeklySummaryStory().advance(
+        _context(datetime(2026, 7, 27, tzinfo=timezone.utc)), SELECT_SCENE, None
+    )
+
+    assert [type(item) for item in turn.content[:5]] == [
+        AssistantLine,
+        AssistantLine,
+        AssistantLine,
+        AssistantCard,
+        AssistantLine,
+    ]
+    assert turn.content[2].text == "First, the big picture."
+    assert turn.content[3].title == "WEEKLY COMPLETION"
+    assert turn.content[4].text.startswith("**")
+    assert "\n" in turn.content[-1].text
+    assert len(turn.lines) <= 12

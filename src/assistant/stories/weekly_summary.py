@@ -83,7 +83,8 @@ class WeeklySummaryStory(AssistantStory):
         result = _analyse(context, start, partial)
         turn = self._summary_content(result)
         opening = (AssistantLine("This week is still moving."), AssistantLine("Here’s the story so far.", typing_delay=0.6)) if partial else (AssistantLine("Let’s look at last week."), AssistantLine("A few things stand out.", typing_delay=0.6))
-        return AssistantTurn(**{**turn.__dict__, "lines": (*opening, *turn.lines), "event_updates": {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial}}, "state_story": self.story_id, "state_scene": SUMMARY_SCENE, "state_status": "active"})
+        content = (*opening, *turn.content) if turn.content else ()
+        return AssistantTurn(**{**turn.__dict__, "lines": (*opening, *turn.lines), "content": content, "event_updates": {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial}}, "state_story": self.story_id, "state_scene": SUMMARY_SCENE, "state_status": "active"})
 
     def _summary_content(self, result: WeekResult) -> AssistantTurn:
         if not result.active:
@@ -96,24 +97,40 @@ class WeeklySummaryStory(AssistantStory):
         if result.active < 3:
             observation = "You completed both active goals." if result.fulfilled == result.active else "A fuller story will appear as the week fills in."
             return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=(AssistantLine("There isn’t much data yet."), AssistantLine("But one thing already stands out.", typing_delay=0.6), AssistantLine(observation)), cards=(headline,), choices=(AssistantChoice("done", "Done"),))
-        lines = [AssistantLine("First, the big picture."), AssistantLine(_headline_text(result))]
-        cards = [headline]
+        content: list[AssistantLine | AssistantCard] = [
+            AssistantLine("First, the big picture."),
+            headline,
+            AssistantLine(_headline_analysis(result)),
+        ]
         if result.previous_rate is not None and not result.partial:
             diff = result.rate - result.previous_rate
-            lines.append(AssistantLine("And you moved forward." if diff >= 5 else "Compared with the week before:" if diff <= -5 else "The result was close to last week."))
-            cards.append(AssistantCard("WEEK TO WEEK", f"{diff:+.0f} percentage points", "", (("Previous week", f"{result.previous_rate:.0f}%"), ("Selected week", f"{result.rate:.0f}%"))))
+            content.append(AssistantCard("WEEK TO WEEK", f"{diff:+.0f} percentage points", "", (("Previous week", f"{result.previous_rate:.0f}%"), ("Selected week", f"{result.rate:.0f}%"))))
+            comparison = _comparison_analysis(result, diff)
+            if comparison:
+                content.append(AssistantLine(comparison))
         strongest = max(result.goals, key=lambda goal: (goal.rate, goal.active))
-        lines.extend((AssistantLine("One goal carried the week."), AssistantLine(f"{strongest.name} did not miss once." if strongest.rate >= 100 else f"{strongest.name} was your steadiest goal.")))
-        cards.append(AssistantCard("STRONGEST GOAL", strongest.name, f"{strongest.fulfilled} of {strongest.active} periods completed", progress=strongest.rate))
+        content.extend((
+            AssistantLine(f"{strongest.name} led the way."),
+            AssistantCard("STRONGEST GOAL", strongest.name, f"{strongest.fulfilled} of {strongest.active} periods completed", progress=strongest.rate),
+            AssistantLine(_strongest_analysis(strongest)),
+        ))
         day_rows = tuple((day.strftime("%a").upper(), "—" if active == 0 else f"{round(done * 100 / active)}%") for day, active, done in result.daily)
-        lines.append(AssistantLine("Here’s how the week moved."))
-        cards.append(AssistantCard("DAILY RHYTHM", "", "No active goals are shown as —", day_rows))
+        content.extend((
+            AssistantLine("Here’s how the week moved."),
+            AssistantCard("DAILY RHYTHM", "", "No active goals are shown as —", day_rows),
+            AssistantLine(_rhythm_analysis(result)),
+        ))
         weak = min((goal for goal in result.goals if goal.active), key=lambda goal: goal.rate)
         if weak.rate < 60 and weak != strongest:
-            lines.extend((AssistantLine("One goal had the hardest week."), AssistantLine(f"{weak.name} lost some momentum.")))
-            cards.append(AssistantCard("NEEDS ATTENTION", weak.name, f"{weak.fulfilled} of {weak.active} periods completed", progress=weak.rate))
-        lines.extend(_closing(result))
-        return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=tuple(lines), cards=tuple(cards), choices=(AssistantChoice("details", "See goal details"), AssistantChoice("done", "Done")))
+            content.extend((
+                AssistantLine("One goal needs a closer look.", typing_delay=0.6),
+                AssistantCard("NEEDS ATTENTION", weak.name, f"{weak.fulfilled} of {weak.active} periods completed", progress=weak.rate),
+                AssistantLine(_weak_analysis(weak)),
+            ))
+        content.extend(_closing(result))
+        lines = tuple(item for item in content if isinstance(item, AssistantLine))
+        cards = tuple(item for item in content if isinstance(item, AssistantCard))
+        return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=(AssistantChoice("details", "See goal details"), AssistantChoice("done", "Done")))
 
     def _details_turn(self, result: WeekResult) -> AssistantTurn:
         rows = tuple((goal.name, f"{goal.fulfilled} / {goal.active} · {goal.rate:.0f}%") for goal in sorted(result.goals, key=lambda goal: (-goal.active, -goal.rate)))
@@ -176,8 +193,45 @@ def _now(context: AssistantContext) -> datetime:
 def _headline_text(result: WeekResult) -> str:
     if result.partial: return "You’re currently on a strong pace." if result.rate >= 75 else "The week is still open." if result.rate >= 50 else "There is still room to change the story."
     return "That was a very strong week." if result.rate >= 90 else "That was a solid week." if result.rate >= 75 else "More worked than didn’t." if result.rate >= 50 else "The week was uneven." if result.rate >= 25 else "The targets had a difficult week."
+
+
+def _headline_analysis(result: WeekResult) -> str:
+    headline = _headline_text(result)
+    label = "so far" if result.partial else "finished at"
+    return f"**{headline}**\nYou completed **{result.fulfilled} of {result.active}** active goal periods.\nThe week {label} **{result.rate:.0f}%**."
+
+
+def _comparison_analysis(result: WeekResult, diff: float) -> str:
+    if diff >= 5:
+        return f"**A clear step forward.**\nCompletion increased by **{diff:.0f} percentage points**\nfrom the week before."
+    if diff <= -5:
+        return f"**The result dropped this week.**\nCompletion fell by **{abs(diff):.0f} percentage points**\nfrom the week before."
+    return "**Almost the same result.**\nThe score barely moved,\nbut the daily rhythm tells the fuller story."
+
+
+def _strongest_analysis(goal: GoalResult) -> str:
+    if goal.rate >= 100:
+        return f"**Every relevant period was completed.**\n**{goal.name}** did not miss once."
+    return f"**Your steadiest goal this week.**\n**{goal.name}** completed **{goal.fulfilled} of {goal.active}** periods."
+
+
+def _rhythm_analysis(result: WeekResult) -> str:
+    active_days = [(day, done / active) for day, active, done in result.daily if active]
+    if not active_days:
+        return "**The rhythm is still taking shape.**\nThere is more of the week to fill in."
+    best_day, best_rate = max(active_days, key=lambda item: item[1])
+    worst_day, worst_rate = min(active_days, key=lambda item: item[1])
+    if best_rate - worst_rate < .2:
+        return "**Your progress was fairly steady.**\nThere was no sharp inactive gap,\nand most days contributed something."
+    return f"**{best_day.strftime('%A')} was strongest.**\n{worst_day.strftime('%A')} slowed things down,\nbut the rest of the week recovered."
+
+
+def _weak_analysis(goal: GoalResult) -> str:
+    return f"**{goal.name} had the hardest week.**\nIt completed **{goal.fulfilled} of {goal.active}** periods\nand needs a little more momentum."
+
+
 def _closing(result: WeekResult) -> tuple[AssistantLine, ...]:
-    if result.partial: return (AssistantLine("The story is not finished yet."), AssistantLine("Today can still change the result.", typing_delay=0.6))
-    if result.rate >= 90: return (AssistantLine("That was a serious week."), AssistantLine("You made consistency look easy.", typing_delay=0.6))
-    if result.rate < 25: return (AssistantLine("This week did not go to plan."), AssistantLine("The next one does not have to repeat it.", typing_delay=0.6))
-    return (AssistantLine("Not perfect."), AssistantLine("Very steady.", typing_delay=0.6), AssistantLine("Steady is how habits become normal.", typing_delay=0.6))
+    if result.partial: return (AssistantLine("**The story is not finished yet.**\n\nToday can still change the result.", typing_delay=0.6),)
+    if result.rate >= 90: return (AssistantLine("**That was a serious week.**\n\nYou made consistency look easy.", typing_delay=0.6),)
+    if result.rate < 25: return (AssistantLine("**This week did not go to plan.**\n\nThe next one does not have to repeat it.", typing_delay=0.6),)
+    return (AssistantLine("**Not perfect. Very steady.**\n\nAnd steady is how habits\nbecome normal.", typing_delay=0.6),)

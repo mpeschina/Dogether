@@ -93,6 +93,9 @@ class AssistantTurn:
     scene_id: str  # Scene that produced this turn.
     lines: tuple[AssistantLine, ...] = ()  # Assistant messages to show.
     cards: tuple[AssistantCard, ...] = ()  # Inline visual result cards.
+    # Ordered content for stories whose messages and cards must alternate.
+    # Older stories can continue to use ``lines`` and ``cards``.
+    content: tuple[AssistantLine | AssistantCard, ...] = ()
     choices: tuple[AssistantChoice, ...] = ()  # Choice buttons to show.
     choice_label: str = ""  # Label above the choices.
     control_kind: ControlKind = "choices"  # Control UI to render.
