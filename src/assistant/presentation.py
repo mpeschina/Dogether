@@ -73,6 +73,13 @@ class StreamlitAssistantView:
 
         self._render_control_styles()
         for kind, content in self._transcript:
+            # A submitted control may replace these entries in this same run.
+            # Avoid rendering stale live UI before `present` updates it.
+            if (
+                self.selection is not None
+                and kind in {"live_status", "live_progress"}
+            ):
+                continue
             self._render_transcript_entry(kind, content)
 
         self._live_transcript = st.container()
@@ -91,18 +98,33 @@ class StreamlitAssistantView:
     def present(self, turn: AssistantTurn) -> None:
         """Commit and animate one turn, then expose its next control."""
         self.clear_control()
+        if turn.lines:
+            self._transcript[:] = [
+                entry
+                for entry in self._transcript
+                if entry[0] != "live_status"
+            ]
+        if turn.progress:
+            self._transcript[:] = [
+                entry
+                for entry in self._transcript
+                if entry[0] != "live_progress"
+            ]
         with self._live_transcript:
             for line in turn.lines:
                 self._present_line(line)
             for message in turn.statuses:
-                self._append_and_render("status", message)
+                self._append_and_render(
+                    "status" if turn.keep_statuses_in_history else "live_status",
+                    message,
+                )
             for progress in turn.progress:
                 self._append_and_render(
-                    "progress",
+                    "live_progress",
                     {"value": progress.value, "text": progress.text},
                 )
             if turn.assistant_leaves:
-                self._append_and_render("status", "Assistant left the chat")
+                self._append_and_render("live_status", "Assistant left the chat")
                 st.session_state[ASSISTANT_LEFT_THIS_VISIT_KEY] = True
 
         if turn.destination:
@@ -280,7 +302,7 @@ class StreamlitAssistantView:
             self._render_assistant_message(str(content))
         elif kind in {"user", "user_choice"}:
             self._render_user_choice(str(content))
-        elif kind == "progress" and isinstance(content, dict):
+        elif kind in {"progress", "live_progress"} and isinstance(content, dict):
             st.progress(float(content.get("value", 0)), text=str(content.get("text", "")))
         else:
             st.markdown(

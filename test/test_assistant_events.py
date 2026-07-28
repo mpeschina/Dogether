@@ -31,7 +31,10 @@ from src.assistant.stories.push_reminder import PushReminderStory
 from src.assistant.stories.special_examples import (
     BUTTON_TEST_EVENT_ID,
     CLICK_CHALLENGE_EVENT_ID,
+    PROGRESS_BAR_CLICK_COUNT,
+    PROGRESS_BAR_COUNT,
     SPECIAL_SEQUENCE_ID,
+    STATUS_CLICK_COUNT,
     SpecialExampleStory,
 )
 from src.assistant.stories.standard import (
@@ -549,7 +552,12 @@ def test_special_story_uses_choice_and_send_control_rounds() -> None:
 
     click_state = replace(
         state,
-        events={CLICK_CHALLENGE_EVENT_ID: {"active": True, "clicks": 10}},
+        events={
+            CLICK_CHALLENGE_EVENT_ID: {
+                "active": True,
+                "clicks": STATUS_CLICK_COUNT,
+            }
+        },
     )
     send = story.advance(
         context_for(click_state),
@@ -562,7 +570,78 @@ def test_special_story_uses_choice_and_send_control_rounds() -> None:
         ),
     )
     assert send.control_kind == "send"
-    assert send.progress[0].text == "1 / 40"
+    assert send.progress[0].text == f"1 / {PROGRESS_BAR_CLICK_COUNT}"
+
+
+def test_special_click_challenge_keeps_statuses_and_reveals_bars_sequentially() -> None:
+    story = SpecialExampleStory()
+    state = AssistantState(
+        mode=AssistantMode.SPECIAL,
+        events={CLICK_CHALLENGE_EVENT_ID: {"active": True, "clicks": 0}},
+    )
+
+    for clicks in range(1, STATUS_CLICK_COUNT + 1):
+        turn = story.advance(
+            context_for(state),
+            CLICK_CHALLENGE_EVENT_ID,
+            selection(story.story_id, CLICK_CHALLENGE_EVENT_ID, "send", "Send"),
+        )
+        assert turn.statuses == (f"{clicks}x",)
+        assert turn.progress == ()
+        assert turn.keep_statuses_in_history
+        state = apply_turn(state, turn)
+
+    first_bar = story.advance(
+        context_for(state),
+        CLICK_CHALLENGE_EVENT_ID,
+        selection(story.story_id, CLICK_CHALLENGE_EVENT_ID, "send", "Send"),
+    )
+    assert [entry.text for entry in first_bar.progress] == [
+        f"1 / {PROGRESS_BAR_CLICK_COUNT}"
+    ]
+
+    almost_second_bar = story.advance(
+        context_for(
+            replace(
+                state,
+                events={
+                    CLICK_CHALLENGE_EVENT_ID: {
+                        "active": True,
+                        "clicks": STATUS_CLICK_COUNT + PROGRESS_BAR_CLICK_COUNT,
+                    }
+                },
+            )
+        ),
+        CLICK_CHALLENGE_EVENT_ID,
+        selection(story.story_id, CLICK_CHALLENGE_EVENT_ID, "send", "Send"),
+    )
+    assert [entry.text for entry in almost_second_bar.progress] == [
+        f"{PROGRESS_BAR_CLICK_COUNT} / {PROGRESS_BAR_CLICK_COUNT}",
+        f"1 / {PROGRESS_BAR_CLICK_COUNT}",
+    ]
+
+    final = story.advance(
+        context_for(
+            replace(
+                state,
+                events={
+                    CLICK_CHALLENGE_EVENT_ID: {
+                        "active": True,
+                        "clicks": (
+                            STATUS_CLICK_COUNT
+                            + PROGRESS_BAR_CLICK_COUNT * PROGRESS_BAR_COUNT
+                            - 1
+                        ),
+                    }
+                },
+            )
+        ),
+        CLICK_CHALLENGE_EVENT_ID,
+        selection(story.story_id, CLICK_CHALLENGE_EVENT_ID, "send", "Send"),
+    )
+    assert [entry.text for entry in final.progress] == [
+        f"{PROGRESS_BAR_CLICK_COUNT} / {PROGRESS_BAR_CLICK_COUNT}"
+    ] * PROGRESS_BAR_COUNT
 
 
 def test_mode_switch_preserves_achievements_but_restarts_conversation() -> None:

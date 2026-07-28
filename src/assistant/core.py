@@ -10,7 +10,9 @@ from src.assistant.state import AssistantState
 
 
 ControlKind = Literal["choices", "send"]
-TranscriptKind = Literal["assistant", "user", "status", "progress"]
+TranscriptKind = Literal[
+    "assistant", "user", "status", "progress", "live_status", "live_progress"
+]
 
 
 class SharedStoryStateStore(Protocol):
@@ -86,6 +88,8 @@ class AssistantTurn:
     record_selection: bool = True  # Whether to add the choice to history.
     statuses: tuple[str, ...] = ()  # Status messages to show.
     progress: tuple[ProgressEntry, ...] = ()  # Progress indicators to show.
+    # Keep statuses in conversation history rather than treating them as live UI feedback.
+    keep_statuses_in_history: bool = False
     assistant_leaves: bool = False  # Whether the assistant leaves the chat.
     destination: str | None = None  # Page to open next.
     completed: bool = False  # Whether to save state durably.

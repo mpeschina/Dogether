@@ -569,6 +569,7 @@ def _friend_explanation(
                     owner,
                     scene_id,
                     statuses=("I couldn't create a link right now.",),
+                    keep_statuses_in_history=True,
                     choices=_choices(
                         "Create a Link for me", "Show me the Friends Page", "Got it"
                     ),

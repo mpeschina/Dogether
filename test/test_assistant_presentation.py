@@ -88,7 +88,43 @@ def test_send_control_is_restored_without_recording_player_bubbles() -> None:
     assert not app.exception
     assert [button.label for button in app.button] == ["Send"]
     assert app.session_state.filtered_state["assistant.transcript"] == [
-        ("status", "Sent"),
+        ("live_status", "Sent"),
+    ]
+
+
+def test_live_statuses_are_removed_when_assistant_speaks() -> None:
+    app_source = """
+import streamlit as st
+import src.assistant.presentation as presentation
+from src.assistant.core import AssistantLine, AssistantTurn
+
+view = presentation.StreamlitAssistantView()
+if view.selection is not None:
+    count = st.session_state.get('count', 0) + 1
+    st.session_state.count = count
+    if count == 1:
+        view.present(AssistantTurn(
+            story_id='test', scene_id='send', control_kind='send',
+            record_selection=False, statuses=('Working',),
+        ))
+    else:
+        view.present(AssistantTurn(
+            story_id='test', scene_id='send', control_kind='send',
+            record_selection=False, lines=(AssistantLine('Finished'),),
+        ))
+elif not view.waiting_for_input:
+    view.present(AssistantTurn(
+        story_id='test', scene_id='send', control_kind='send',
+        record_selection=False,
+    ))
+view.finish()
+"""
+    app = AppTest.from_string(app_source, default_timeout=10).run()
+    app.button[0].click().run()
+    app.button[0].click().run()
+
+    assert app.session_state.filtered_state["assistant.transcript"] == [
+        ("assistant", "Finished"),
     ]
 
 
@@ -99,7 +135,10 @@ from src.assistant.core import AssistantTurn
 
 view = presentation.StreamlitAssistantView()
 if view.selection is not None:
-    view.present(AssistantTurn(story_id='test', scene_id='done', statuses=('Done',)))
+    view.present(AssistantTurn(
+        story_id='test', scene_id='done', statuses=('Done',),
+        keep_statuses_in_history=True,
+    ))
 elif not view.waiting_for_input:
     view.present(AssistantTurn(
         story_id='test', scene_id='start', control_kind='send',
