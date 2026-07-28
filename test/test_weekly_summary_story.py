@@ -11,7 +11,7 @@ from src.assistant.stories.weekly_summary import (
     _streak_content,
 )
 from src.assistant.stories.weekly_summary_analysis import _analyse
-from src.assistant.stories.weekly_summary_insights import _additional_insights
+from src.assistant.stories.weekly_summary_insights import _additional_insights, _used_existing_insights
 
 
 def _context(now: datetime) -> AssistantContext:
@@ -99,10 +99,19 @@ def test_daily_rhythm_supplies_progress_for_each_active_day() -> None:
         datetime(2026, 7, 20, tzinfo=timezone.utc).date(),
         False,
     )
-    turn = WeeklySummaryStory()._remaining_summary(result)
-    card = next(card for card in turn.cards if card.title == "DAILY RHYTHM")
+    rhythm = next(
+        insight for insight in _additional_insights(result, set(), set())
+        if insight.identifier == "daily_rhythm"
+    )
+    card = next(card for card in rhythm.content if isinstance(card, AssistantCard))
 
     assert card.row_progress == (100, 100, 0, 100, 100, 100, 100)
+
+
+def test_used_insights_recognize_shared_insight_types() -> None:
+    used_types, _ = _used_existing_insights((AssistantCard("SHARED MOMENTUM"),))
+
+    assert "shared_momentum" in used_types
 
 
 def test_week_to_week_chart_shows_selected_week_and_nineteen_prior_weeks() -> None:

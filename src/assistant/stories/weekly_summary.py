@@ -7,7 +7,7 @@ from typing import Final
 
 from src.assistant.core import AssistantCard, AssistantChoice, AssistantContext, AssistantLine, AssistantSelection, AssistantStory, AssistantTurn
 from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _momentum_halves, _now, _week_start
-from src.assistant.stories.weekly_summary_insights import _additional_insights, _used_existing_insights
+from src.assistant.stories.weekly_summary_insights import _additional_insights, _shared_insights, _used_existing_insights
 from src.db.persistence_helpers import APP_ZONE
 from src.pages.common_helpers import compact_goal_activity_html
 
@@ -176,29 +176,10 @@ class WeeklySummaryStory(AssistantStory):
                 AssistantCard("STRONGEST GOAL", strongest.name, f"{strongest.fulfilled} of {strongest.active} periods completed", progress=strongest.rate),
                 AssistantLine(_strongest_analysis(strongest)),
             ))
-        if any(active for _, active, _ in result.daily):
-            day_rows = tuple(
-                (
-                    day.strftime("%a").upper(),
-                    "—" if active == 0 else f"{round(done * 100 / active)}%",
-                )
-                for day, active, done in result.daily
-            )
-            day_progress = tuple(
-                None if active == 0 else done * 100 / active
-                for _, active, done in result.daily
-            )
-            content.extend((
-                AssistantLine("Here’s how the week moved."),
-                AssistantCard(
-                    "DAILY RHYTHM",
-                    "",
-                    "No active goals are shown as —",
-                    day_rows,
-                    row_progress=day_progress,
-                ),
-                AssistantLine(_rhythm_analysis(result)),
-            ))
+        used_types, used_subjects = _used_existing_insights(content)
+        shared_candidates = _shared_insights(result, used_subjects, used_types)
+        if shared_candidates:
+            content.extend(random.choice(shared_candidates).content)
         near_miss = _select_near_miss(result)
         weak = min((goal for goal in result.goals if goal.active), key=lambda goal: (goal.rate, -goal.active))
         if near_miss is not None:
@@ -230,12 +211,6 @@ class WeeklySummaryStory(AssistantStory):
         if selected_extra is None and candidates:
             selected_extra = random.choice(candidates)
         if selected_extra is not None:
-            if selected_extra.identifier == "momentum":
-                # The dedicated card owns the start/finish observation.
-                for index, item in enumerate(content[:-1]):
-                    if isinstance(item, AssistantCard) and item.title == "DAILY RHYTHM" and isinstance(content[index + 1], AssistantLine):
-                        content[index + 1] = AssistantLine("The daily pattern shows where the week asked more of you.")
-                        break
             content.extend(selected_extra.content)
         content.extend(_closing(result))
         lines = tuple(item for item in content if isinstance(item, AssistantLine))

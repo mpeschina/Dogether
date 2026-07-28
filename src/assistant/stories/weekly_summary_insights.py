@@ -37,12 +37,22 @@ def _used_existing_insights(content: list[AssistantLine | AssistantCard] | tuple
         elif title == "GOAL CHANGE": types.add("goal_decline"); subjects.add(item.value)
         elif title == "OVER TARGET": types.add("over_target"); subjects.add(item.value)
         elif title == "BY SCHEDULE": types.add("schedule_breakdown")
+        elif title == "SHARED MOMENTUM": types.add("shared_momentum")
+        elif title == "SHARED SUCCESS": types.add("shared_success")
+        elif title == "SHARED GOAL": types.add("friend_comparison")
+        elif title == "SHARED STREAKS": types.add("shared_streak")
+        elif title == "GROUP CONSISTENCY": types.add("group_consistency")
+        elif title == "SHARED RECOVERY": types.add("friend_recovery")
+        elif title == "FRIEND SUPPORT": types.add("friend_support")
     return types, subjects
 
 
 def _additional_insights(result: WeekResult, used_types: set[str], used_subjects: set[str]) -> list[AdditionalInsight]:
     """Return valid, non-overlapping optional insights in the prescribed broad order."""
     candidates: list[AdditionalInsight] = []
+    rhythm = _daily_rhythm_insight(result)
+    if rhythm and "daily_rhythm" not in used_types:
+        candidates.append(rhythm)
     record = _personal_record_insight(result)
     if record and "personal_record" not in used_types:
         candidates.append(record)
@@ -70,11 +80,13 @@ def _additional_insights(result: WeekResult, used_types: set[str], used_subjects
     schedule = _schedule_breakdown_insight(result)
     if schedule:
         candidates.append(schedule)
-    candidates.extend(_shared_insights(result, used_subjects))
+    candidates.extend(_shared_insights(result, used_subjects, used_types))
     return candidates
 
 
-def _shared_insights(result: WeekResult, used_subjects: set[str]) -> list[AdditionalInsight]:
+def _shared_insights(
+    result: WeekResult, used_subjects: set[str], used_types: set[str] | None = None
+) -> list[AdditionalInsight]:
     """One strongest, independently useful candidate for each social pattern."""
     candidates = [
         _matching_completions_insight(result),
@@ -85,7 +97,45 @@ def _shared_insights(result: WeekResult, used_subjects: set[str]) -> list[Additi
         _friend_recovery_insight(result),
         _reaction_insight(result),
     ]
-    return [candidate for candidate in candidates if candidate is not None]
+    used_types = used_types or set()
+    return [
+        candidate
+        for candidate in candidates
+        if candidate is not None and candidate.identifier.split(":", 1)[0] not in used_types
+    ]
+
+
+def _daily_rhythm_insight(result: WeekResult) -> AdditionalInsight | None:
+    if not any(active for _, active, _ in result.daily):
+        return None
+    rows = tuple(
+        (day.strftime("%a").upper(), "—" if active == 0 else f"{round(done * 100 / active)}%")
+        for day, active, done in result.daily
+    )
+    row_progress = tuple(
+        None if active == 0 else done * 100 / active
+        for _, active, done in result.daily
+    )
+    return AdditionalInsight("daily_rhythm", frozenset(), (
+        AssistantLine("Here’s how the week moved."),
+        AssistantCard(
+            "DAILY RHYTHM",
+            "",
+            "No active goals are shown as —",
+            rows,
+            row_progress=row_progress,
+        ),
+        AssistantLine(_daily_rhythm_analysis(result)),
+    ))
+
+
+def _daily_rhythm_analysis(result: WeekResult) -> str:
+    daily = [(day, done * 100 / active) for day, active, done in result.daily if active]
+    strongest = max(daily, key=lambda row: row[1])
+    weakest = min(daily, key=lambda row: row[1])
+    if strongest[1] - weakest[1] < 20:
+        return "Your daily completion stayed fairly even."
+    return f"{strongest[0].strftime('%A')} was strongest; {weakest[0].strftime('%A')} was more difficult."
 
 
 def _period_map(participant: SharedParticipantResult) -> dict[date, tuple[bool, bool, int, int]]:
@@ -430,4 +480,3 @@ def _longest_date_streak(days: list[date]) -> list[date]:
 def _date_span(days: list[date]) -> str:
     if len(days) == 1: return days[0].strftime("%A")
     return f"{days[0].strftime('%A')}–{days[-1].strftime('%A')}"
-
