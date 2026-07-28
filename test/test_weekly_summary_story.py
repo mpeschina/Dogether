@@ -60,6 +60,17 @@ def test_thursday_offers_this_or_last_week_and_marks_current_week_partial() -> N
     assert turn.cards[0].title == "COMPLETION SO FAR"
 
 
+def test_week_selection_uses_the_apps_local_weekday() -> None:
+    story = WeeklySummaryStory()
+    # Wednesday in UTC, but already Thursday in the app's Europe/Berlin zone.
+    context = _context(datetime(2026, 7, 29, 22, 30, tzinfo=timezone.utc))
+
+    prompt = story.advance(context, SELECT_SCENE, None)
+
+    assert prompt.scene_id == SELECT_SCENE
+    assert [choice.label for choice in prompt.choices] == ["This week", "Last week"]
+
+
 def test_completed_summary_groups_analysis_and_keeps_cards_adjacent() -> None:
     turn = WeeklySummaryStory().advance(
         _context(datetime(2026, 7, 27, tzinfo=timezone.utc)), SELECT_SCENE, None
@@ -133,3 +144,232 @@ def test_streak_break_and_restart_are_detected_inside_selected_week() -> None:
     streak = _analyse(context, datetime(2026, 7, 20, tzinfo=timezone.utc).date(), False).goals[0].streak
 
     assert (streak.ended, streak.ended_value, streak.restarted, streak.restart_delay, streak.value) == (True, 10, True, 1, 3)
+
+
+def test_valid_allowance_is_excused_without_being_counted_as_completion() -> None:
+    outcomes = {
+        "2026-07-20": {
+            "completed": True,
+            "fulfilled": True,
+            "skipped": False,
+            "current": 10,
+            "target": 10,
+        },
+        "2026-07-21": {
+            "completed": False,
+            "fulfilled": True,
+            "skipped": True,
+            "current": 0,
+            "target": 10,
+        },
+        "2026-07-22": {
+            "completed": False,
+            "fulfilled": False,
+            "skipped": True,
+            "current": 0,
+            "target": 10,
+        },
+    }
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="help",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "goals": [
+                {
+                    "description": "Exercise",
+                    "schedule_class": "daily_x_per_week",
+                    "participants": {"alice": {"period_outcomes": outcomes}},
+                }
+            ]
+        },
+    )
+
+    result = _analyse(context, datetime(2026, 7, 20, tzinfo=timezone.utc).date(), False)
+
+    assert (result.fulfilled, result.active, result.skipped, result.rate) == (1, 2, 1, 50)
+    assert result.daily[1][1:] == (0, 0)
+    assert result.daily[2][1:] == (1, 0)
+
+
+def test_near_miss_is_selected_as_a_helpful_focus_insight() -> None:
+    outcomes = {
+        f"2026-07-{day:02d}": {
+            "completed": day != 22,
+            "fulfilled": day != 22,
+            "skipped": False,
+            "current": 9 if day == 22 else 10,
+            "target": 10,
+            "percent": 90 if day == 22 else 100,
+        }
+        for day in range(20, 27)
+    }
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="help",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "goals": [
+                {
+                    "description": "Reading",
+                    "participants": {"alice": {"period_outcomes": outcomes}},
+                }
+            ]
+        },
+    )
+
+    turn = WeeklySummaryStory().advance(context, SELECT_SCENE, None)
+
+    near_miss = next(card for card in turn.cards if card.title == "NEAR MISS")
+    assert near_miss.value == "Reading"
+    assert near_miss.progress == 90
+    assert "1 short" in next(
+        line.text for line in turn.lines if "binary score" in line.text
+    )
+
+
+def test_substantial_daily_goal_outranks_a_perfect_weekly_one_off() -> None:
+    daily = {
+        f"2026-07-{day:02d}": {"completed": day != 22, "fulfilled": day != 22}
+        for day in range(20, 27)
+    }
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="help",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "goals": [
+                {
+                    "description": "Walking",
+                    "schedule_class": "daily",
+                    "participants": {"alice": {"period_outcomes": daily}},
+                },
+                {
+                    "description": "Weekly planning",
+                    "schedule_class": "weekly",
+                    "participants": {
+                        "alice": {
+                            "period_outcomes": {
+                                "2026-07-20": {"completed": True, "fulfilled": True}
+                            }
+                        }
+                    },
+                },
+            ]
+        },
+    )
+
+    turn = WeeklySummaryStory().advance(context, SELECT_SCENE, None)
+
+    strongest = next(card for card in turn.cards if card.title == "STRONGEST GOAL")
+    assert strongest.value == "Walking"
+
+
+def test_week_result_exposes_perfect_and_progress_days() -> None:
+    outcomes = {
+        "2026-07-20": {"completed": True, "fulfilled": True, "current": 10, "target": 10},
+        "2026-07-21": {"completed": False, "fulfilled": False, "current": 8, "target": 10},
+        "2026-07-22": {"completed": False, "fulfilled": False, "current": 0, "target": 10},
+    }
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="help",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "goals": [
+                {
+                    "description": "Walking",
+                    "participants": {"alice": {"period_outcomes": outcomes}},
+                }
+            ]
+        },
+    )
+
+    result = _analyse(context, datetime(2026, 7, 20, tzinfo=timezone.utc).date(), False)
+
+    assert result.perfect_days == 1
+    assert result.active_days == 2
+
+
+def test_week_comparison_keeps_goals_that_were_only_active_last_week() -> None:
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="help",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "goals": [
+                {
+                    "description": "Previous goal",
+                    "participants": {
+                        "alice": {
+                            "period_outcomes": {
+                                "2026-07-13": {"completed": True, "fulfilled": True},
+                                "2026-07-14": {"completed": False, "fulfilled": False},
+                            }
+                        }
+                    },
+                },
+                {
+                    "description": "Current goal",
+                    "participants": {
+                        "alice": {
+                            "period_outcomes": {
+                                "2026-07-20": {"completed": True, "fulfilled": True},
+                            }
+                        }
+                    },
+                },
+            ]
+        },
+    )
+
+    result = _analyse(context, datetime(2026, 7, 20, tzinfo=timezone.utc).date(), False)
+
+    assert result.previous_active == 2
+    assert result.previous_rate == 50
+
+
+def test_weekly_period_is_not_mislabelled_as_monday_activity() -> None:
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="help",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "goals": [
+                {
+                    "description": "Weekly planning",
+                    "schedule_class": "weekly",
+                    "participants": {
+                        "alice": {
+                            "period_outcomes": {
+                                "2026-07-20": {"completed": True, "fulfilled": True},
+                            }
+                        }
+                    },
+                }
+            ]
+        },
+    )
+
+    result = _analyse(context, datetime(2026, 7, 20, tzinfo=timezone.utc).date(), False)
+
+    assert result.fulfilled == 1
+    assert all(active == 0 for _, active, _ in result.daily)
