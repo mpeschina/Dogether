@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+import random
 from typing import Any, Final
 
 from src.assistant.core import AssistantCard, AssistantChoice, AssistantContext, AssistantLine, AssistantSelection, AssistantStory, AssistantTurn
@@ -25,6 +26,7 @@ class GoalResult:
     streak: "StreakResult"
     near_misses: tuple[tuple[date, float, int, int], ...] = ()
     schedule_class: str = "daily"
+    periods: tuple[tuple[date, bool, int, int], ...] = ()
 
     @property
     def rate(self) -> float:
@@ -79,6 +81,10 @@ class WeekResult:
     previous_active: int = 0
     previous_fulfilled: int = 0
     progress_days: tuple[date, ...] = ()
+    # Each row is (date, fulfilled, active, current, target, goal name, schedule).
+    period_data: tuple[tuple[date, bool, bool, int, int, str, str], ...] = ()
+    history: tuple[tuple[date, int, int], ...] = ()
+    historical_daily: tuple[tuple[date, bool, bool], ...] = ()
 
     @property
     def rate(self) -> float:
@@ -123,27 +129,34 @@ class WeeklySummaryStory(AssistantStory):
         selected = context.state.events.get(WEEK_SELECTION_EVENT_ID, {})
         start = _date(selected.get("start")) if isinstance(selected, dict) else None
         partial = bool(selected.get("partial")) if isinstance(selected, dict) else False
+        extra_id = str(selected.get("extra", "")) if isinstance(selected, dict) else ""
         if start is None:
             return self.advance(context, SELECT_SCENE, None)
         result = _analyse(context, start, partial)
         if scene == DETAILS_SCENE:
             if selection and selection.choice_id == "done":
                 return AssistantTurn(self.story_id, DETAILS_SCENE, completed=True, state_story=self.story_id, state_scene=DETAILS_SCENE, state_status="completed")
+            if selection and selection.choice_id == "all_insights":
+                return self._all_insights_turn(result, str(selected.get("extra", "")), True)
             return self._details_turn(result)
         if selection and selection.choice_id == "details":
-            return self._details_turn(result)
+            return self._details_turn(result, start, partial, extra_id)
+        if selection and selection.choice_id == "continue":
+            return self._remaining_summary(result, extra_id, start, partial)
+        if selection and selection.choice_id == "all_insights":
+            return self._all_insights_turn(result, extra_id, bool(selected.get("details_seen", False)))
         if selection and selection.choice_id == "done":
             return AssistantTurn(self.story_id, SUMMARY_SCENE, completed=True, state_story=WEEKLY_SUMMARY_STORY_ID, state_scene=SUMMARY_SCENE, state_status="completed")
-        return self._summary_content(result)
+        return self._opening_summary(result)
 
     def _summary_turn(self, context: AssistantContext, start: date, partial: bool) -> AssistantTurn:
         result = _analyse(context, start, partial)
-        turn = self._summary_content(result)
+        turn = self._opening_summary(result)
         opening = (AssistantLine("This week is still moving."), AssistantLine("Here’s the story so far.", typing_delay=0.6)) if partial else (AssistantLine("Let’s look at last week."), AssistantLine("A few things stand out.", typing_delay=0.6))
         content = (*opening, *turn.content) if turn.content else ()
         return AssistantTurn(**{**turn.__dict__, "lines": (*opening, *turn.lines), "content": content, "event_updates": {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial}}, "state_story": self.story_id, "state_scene": SUMMARY_SCENE, "state_status": "active"})
 
-    def _summary_content(self, result: WeekResult) -> AssistantTurn:
+    def _opening_summary(self, result: WeekResult) -> AssistantTurn:
         if not result.active:
             message = (
                 f"Only {result.skipped} excused period{'s were' if result.skipped != 1 else ' was'} recorded."
@@ -201,20 +214,29 @@ class WeeklySummaryStory(AssistantStory):
         ]
         if result.previous_rate is not None and not result.partial:
             diff = result.rate - result.previous_rate
+            workload = result.active - result.previous_active
             content.append(
                 AssistantCard(
                     "WEEK TO WEEK",
-                    f"{diff:+.0f} percentage points",
+                    f"{diff:+.0f} completion points",
                     "",
                     (
                         ("Previous week", f"{result.previous_rate:.0f}% · {result.previous_active} active"),
                         ("Selected week", f"{result.rate:.0f}% · {result.active} active"),
+                        ("Workload", f"{workload:+d} active periods"),
                     ),
                 )
             )
             comparison = _comparison_analysis(result, diff)
             if comparison:
                 content.append(AssistantLine(comparison))
+        lines = tuple(item for item in content if isinstance(item, AssistantLine))
+        cards = tuple(item for item in content if isinstance(item, AssistantCard))
+        return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=(AssistantChoice("continue", "Continue"),))
+
+    def _remaining_summary(self, result: WeekResult, selected_id: str = "", start: date | None = None, partial: bool = False) -> AssistantTurn:
+        """Render the established story after the intentional conversational break."""
+        content: list[AssistantLine | AssistantCard] = [AssistantLine("Let’s look a little closer.", typing_delay=0.4)]
         strongest = _strongest_goal(result.goals)
         improved = _most_improved_goal(result.goals)
         positive = improved if improved and improved != strongest else strongest
@@ -280,12 +302,41 @@ class WeeklySummaryStory(AssistantStory):
                 AssistantCard("NEEDS ATTENTION", weak.name, f"{weak.fulfilled} of {weak.active} periods completed", progress=weak.rate),
                 AssistantLine(_weak_analysis(weak)),
             ))
+        # Existing cards are deliberately considered before choosing an extra insight.
+        used_types, used_subjects = _used_existing_insights(content)
+        candidates = _additional_insights(result, used_types, used_subjects)
+        selected_extra = next((item for item in candidates if item.identifier == selected_id), None)
+        if selected_extra is None and candidates:
+            selected_extra = random.choice(candidates)
+        if selected_extra is not None:
+            if selected_extra.identifier == "momentum":
+                # The dedicated card owns the start/finish observation.
+                for index, item in enumerate(content[:-1]):
+                    if isinstance(item, AssistantCard) and item.title == "DAILY RHYTHM" and isinstance(content[index + 1], AssistantLine):
+                        content[index + 1] = AssistantLine("The daily pattern shows where the week asked more of you.")
+                        break
+            content.extend(selected_extra.content)
         content.extend(_closing(result))
         lines = tuple(item for item in content if isinstance(item, AssistantLine))
         cards = tuple(item for item in content if isinstance(item, AssistantCard))
-        return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=(AssistantChoice("details", "See goal details"), AssistantChoice("done", "Done")))
+        updates = {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial, "extra": selected_extra.identifier}} if start and selected_extra else {}
+        return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=(AssistantChoice("details", "See goal details"), AssistantChoice("all_insights", "Show all insights"), AssistantChoice("done", "Done")), event_updates=updates)
 
-    def _details_turn(self, result: WeekResult) -> AssistantTurn:
+    def _all_insights_turn(self, result: WeekResult, selected_id: str = "", details_seen: bool = False) -> AssistantTurn:
+        # The initial overview is intentionally not repeated.  Re-evaluate the existing
+        # cards so this view also excludes facts already used by the standard story.
+        base = self._remaining_summary(result, selected_id)
+        used_types, used_subjects = _used_existing_insights(base.content)
+        remaining = _additional_insights(result, used_types, used_subjects)
+        content: list[AssistantLine | AssistantCard] = [AssistantLine("Here’s everything else I found.")]
+        for insight in remaining:
+            content.extend(insight.content)
+        if len(content) == 1:
+            content.append(AssistantLine("There were no other distinct insights to add."))
+        choices = (AssistantChoice("done", "Close analysis"),) if details_seen else (AssistantChoice("details", "See goal details"), AssistantChoice("done", "Close analysis"))
+        return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=tuple(x for x in content if isinstance(x, AssistantLine)), cards=tuple(x for x in content if isinstance(x, AssistantCard)), content=tuple(content), choices=choices)
+
+    def _details_turn(self, result: WeekResult, start: date | None = None, partial: bool = False, extra_id: str = "") -> AssistantTurn:
         rows = tuple(
             (
                 goal.name,
@@ -299,7 +350,227 @@ class WeeklySummaryStory(AssistantStory):
             )
             for goal in sorted(result.goals, key=lambda goal: (-goal.active, -goal.rate))
         )
-        return AssistantTurn(self.story_id, DETAILS_SCENE, lines=(AssistantLine("Here’s the goal-by-goal view."),), cards=(AssistantCard("GOAL DETAILS", "", "", rows),), choices=(AssistantChoice("done", "Close analysis"),), state_story=self.story_id, state_scene=DETAILS_SCENE, state_status="active")
+        updates = {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial, "extra": extra_id, "details_seen": True}} if start else {}
+        return AssistantTurn(self.story_id, DETAILS_SCENE, lines=(AssistantLine("Here’s the goal-by-goal view."),), cards=(AssistantCard("GOAL DETAILS", "", "", rows),), choices=(AssistantChoice("all_insights", "Show all insights"), AssistantChoice("done", "Close analysis")), event_updates=updates, state_story=self.story_id, state_scene=DETAILS_SCENE, state_status="active")
+
+
+@dataclass(frozen=True)
+class AdditionalInsight:
+    identifier: str
+    subjects: frozenset[str]
+    content: tuple[AssistantLine | AssistantCard, ...]
+
+
+def _used_existing_insights(content: list[AssistantLine | AssistantCard] | tuple[AssistantLine | AssistantCard, ...]) -> tuple[set[str], set[str]]:
+    """A small, explicit duplicate guard is more reliable than ranking candidates."""
+    types: set[str] = set()
+    subjects: set[str] = set()
+    for item in content:
+        if not isinstance(item, AssistantCard):
+            continue
+        title = item.title
+        if title == "STRONGEST GOAL": types.add("strongest_goal"); subjects.add(item.value)
+        elif title == "MOST IMPROVED": types.add("most_improved_goal"); subjects.add(item.value)
+        elif title == "NEAR MISS": types.add("near_miss"); subjects.add(item.value)
+        elif title == "NEEDS ATTENTION": types.add("weakest_goal"); subjects.add(item.value)
+        elif title == "DAILY RHYTHM": types.add("daily_rhythm")
+        elif title in {"CURRENT STREAK", "NEW STREAK RECORD", "STREAK UPDATE", "STREAK RECOVERY"}:
+            types.add("goal_streak"); subjects.add(item.value)
+        elif title == "TOTAL PROGRESS": types.add("total_progress")
+        elif title in {"ACTIVE DAYS", "ACTIVE DAYS SO FAR"}: types.add("active_days")
+        elif title in {"PERFECT DAYS", "PERFECT-DAY STREAK"}: types.add("perfect_days")
+        elif title == "WEEKLY MOMENTUM": types.add("momentum")
+        elif title == "WEEKDAY VS WEEKEND": types.add("weekday_weekend")
+        elif title == "GOAL CHANGE": types.add("goal_decline"); subjects.add(item.value)
+        elif title == "OVER TARGET": types.add("over_target"); subjects.add(item.value)
+        elif title == "BY SCHEDULE": types.add("schedule_breakdown")
+    return types, subjects
+
+
+def _additional_insights(result: WeekResult, used_types: set[str], used_subjects: set[str]) -> list[AdditionalInsight]:
+    """Return valid, non-overlapping optional insights in the prescribed broad order."""
+    candidates: list[AdditionalInsight] = []
+    record = _personal_record_insight(result)
+    if record and "personal_record" not in used_types:
+        candidates.append(record)
+    total = _total_progress_insight(result)
+    if total and "total_progress" not in used_types:
+        candidates.append(total)
+    perfect = _perfect_or_active_insight(result)
+    if perfect and perfect.identifier not in used_types:
+        candidates.append(perfect)
+    momentum = _momentum_insight(result)
+    weekday = _weekday_weekend_insight(result)
+    if momentum:
+        candidates.append(momentum)
+    elif weekday:
+        candidates.append(weekday)
+    weekday_history = _repeated_weekday_insight(result)
+    if weekday_history:
+        candidates.append(weekday_history)
+    decline = _goal_decline_insight(result, used_subjects)
+    if decline:
+        candidates.append(decline)
+    over = _over_target_insight(result, used_subjects)
+    if over:
+        candidates.append(over)
+    schedule = _schedule_breakdown_insight(result)
+    if schedule:
+        candidates.append(schedule)
+    return candidates
+
+
+def _personal_record_insight(result: WeekResult) -> AdditionalInsight | None:
+    """A conservative completion-rate record over retained complete weekly data."""
+    history = [(start, done, active) for start, done, active in result.history if active >= 3]
+    if not history or result.active < 3:
+        return None
+    best = max(done * 100 / active for _, done, active in history)
+    if result.rate < best:
+        return None
+    window = len(history) + 1
+    period = f"across {window} recorded weeks" if window != 12 else "in the last 12 weeks"
+    matched = abs(result.rate - best) < .01
+    text = "You matched your best recorded week." if matched else "This was your strongest recorded week in that period."
+    return AdditionalInsight("personal_record", frozenset(), (AssistantLine("This week set a new mark."), AssistantCard("PERSONAL RECORD", "Highest weekly completion", f"{period}\n{result.rate:.0f}%", progress=result.rate), AssistantLine(text)))
+
+
+def _total_progress_insight(result: WeekResult) -> AdditionalInsight | None:
+    rows = [row for row in result.period_data if row[2] and row[4] > 0]
+    if not rows:
+        return None
+    # Raw totals are meaningful only when every target uses the same unit/value scale.
+    targets = {target for _, _, _, _, target, _, _ in rows}
+    current = sum(value for _, _, _, value, _, _, _ in rows)
+    progress = sum(min(1, value / target) for _, _, _, value, target, _, _ in rows) * 100 / len(rows)
+    if abs(progress - result.rate) < 3:
+        return None
+    if len(targets) == 1:
+        card = AssistantCard("TOTAL PROGRESS", f"{current:,}", "Across recorded goal periods", progress=progress)
+        text = "That is the work behind the score."
+    else:
+        card = AssistantCard("TOTAL PROGRESS", f"{progress:.0f}%", "of combined targets reached", progress=progress)
+        text = "The completion rate does not show all of that effort."
+    return AdditionalInsight("total_progress", frozenset(), (AssistantLine("Here is what the week added up to."), card, AssistantLine(text)))
+
+
+def _perfect_or_active_insight(result: WeekResult) -> AdditionalInsight | None:
+    perfect_dates = [day for day, active, done in result.daily if active and done == active]
+    active_dates = list(result.progress_days)
+    streak = _longest_date_streak(perfect_dates)
+    if len(streak) >= 2:
+        label = _date_span(streak)
+        return AdditionalInsight("perfect_days", frozenset(), (AssistantLine("You built a complete-day streak."), AssistantCard("PERFECT-DAY STREAK", f"{len(streak)} days", label), AssistantLine("Every active goal was completed on those days.")))
+    active_streak = _longest_date_streak(active_dates)
+    if len(active_streak) >= 3 and len(active_streak) != len(active_dates):
+        return AdditionalInsight("active_day_streak", frozenset(), (AssistantLine("You kept returning."), AssistantCard("ACTIVE-DAY STREAK", f"{len(active_streak)} days", _date_span(active_streak)), AssistantLine("The week was not perfect, but it stayed active.")))
+    denominator = (result.end - result.start).days + 1
+    if len(active_dates) >= 2:
+        title = "ACTIVE DAYS SO FAR" if result.partial else "ACTIVE DAYS"
+        return AdditionalInsight("active_days", frozenset(), (AssistantLine("The score hides one useful fact."), AssistantCard(title, f"{len(active_dates)} of {denominator} days", "At least one goal completed"), AssistantLine("You made progress on almost every day.")))
+    return None
+
+
+def _momentum_insight(result: WeekResult) -> AdditionalInsight | None:
+    if result.partial and result.end.weekday() < 3:
+        return None
+    first, second = _momentum_halves(result)
+    if first is None or second is None:
+        return None
+    difference = (second - first) * 100
+    if abs(difference) < 5:
+        return None
+    label = "The week improved as it went." if difference > 0 else "You started strongly."
+    ending = "You finished much stronger than you started." if difference >= 15 else "The rhythm became harder to hold later." if difference <= -15 else "The change was noticeable but not dramatic."
+    return AdditionalInsight("momentum", frozenset(), (AssistantLine(label), AssistantCard("WEEKLY MOMENTUM", f"{difference:+.0f} percentage points", "", (("Monday–Wednesday", f"{first:.0%}"), ("Thursday onward", f"{second:.0%}"))), AssistantLine(ending)))
+
+
+def _weekday_weekend_insight(result: WeekResult) -> AdditionalInsight | None:
+    if result.partial or result.end.weekday() < 6:
+        return None
+    weekday = [row for row in result.period_data if row[2] and row[0].weekday() < 5]
+    weekend = [row for row in result.period_data if row[2] and row[0].weekday() >= 5]
+    if len(weekday) < 3 or len(weekend) < 2:
+        return None
+    weekday_rate = sum(row[1] for row in weekday) * 100 / len(weekday)
+    weekend_rate = sum(row[1] for row in weekend) * 100 / len(weekend)
+    diff = weekend_rate - weekday_rate
+    if abs(diff) < 20:
+        return None
+    text = "Your strongest rhythm appeared on Saturday and Sunday." if diff > 0 else "Most of your completed periods happened during the week."
+    return AdditionalInsight("weekday_weekend", frozenset(), (AssistantLine("Your rhythm changed at the weekend."), AssistantCard("WEEKDAY VS WEEKEND", f"{diff:+.0f} percentage points", "", (("Weekdays", f"{weekday_rate:.0f}%"), ("Weekend", f"{weekend_rate:.0f}%"))), AssistantLine(text)))
+
+
+def _goal_decline_insight(result: WeekResult, used_subjects: set[str]) -> AdditionalInsight | None:
+    candidates = [goal for goal in result.goals if goal.previous_rate is not None and goal.rate - goal.previous_rate <= -20 and goal.name not in used_subjects]
+    goal = min(candidates, key=lambda item: item.rate - (item.previous_rate or 0), default=None)
+    if goal is None:
+        return None
+    diff = goal.rate - (goal.previous_rate or 0)
+    return AdditionalInsight("goal_decline", frozenset({goal.name}), (AssistantLine("One goal changed in the other direction."), AssistantCard("GOAL CHANGE", goal.name, "", (("Previous week", f"{goal.previous_rate:.0f}%"), ("Selected week", f"{goal.rate:.0f}%"), ("Change", f"{diff:+.0f} percentage points"))), AssistantLine(f"{goal.name} had a much harder week.")))
+
+
+def _over_target_insight(result: WeekResult, used_subjects: set[str]) -> AdditionalInsight | None:
+    by_goal: dict[str, list[tuple[date, int, int]]] = {}
+    for when, _, active, current, target, name, _ in result.period_data:
+        if active and current > target:
+            by_goal.setdefault(name, []).append((when, current, target))
+    eligible = [(name, periods) for name, periods in by_goal.items() if name not in used_subjects and (len(periods) >= 2 or max(cur / target for _, cur, target in periods) >= 1.25)]
+    if not eligible:
+        return None
+    name, periods = max(eligible, key=lambda item: (len(item[1]), max(cur / target for _, cur, target in item[1])))
+    peak = max(cur * 100 / target for _, cur, target in periods)
+    return AdditionalInsight("over_target", frozenset({name}), (AssistantLine("You went beyond the target more than once."), AssistantCard("OVER TARGET", name, f"{len(periods)} periods above target\nHighest result: {peak:.0f}%"), AssistantLine(f"{name} exceeded its target on {len(periods)} periods.")))
+
+
+def _schedule_breakdown_insight(result: WeekResult) -> AdditionalInsight | None:
+    groups: dict[str, list[tuple[date, bool, bool, int, int, str, str]]] = {}
+    for row in result.period_data:
+        schedule = row[6]
+        label = "Weekly goals" if schedule in {"weekly", "weekly_x_per_month"} else "Flexible goals" if "x_per" in schedule or "allowance" in schedule else "Daily goals"
+        if row[2]: groups.setdefault(label, []).append(row)
+    rates = {name: sum(row[1] for row in rows) * 100 / len(rows) for name, rows in groups.items() if rows}
+    if len(rates) < 2 or max(rates.values()) - min(rates.values()) < 20:
+        return None
+    strongest = max(rates, key=rates.get)
+    rows = tuple((name, f"{rate:.0f}%") for name, rate in sorted(rates.items()))
+    return AdditionalInsight("schedule_breakdown", frozenset(), (AssistantLine("Your goal types behaved differently."), AssistantCard("BY SCHEDULE", "", "", rows), AssistantLine(f"{strongest} were your most reliable group.")))
+
+
+def _repeated_weekday_insight(result: WeekResult) -> AdditionalInsight | None:
+    """Use only repeated retained observations, never a single exceptional day."""
+    recent = [row for row in result.historical_daily if (result.start - row[0]).days <= 56 and row[2]]
+    if len(recent) < 12:
+        return None
+    overall = sum(done for _, done, _ in recent) * 100 / len(recent)
+    groups: dict[int, list[tuple[date, bool, bool]]] = {}
+    for row in recent: groups.setdefault(row[0].weekday(), []).append(row)
+    eligible = [
+        (weekday, rows) for weekday, rows in groups.items()
+        if len({day for day, _, _ in rows}) >= 4 and len(rows) >= 3
+    ]
+    if not eligible:
+        return None
+    weekday, rows = max(eligible, key=lambda pair: abs(sum(done for _, done, _ in pair[1]) * 100 / len(pair[1]) - overall))
+    rate = sum(done for _, done, _ in rows) * 100 / len(rows)
+    if abs(rate - overall) < 15:
+        return None
+    name = (result.start + timedelta(days=weekday)).strftime("%A")
+    text = f"{name} has become your most reliable day." if rate > overall else f"{name} has been your most difficult weekday recently."
+    return AdditionalInsight("weekday_pattern", frozenset({name}), (AssistantLine(f"{name} may be becoming a pattern."), AssistantCard(f"{name.upper()} PATTERN", f"Average completion     {rate:.0f}%", f"Last {len(rows)} {name}s", (("Overall average", f"{overall:.0f}%"),)), AssistantLine(text)))
+
+
+def _longest_date_streak(days: list[date]) -> list[date]:
+    best: list[date] = []; current: list[date] = []
+    for day in sorted(set(days)):
+        current = current + [day] if current and (day - current[-1]).days == 1 else [day]
+        if len(current) > len(best): best = current
+    return best
+
+
+def _date_span(days: list[date]) -> str:
+    if len(days) == 1: return days[0].strftime("%A")
+    return f"{days[0].strftime('%A')}–{days[-1].strftime('%A')}"
 
 
 def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResult:
@@ -309,11 +580,26 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
     goals: list[GoalResult] = []
     daily = {start + timedelta(days=offset): [0, 0] for offset in range((end - start).days + 1)}
     progress_days: set[date] = set()
+    period_data: list[tuple[date, bool, bool, int, int, str, str]] = []
+    historical: dict[date, list[int]] = {}
+    historical_daily: list[tuple[date, bool, bool]] = []
     previous_active = 0
     previous_done = 0
     for goal in context.user_state.get("goals", []):
         participant = goal.get("participants", {}).get(context.user_id, {}) if isinstance(goal, dict) else {}
         outcomes = participant.get("period_outcomes", {}) if isinstance(participant, dict) else {}
+        # Retained history can be incomplete; only weeks with enough closed
+        # periods are later eligible for a record.
+        if isinstance(outcomes, dict):
+            for raw_when, raw_item in outcomes.items():
+                when = _date(raw_when)
+                if when is None or when >= start or not isinstance(raw_item, dict) or _is_excused(raw_item):
+                    continue
+                week = _week_start(when)
+                bucket = historical.setdefault(week, [0, 0])
+                bucket[0] += int(_is_completed(raw_item))
+                bucket[1] += 1
+                historical_daily.append((when, _is_completed(raw_item), True))
         selected = _outcomes_in(outcomes, start, end)
         current_start = _date(participant.get("period_start"))
         if current_start is not None and start <= current_start <= end and not any(day == current_start for day, _ in selected):
@@ -351,6 +637,10 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
             for current, target in (progress[1:],)
         )
         streak = _analyse_streak(goal, participant, start, end, now)
+        periods = tuple(
+            (when, _is_completed(item), *( _period_amounts(item) ))
+            for when, item in selected if not _is_excused(item)
+        )
         goals.append(
             GoalResult(
                 str(goal.get("description", "Goal")),
@@ -361,6 +651,7 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
                 streak,
                 near_misses,
                 str(goal.get("schedule_class", "daily")),
+                periods,
             )
         )
         weekly = str(goal.get("schedule_class", "daily")) in {
@@ -368,6 +659,12 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
             "weekly_x_per_month",
         }
         for when, item in selected:
+            current, target = _period_amounts(item)
+            period_data.append((
+                when, _is_completed(item), not _is_excused(item),
+                current, target,
+                str(goal.get("description", "Goal")), str(goal.get("schedule_class", "daily")),
+            ))
             # A weekly outcome is keyed by the Monday when its period began,
             # not by the day it was completed. Do not invent a daily event.
             if not weekly and when in daily and not _is_excused(item):
@@ -391,6 +688,9 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
         previous_active=previous_active,
         previous_fulfilled=previous_done,
         progress_days=tuple(sorted(progress_days)),
+        period_data=tuple(period_data),
+        history=tuple((week, values[0], values[1]) for week, values in sorted(historical.items())),
+        historical_daily=tuple(historical_daily),
     )
 
 
@@ -513,7 +813,7 @@ def _most_improved_goal(goals: tuple[GoalResult, ...]) -> GoalResult | None:
         for goal in goals
         if goal.active >= 2
         and goal.previous_rate is not None
-        and goal.rate - goal.previous_rate >= 15
+        and goal.rate - goal.previous_rate >= 20
     )
     return max(candidates, key=lambda goal: goal.rate - (goal.previous_rate or 0), default=None)
 
@@ -587,6 +887,18 @@ def _progress(outcome: dict[str, Any]) -> tuple[float, int, int] | None:
     return max(0.0, percent), current, target
 
 
+def _period_amounts(outcome: dict[str, Any]) -> tuple[int, int]:
+    progress = _progress(outcome)
+    if progress is None:
+        return (1, 1) if _is_completed(outcome) else (0, 1)
+    _, current, target = progress
+    # Binary outcomes often omit measurements.  A completion still represents
+    # one target reached; do not turn it into zero effort in combined progress.
+    if _is_completed(outcome) and current == 0:
+        return target, target
+    return current, target
+
+
 def _has_progress(outcome: dict[str, Any]) -> bool:
     progress = _progress(outcome)
     return _is_completed(outcome) or bool(progress and progress[1] > 0)
@@ -623,31 +935,19 @@ def _headline_analysis(result: WeekResult) -> str:
 
 def _comparison_analysis(result: WeekResult, diff: float) -> str:
     workload_change = result.active - result.previous_active
+    meaningful_workload = abs(workload_change) >= 3 or (
+        result.previous_active > 0 and abs(workload_change) / result.previous_active >= .2
+    )
     if diff >= 5:
-        if workload_change > 0:
-            return (
-                f"A clear step forward with {workload_change} more active "
-                f"period{'s' if workload_change != 1 else ''}.\n"
-                f"Completion increased by {diff:.0f} percentage points."
-            )
-        if workload_change < 0:
-            return (
-                f"Completion increased by {diff:.0f} percentage points,\n"
-                f"with {abs(workload_change)} fewer active period"
-                f"{'s' if workload_change != -1 else ''}."
-            )
+        if meaningful_workload and workload_change > 0: return "You improved despite a busier week."
+        if meaningful_workload and workload_change < 0: return "The score improved, although the week was lighter."
         return f"A clear step forward.\nCompletion increased by {diff:.0f} percentage points."
     if diff <= -5:
-        load_context = (
-            f"\nThere {'were' if workload_change != 1 else 'was'} {workload_change} more active "
-            f"period{'s' if workload_change != 1 else ''}."
-            if workload_change > 0
-            else ""
-        )
-        return (
-            f"The result dropped this week.\nCompletion fell by {abs(diff):.0f} "
-            f"percentage points.{load_context}"
-        )
+        if meaningful_workload and workload_change > 0: return "The result dropped, but the week was also busier."
+        if meaningful_workload and workload_change < 0: return "The week was lighter and less complete."
+        return f"The result dropped this week.\nCompletion fell by {abs(diff):.0f} percentage points."
+    if meaningful_workload and workload_change > 0: return "You maintained the result with more active periods."
+    if meaningful_workload and workload_change < 0: return "The result stayed similar during a lighter week."
     return "Almost the same result.\nThe score barely moved,\nbut the daily rhythm tells the fuller story."
 
 

@@ -224,7 +224,13 @@ def test_near_miss_is_selected_as_a_helpful_focus_insight() -> None:
         },
     )
 
-    turn = WeeklySummaryStory().advance(context, SELECT_SCENE, None)
+    story = WeeklySummaryStory()
+    initial = story.advance(context, SELECT_SCENE, None)
+    context.state.events.update(initial.event_updates)
+    turn = story.advance(
+        context, SUMMARY_SCENE,
+        AssistantSelection(WEEKLY_SUMMARY_STORY_ID, SUMMARY_SCENE, "continue", "Continue"),
+    )
 
     near_miss = next(card for card in turn.cards if card.title == "NEAR MISS")
     assert near_miss.value == "Reading"
@@ -268,7 +274,13 @@ def test_substantial_daily_goal_outranks_a_perfect_weekly_one_off() -> None:
         },
     )
 
-    turn = WeeklySummaryStory().advance(context, SELECT_SCENE, None)
+    story = WeeklySummaryStory()
+    initial = story.advance(context, SELECT_SCENE, None)
+    context.state.events.update(initial.event_updates)
+    turn = story.advance(
+        context, SUMMARY_SCENE,
+        AssistantSelection(WEEKLY_SUMMARY_STORY_ID, SUMMARY_SCENE, "continue", "Continue"),
+    )
 
     strongest = next(card for card in turn.cards if card.title == "STRONGEST GOAL")
     assert strongest.value == "Walking"
