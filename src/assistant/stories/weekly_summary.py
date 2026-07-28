@@ -41,23 +41,26 @@ class WeeklySummaryStory(AssistantStory):
         start = _date(selected.get("start")) if isinstance(selected, dict) else None
         partial = bool(selected.get("partial")) if isinstance(selected, dict) else False
         extra_id = str(selected.get("extra", "")) if isinstance(selected, dict) else ""
+        shared_id = str(selected.get("shared", "")) if isinstance(selected, dict) else ""
         if start is None:
             return self.advance(context, SELECT_SCENE, None)
         result = _analyse(context, start, partial)
         if scene == DETAILS_SCENE:
             if selection and selection.choice_id == "done":
-                return AssistantTurn(self.story_id, DETAILS_SCENE, completed=True, state_story=self.story_id, state_scene=DETAILS_SCENE, state_status="completed")
+                return AssistantTurn(self.story_id, DETAILS_SCENE, completed=True, assistant_leaves=True, state_story=self.story_id, state_scene=DETAILS_SCENE, state_status="completed")
             if selection and selection.choice_id == "all_insights":
                 return self._all_insights_turn(result, str(selected.get("extra", "")), True)
             return self._details_turn(result)
         if selection and selection.choice_id == "details":
             return self._details_turn(result, start, partial, extra_id)
         if selection and selection.choice_id == "continue":
-            return self._remaining_summary(result, extra_id, start, partial)
+            return self._remaining_summary(result, extra_id, shared_id, start, partial)
+        if selection and selection.choice_id == "more":
+            return self._more_summary(result, extra_id, shared_id)
         if selection and selection.choice_id == "all_insights":
             return self._all_insights_turn(result, extra_id, bool(selected.get("details_seen", False)))
         if selection and selection.choice_id == "done":
-            return AssistantTurn(self.story_id, SUMMARY_SCENE, completed=True, state_story=WEEKLY_SUMMARY_STORY_ID, state_scene=SUMMARY_SCENE, state_status="completed")
+            return AssistantTurn(self.story_id, SUMMARY_SCENE, completed=True, assistant_leaves=selection.label == "Close analysis", state_story=WEEKLY_SUMMARY_STORY_ID, state_scene=SUMMARY_SCENE, state_status="completed")
         return self._opening_summary(result)
 
     def _summary_turn(self, context: AssistantContext, start: date, partial: bool) -> AssistantTurn:
@@ -145,18 +148,19 @@ class WeeklySummaryStory(AssistantStory):
         lines = tuple(item for item in content if isinstance(item, AssistantLine))
         cards = tuple(item for item in content if isinstance(item, AssistantCard))
         return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=(AssistantChoice("continue", "Continue"),))
-    def _remaining_summary(self, result: WeekResult, selected_id: str = "", start: date | None = None, partial: bool = False) -> AssistantTurn:
-        """Render the established story after the intentional conversational break."""
-        content: list[AssistantLine | AssistantCard] = [AssistantLine("Let’s look a little closer.", typing_delay=0.4)]
+    def _remaining_summary_content(
+        self, result: WeekResult, selected_id: str = "", shared_id: str = ""
+    ) -> tuple[list[list[AssistantLine | AssistantCard]], str, str]:
+        """Build the remaining insights as individually presentable groups."""
+        groups: list[list[AssistantLine | AssistantCard]] = []
         strongest = _strongest_goal(result.goals)
         improved = _most_improved_goal(result.goals)
         positive = improved if improved and improved != strongest else strongest
         streak_goal = _select_streak(result.goals, positive)
         if streak_goal:
-            content.extend(_streak_content(streak_goal))
+            groups.append(list(_streak_content(streak_goal)))
         elif improved and positive == improved:
-            content.extend(
-                (
+            groups.append([
                     AssistantLine(f"{improved.name} made the biggest jump."),
                     AssistantCard(
                         "MOST IMPROVED",
@@ -168,26 +172,28 @@ class WeeklySummaryStory(AssistantStory):
                         f"It gained {improved.rate - improved.previous_rate:.0f} percentage points "
                         "from the week before."
                     ),
-                )
-            )
+                ])
         else:
-            content.extend((
+            groups.append([
                 AssistantLine(f"{strongest.name} led the way."),
                 AssistantCard("STRONGEST GOAL", strongest.name, f"{strongest.fulfilled} of {strongest.active} periods completed", progress=strongest.rate),
                 AssistantLine(_strongest_analysis(strongest)),
-            ))
-        used_types, used_subjects = _used_existing_insights(content)
+            ])
+        grouped_content = [item for group in groups for item in group]
+        used_types, used_subjects = _used_existing_insights(grouped_content)
         shared_candidates = _shared_insights(result, used_subjects, used_types)
-        if shared_candidates:
-            content.extend(random.choice(shared_candidates).content)
+        selected_shared = next((item for item in shared_candidates if item.identifier == shared_id), None)
+        if selected_shared is None and shared_candidates:
+            selected_shared = random.choice(shared_candidates)
+        if selected_shared is not None:
+            groups.append(list(selected_shared.content))
         near_miss = _select_near_miss(result)
         weak = min((goal for goal in result.goals if goal.active), key=lambda goal: (goal.rate, -goal.active))
         if near_miss is not None:
             goal, when, percent, current, target = near_miss
             unit_detail = f"{current} of {target}" if target > 1 else f"{percent:.0f}% of target"
             period_label = "Weekly period" if goal.is_weekly else when.strftime("%A")
-            content.extend(
-                (
+            groups.append([
                     AssistantLine(f"{goal.name} was closer than the score suggests.", typing_delay=0.6),
                     AssistantCard(
                         "NEAR MISS",
@@ -196,33 +202,51 @@ class WeeklySummaryStory(AssistantStory):
                         progress=percent,
                     ),
                     AssistantLine(_near_miss_analysis(result, goal, percent, current, target)),
-                )
-            )
+                ])
         elif weak.rate < 60 and weak != positive:
-            content.extend((
+            groups.append([
                 AssistantLine("One goal needs a closer look.", typing_delay=0.6),
                 AssistantCard("NEEDS ATTENTION", weak.name, f"{weak.fulfilled} of {weak.active} periods completed", progress=weak.rate),
                 AssistantLine(_weak_analysis(weak)),
-            ))
+            ])
         # Existing cards are deliberately considered before choosing an extra insight.
-        used_types, used_subjects = _used_existing_insights(content)
+        grouped_content = [item for group in groups for item in group]
+        used_types, used_subjects = _used_existing_insights(grouped_content)
         candidates = _additional_insights(result, used_types, used_subjects)
         selected_extra = next((item for item in candidates if item.identifier == selected_id), None)
         if selected_extra is None and candidates:
             selected_extra = random.choice(candidates)
         if selected_extra is not None:
-            content.extend(selected_extra.content)
-        content.extend(_closing(result))
+            groups.append(list(selected_extra.content))
+        return groups, selected_extra.identifier if selected_extra else "", selected_shared.identifier if selected_shared else ""
+
+    def _remaining_summary(self, result: WeekResult, selected_id: str = "", shared_id: str = "", start: date | None = None, partial: bool = False) -> AssistantTurn:
+        """Render two further insights before offering the next conversational break."""
+        groups, selected_extra_id, selected_shared_id = self._remaining_summary_content(result, selected_id, shared_id)
+        preview_groups = groups[:2]
+        content: list[AssistantLine | AssistantCard] = [AssistantLine("Let’s look a little closer.", typing_delay=0.4)]
+        content.extend(item for group in preview_groups for item in group)
         lines = tuple(item for item in content if isinstance(item, AssistantLine))
         cards = tuple(item for item in content if isinstance(item, AssistantCard))
-        updates = {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial, "extra": selected_extra.identifier}} if start and selected_extra else {}
-        return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=(AssistantChoice("details", "See goal details"), AssistantChoice("all_insights", "Show all insights"), AssistantChoice("done", "Done")), event_updates=updates)
+        updates = {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial, "extra": selected_extra_id, "shared": selected_shared_id}} if start else {}
+        choices = (AssistantChoice("more", "Show me more, please"),) if len(groups) > 2 else (AssistantChoice("details", "See goal details"), AssistantChoice("all_insights", "Show all insights"), AssistantChoice("done", "Done"))
+        return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=choices, event_updates=updates)
+
+    def _more_summary(self, result: WeekResult, selected_id: str = "", shared_id: str = "") -> AssistantTurn:
+        """Render the remaining insights after the second conversational break."""
+        groups, _, _ = self._remaining_summary_content(result, selected_id, shared_id)
+        content: list[AssistantLine | AssistantCard] = [AssistantLine("Here’s more.", typing_delay=0.4)]
+        content.extend(item for group in groups[2:] for item in group)
+        content.extend(_closing(result))
+        return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=tuple(item for item in content if isinstance(item, AssistantLine)), cards=tuple(item for item in content if isinstance(item, AssistantCard)), content=tuple(content), choices=(AssistantChoice("details", "See goal details"), AssistantChoice("all_insights", "Show all insights"), AssistantChoice("done", "Done")))
 
     def _all_insights_turn(self, result: WeekResult, selected_id: str = "", details_seen: bool = False) -> AssistantTurn:
         # The initial overview is intentionally not repeated.  Re-evaluate the existing
         # cards so this view also excludes facts already used by the standard story.
-        base = self._remaining_summary(result, selected_id)
-        used_types, used_subjects = _used_existing_insights(base.content)
+        groups, _, _ = self._remaining_summary_content(result, selected_id)
+        used_types, used_subjects = _used_existing_insights(
+            [item for group in groups for item in group]
+        )
         remaining = _additional_insights(result, used_types, used_subjects)
         content: list[AssistantLine | AssistantCard] = [AssistantLine("Here’s everything else I found.")]
         for insight in remaining:

@@ -93,6 +93,27 @@ def test_completed_summary_groups_analysis_and_keeps_cards_adjacent() -> None:
     assert len(turn.lines) <= 12
 
 
+def test_closing_analysis_has_the_usual_assistant_departure_status() -> None:
+    story = WeeklySummaryStory()
+    context = _context(datetime(2026, 7, 27, tzinfo=timezone.utc))
+    initial = story.advance(context, SELECT_SCENE, None)
+    context.state.events.update(initial.event_updates)
+
+    details = story.advance(
+        context,
+        SUMMARY_SCENE,
+        AssistantSelection(WEEKLY_SUMMARY_STORY_ID, SUMMARY_SCENE, "details", "See goal details"),
+    )
+    closed = story.advance(
+        context,
+        details.scene_id,
+        AssistantSelection(WEEKLY_SUMMARY_STORY_ID, details.scene_id, "done", "Close analysis"),
+    )
+
+    assert closed.completed
+    assert closed.assistant_leaves
+
+
 def test_daily_rhythm_supplies_progress_for_each_active_day() -> None:
     result = _analyse(
         _context(datetime(2026, 7, 27, tzinfo=timezone.utc)),
@@ -354,9 +375,19 @@ def test_near_miss_is_selected_as_a_helpful_focus_insight() -> None:
     near_miss = next(card for card in turn.cards if card.title == "NEAR MISS")
     assert near_miss.value == "Reading"
     assert near_miss.progress == 90
+    assert [choice.label for choice in turn.choices] == ["Show me more, please"]
     assert "1 short" in next(
         line.text for line in turn.lines if "binary score" in line.text
     )
+
+    context.state.events.update(turn.event_updates)
+    more = story.advance(
+        context, SUMMARY_SCENE,
+        AssistantSelection(WEEKLY_SUMMARY_STORY_ID, SUMMARY_SCENE, "more", "Show me more, please"),
+    )
+
+    assert [choice.label for choice in more.choices] == ["See goal details", "Show all insights", "Done"]
+    assert more.content[0].text == "Here’s more."
 
 
 def test_substantial_daily_goal_outranks_a_perfect_weekly_one_off() -> None:
