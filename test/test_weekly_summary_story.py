@@ -5,6 +5,7 @@ from src.assistant.state import AssistantState
 from src.assistant.stories.weekly_summary import (
     SELECT_SCENE,
     SUMMARY_SCENE,
+    WEEK_TO_WEEK_CHART_WEEKS,
     WEEKLY_SUMMARY_STORY_ID,
     WeeklySummaryStory,
     _streak_content,
@@ -126,10 +127,10 @@ def test_week_to_week_chart_shows_selected_week_and_nineteen_prior_weeks() -> No
     turn = WeeklySummaryStory().advance(context, SELECT_SCENE, None)
     chart = next(card.weekly_chart for card in turn.cards if card.title == "WEEK TO WEEK")
 
-    assert len(chart) == 20
+    assert len(chart) == WEEK_TO_WEEK_CHART_WEEKS
     assert [start for start, _, _ in chart] == [
         date(2026, 3, 9) + timedelta(days=week_offset * 7)
-        for week_offset in range(20)
+        for week_offset in range(WEEK_TO_WEEK_CHART_WEEKS)
     ]
     assert [round(rate) for _, rate, _ in chart] == [0] * 11 + [14, 29, 43, 57, 71, 86, 100, 0, 14]
     assert [selected for _, _, selected in chart] == [False] * 19 + [True]
@@ -163,7 +164,7 @@ def test_week_to_week_chart_renders_missing_weeks_as_zero_bars() -> None:
     turn = WeeklySummaryStory()._opening_summary(result)
     chart = next(card.weekly_chart for card in turn.cards if card.title == "WEEK TO WEEK")
 
-    assert len(chart) == 20
+    assert len(chart) == WEEK_TO_WEEK_CHART_WEEKS
     assert chart[0] == (date(2026, 3, 9), 0, False)
     assert chart[-2] == (date(2026, 7, 13), 100, False)
     assert chart[-1] == (date(2026, 7, 20), 85.71428571428571, True)

@@ -430,10 +430,10 @@ class StreamlitAssistantView:
               .assistant-card-row-with-progress { align-items:center; column-gap:.5rem; display:grid; grid-template-columns:1fr minmax(2.5rem, 42%) auto; }
               .assistant-card-row-track { background:#ebedf0; border-radius:99px; display:block; height:.25rem; overflow:hidden; }
               .assistant-card-row-track span { background:var(--primary-color, #1f2937); border-radius:99px; display:block; height:100%; }
-              .assistant-weekly-chart { align-items:end; display:flex; gap:.28rem; height:2.25rem; margin:.45rem 0 .7rem; }
-              .assistant-weekly-chart-bar { box-sizing:border-box; flex:1; min-width:.3rem; }
+              .assistant-weekly-chart { align-items:end; display:flex; height:2.25rem; justify-content:space-between; margin:.45rem 0 .7rem; }
+              .assistant-weekly-chart-bar { box-sizing:border-box; flex:0 0 .25rem; }
               .assistant-weekly-chart-bar-current { background:var(--primary-color, #1f2937); border:1px solid var(--primary-color, #1f2937); border-radius:2px 2px 0 0; }
-              .assistant-weekly-chart-bar-history { background:transparent; border:1px solid var(--primary-color, #1f2937); border-radius:2px 2px 0 0; }
+              .assistant-weekly-chart-bar-history { background:var(--secondary-background-color, #f1f5f9); border:1px solid var(--secondary-background-color, #f1f5f9); border-radius:2px 2px 0 0; }
               .assistant-recent-activity .mini-activity-dots { gap:3px; }
               .assistant-recent-activity .mini-activity-dot { height:12px; width:12px; }
               .assistant-recent-activity .mini-activity-dot-current { box-shadow:inset 0 0 0 1px rgba(27,31,36,0.14); }

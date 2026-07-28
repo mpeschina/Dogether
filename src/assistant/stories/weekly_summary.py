@@ -16,6 +16,7 @@ WEEK_SELECTION_EVENT_ID: Final = "weekly_summary.selection"
 SELECT_SCENE: Final = "weekly.select"
 SUMMARY_SCENE: Final = "weekly.summary"
 DETAILS_SCENE: Final = "weekly.details"
+WEEK_TO_WEEK_CHART_WEEKS: Final = 20
 
 class WeeklySummaryStory(AssistantStory):
     story_id = WEEKLY_SUMMARY_STORY_ID
@@ -275,13 +276,16 @@ class WeeklySummaryStory(AssistantStory):
 
 
 def _week_to_week_chart(result: WeekResult) -> tuple[tuple[date, float, bool], ...]:
-    """Return a continuous 20-week series ending with the selected week."""
+    """Return the fixed-length weekly series ending with the selected week."""
     rates = {
         start: fulfilled * 100 / active
         for start, fulfilled, active in result.history
         if active > 0 and start < result.start
     }
-    starts = tuple(result.start - timedelta(days=7 * offset) for offset in range(19, -1, -1))
+    starts = tuple(
+        result.start - timedelta(days=7 * offset)
+        for offset in range(WEEK_TO_WEEK_CHART_WEEKS - 1, -1, -1)
+    )
     return tuple(
         (start, result.rate if start == result.start else rates.get(start, 0), start == result.start)
         for start in starts
