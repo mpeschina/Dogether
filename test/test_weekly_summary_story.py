@@ -74,7 +74,7 @@ def test_completed_summary_groups_analysis_and_keeps_cards_adjacent() -> None:
     ]
     assert turn.content[2].text == "First, the big picture."
     assert turn.content[3].title == "WEEKLY COMPLETION"
-    assert turn.content[4].text.startswith("**")
+    assert not turn.content[4].text.startswith("**")
     assert "\n" in turn.content[-1].text
     assert len(turn.lines) <= 12
 

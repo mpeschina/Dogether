@@ -329,17 +329,17 @@ def _streak_content(goal: GoalResult) -> tuple[AssistantLine | AssistantCard, ..
     streak = goal.streak
     if streak.ended and streak.restarted:
         title = "STREAK RECOVERY"; detail = f"Ended at {streak.ended_value} {streak.unit}\nRestarted after: {streak.restart_delay} period{'s' if streak.restart_delay != 1 else ''}"
-        text = f"**The {streak.ended_value}-{streak.unit[:-1]} streak ended on {streak.ended_on.strftime('%A')}.**\nYou restarted it {'the next period' if streak.restart_delay == 1 else 'during the week'}."
+        text = f"The {streak.ended_value}-{streak.unit[:-1]} streak ended on {streak.ended_on.strftime('%A')}.\nYou restarted it {'the next period' if streak.restart_delay == 1 else 'during the week'}."
     elif streak.record:
         title = "NEW STREAK RECORD"; detail = f"Previous best: {streak.previous_best} {streak.unit}"
-        text = f"**{goal.name} reached a new record.**\nYou added {streak.added} successful {streak.unit} during the analysed week."
+        text = f"{goal.name} reached a new record.\nYou added {streak.added} successful {streak.unit} during the analysed week."
     elif streak.ended:
         title = "STREAK UPDATE"; detail = f"Ended at {streak.ended_value} {streak.unit}\nCurrent streak: {streak.value}"
-        text = f"**The streak stopped at {streak.ended_value} {streak.unit}.**\nThose successful {streak.unit} still happened."
+        text = f"The streak stopped at {streak.ended_value} {streak.unit}.\nThose successful {streak.unit} still happened."
     else:
         title = "CURRENT STREAK"; detail = f"This week: +{streak.added} {streak.unit}"
         if streak.has_skips: detail += f"\n{streak.fulfilled} completed · {streak.valid_skips} valid skips"
-        text = (f"**{streak.value}-{streak.unit[:-1]} streak.**\nEvery period was completed or validly skipped." if streak.has_skips else f"**The streak reached {streak.value} {streak.unit}.**\nThis week kept it moving.")
+        text = (f"{streak.value}-{streak.unit[:-1]} streak.\nEvery period was completed or validly skipped." if streak.has_skips else f"The streak reached {streak.value} {streak.unit}.\nThis week kept it moving.")
     return (AssistantLine(f"{goal.name} kept its rhythm."), AssistantCard(title, goal.name, f"{streak.label}\n{detail}", (("Recent", " ".join(streak.symbols)),)), AssistantLine(text))
 
 
@@ -365,40 +365,40 @@ def _headline_text(result: WeekResult) -> str:
 def _headline_analysis(result: WeekResult) -> str:
     headline = _headline_text(result)
     label = "so far" if result.partial else "finished at"
-    return f"**{headline}**\nYou completed **{result.fulfilled} of {result.active}** active goal periods.\nThe week {label} **{result.rate:.0f}%**."
+    return f"{headline}\nYou completed **{result.fulfilled}** of **{result.active}** active goal periods.\nThe week {label} **{result.rate:.0f}%**."
 
 
 def _comparison_analysis(result: WeekResult, diff: float) -> str:
     if diff >= 5:
-        return f"**A clear step forward.**\nCompletion increased by **{diff:.0f} percentage points**\nfrom the week before."
+        return f"A clear step forward.\nCompletion increased by **{diff:.0f}** percentage points\nfrom the week before."
     if diff <= -5:
-        return f"**The result dropped this week.**\nCompletion fell by **{abs(diff):.0f} percentage points**\nfrom the week before."
-    return "**Almost the same result.**\nThe score barely moved,\nbut the daily rhythm tells the fuller story."
+        return f"The result dropped this week.\nCompletion fell by **{abs(diff):.0f}** percentage points\nfrom the week before."
+    return "Almost the same result.\nThe score barely moved,\nbut the daily rhythm tells the fuller story."
 
 
 def _strongest_analysis(goal: GoalResult) -> str:
     if goal.rate >= 100:
-        return f"**Every relevant period was completed.**\n**{goal.name}** did not miss once."
-    return f"**Your steadiest goal this week.**\n**{goal.name}** completed **{goal.fulfilled} of {goal.active}** periods."
+        return f"Every relevant period was completed.\n{goal.name} did not miss once."
+    return f"Your steadiest goal this week.\n{goal.name} completed **{goal.fulfilled}** of **{goal.active}** periods."
 
 
 def _rhythm_analysis(result: WeekResult) -> str:
     active_days = [(day, done / active) for day, active, done in result.daily if active]
     if not active_days:
-        return "**The rhythm is still taking shape.**\nThere is more of the week to fill in."
+        return "The rhythm is still taking shape.\nThere is more of the week to fill in."
     best_day, best_rate = max(active_days, key=lambda item: item[1])
     worst_day, worst_rate = min(active_days, key=lambda item: item[1])
     if best_rate - worst_rate < .2:
-        return "**Your progress was fairly steady.**\nThere was no sharp inactive gap,\nand most days contributed something."
-    return f"**{best_day.strftime('%A')} was strongest.**\n{worst_day.strftime('%A')} slowed things down,\nbut the rest of the week recovered."
+        return "Your progress was fairly steady.\nThere was no sharp inactive gap,\nand most days contributed something."
+    return f"{best_day.strftime('%A')} was strongest.\n{worst_day.strftime('%A')} slowed things down,\nbut the rest of the week recovered."
 
 
 def _weak_analysis(goal: GoalResult) -> str:
-    return f"**{goal.name} had the hardest week.**\nIt completed **{goal.fulfilled} of {goal.active}** periods\nand needs a little more momentum."
+    return f"{goal.name} had the hardest week.\nIt completed **{goal.fulfilled}** of **{goal.active}** periods\nand needs a little more momentum."
 
 
 def _closing(result: WeekResult) -> tuple[AssistantLine, ...]:
-    if result.partial: return (AssistantLine("**The story is not finished yet.**\n\nToday can still change the result.", typing_delay=0.6),)
-    if result.rate >= 90: return (AssistantLine("**That was a serious week.**\n\nYou made consistency look easy.", typing_delay=0.6),)
-    if result.rate < 25: return (AssistantLine("**This week did not go to plan.**\n\nThe next one does not have to repeat it.", typing_delay=0.6),)
-    return (AssistantLine("**Not perfect. Very steady.**\n\nAnd steady is how habits\nbecome normal.", typing_delay=0.6),)
+    if result.partial: return (AssistantLine("The story is not finished yet.\n\nToday can still change the result.", typing_delay=0.6),)
+    if result.rate >= 90: return (AssistantLine("That was a serious week.\n\nYou made consistency look easy.", typing_delay=0.6),)
+    if result.rate < 25: return (AssistantLine("This week did not go to plan.\n\nThe next one does not have to repeat it.", typing_delay=0.6),)
+    return (AssistantLine("Not perfect. Very steady.\n\nAnd steady is how habits\nbecome normal.", typing_delay=0.6),)
