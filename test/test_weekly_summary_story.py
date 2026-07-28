@@ -8,6 +8,7 @@ from src.assistant.stories.weekly_summary import (
     WEEKLY_SUMMARY_STORY_ID,
     WeeklySummaryStory,
     _analyse,
+    _additional_insights,
 )
 
 
@@ -385,3 +386,70 @@ def test_weekly_period_is_not_mislabelled_as_monday_activity() -> None:
 
     assert result.fulfilled == 1
     assert all(active == 0 for _, active, _ in result.daily)
+
+
+def test_shared_insights_cover_all_social_patterns_and_restrict_people_to_approved_friends() -> None:
+    def outcomes(completed: set[int]) -> dict[str, dict]:
+        return {
+            f"2026-07-{day:02d}": {
+                "completed": day in completed,
+                "fulfilled": day in completed,
+                "current": 10 if day in completed else 5,
+                "target": 10,
+            }
+            for day in range(20, 27)
+        }
+
+    alice = outcomes({20, 21, 23, 24, 25, 26})
+    alice["2026-07-23"]["completion_reactions"] = {}  # outcome data remains ordinary
+    context = AssistantContext(
+        user_id="alice", current_user={"name": "Alice"}, state=AssistantState(), session_state={},
+        current_page_key="help", now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "friend_profiles": {"maya": {"name": "Maya"}, "leo": {"name": "Leo"}},
+            "goals": [{
+                "id": "walking", "description": "Walking", "participants": {
+                    "alice": {"period_outcomes": alice, "completion_reactions": {
+                        "2026-07-23": {"maya": {"emote": "🔥", "reacted_at": "2026-07-24T09:00:00+00:00"}},
+                    }},
+                    "maya": {"period_outcomes": outcomes({20, 21, 22, 23, 24, 26})},
+                    "leo": {"period_outcomes": outcomes({20, 21, 23, 24, 25, 26})},
+                    # A goal participant is not automatically a visible friend.
+                    "outsider": {"period_outcomes": outcomes(set())},
+                },
+            }],
+        },
+    )
+
+    result = _analyse(context, datetime(2026, 7, 20, tzinfo=timezone.utc).date(), False)
+    identifiers = {item.identifier.split(":")[0] for item in _additional_insights(result, set(), set())}
+
+    assert {"shared_momentum", "shared_success", "friend_comparison", "shared_streak", "group_consistency", "shared_recovery", "friend_support"} <= identifiers
+    people = result.shared_goals[0].participants
+    assert [person.name for person in people] == ["Alice", "Maya", "Leo"]
+
+
+def test_shared_comparison_hides_raw_progress_when_targets_differ_and_streak_is_not_duplicated() -> None:
+    def participant(target: int, completed: set[int]) -> dict:
+        return {"period_outcomes": {
+            f"2026-07-{day:02d}": {"completed": day in completed, "fulfilled": day in completed, "current": target if day in completed else target // 2, "target": target}
+            for day in range(20, 27)
+        }}
+
+    context = AssistantContext(
+        user_id="alice", current_user={"name": "Alice"}, state=AssistantState(), session_state={},
+        current_page_key="help", now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={"friend_profiles": {"maya": {"name": "Maya"}}, "goals": [{
+            "id": "walk", "description": "Walking", "participants": {
+                "alice": participant(10, {20, 21, 22, 23, 24, 25}),
+                "maya": participant(100, {20, 21, 22, 23, 24}),
+            },
+        }]},
+    )
+    result = _analyse(context, datetime(2026, 7, 20, tzinfo=timezone.utc).date(), False)
+    comparison = next(item for item in _additional_insights(result, set(), set()) if item.identifier == "friend_comparison:walk")
+    card = next(item for item in comparison.content if isinstance(item, AssistantCard))
+
+    assert "of personal target" in card.rows[0][1]
+    assert " / " not in card.rows[0][1]
+    assert not any(item.identifier == "shared_streak:walk" for item in _additional_insights(result, set(), {"Walking"}))

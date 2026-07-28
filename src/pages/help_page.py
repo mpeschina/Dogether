@@ -88,6 +88,9 @@ def render_help(
         "push_enabled": bool(push_storage and push_storage.subscriptions_for_user(user_id)),
         "completed_goal_count": _completed_goal_period_count(goals, user_id),
         "goals": goals,
+        # Weekly shared-goal insights may only identify people who are already
+        # approved friends of the current user.
+        "friend_profiles": {friend["user_id"]: friend for friend in friends if friend.get("user_id")},
     }
     context = AssistantContext(
         user_id=user_id,

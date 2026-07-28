@@ -38,6 +38,39 @@ class GoalResult:
 
 
 @dataclass(frozen=True)
+class SharedParticipantResult:
+    user_id: str
+    name: str
+    fulfilled: int
+    active: int
+    skipped: int
+    progress_rate: float
+    streak: "StreakResult"
+    periods: tuple[tuple[date, bool, bool, int, int], ...]
+
+    @property
+    def rate(self) -> float:
+        return self.fulfilled * 100 / self.active if self.active else 0
+
+
+@dataclass(frozen=True)
+class SharedGoalResult:
+    identifier: str
+    name: str
+    schedule_class: str
+    participants: tuple[SharedParticipantResult, ...]
+    reactions: tuple[tuple[str, str, str, datetime], ...] = ()
+
+    @property
+    def user(self) -> SharedParticipantResult:
+        return self.participants[0]
+
+    @property
+    def is_weekly(self) -> bool:
+        return self.schedule_class in {"weekly", "weekly_x_per_month"}
+
+
+@dataclass(frozen=True)
 class StreakResult:
     """A goal-local streak derived from closed base periods only."""
 
@@ -85,6 +118,7 @@ class WeekResult:
     period_data: tuple[tuple[date, bool, bool, int, int, str, str], ...] = ()
     history: tuple[tuple[date, int, int], ...] = ()
     historical_daily: tuple[tuple[date, bool, bool], ...] = ()
+    shared_goals: tuple[SharedGoalResult, ...] = ()
 
     @property
     def rate(self) -> float:
@@ -417,7 +451,213 @@ def _additional_insights(result: WeekResult, used_types: set[str], used_subjects
     schedule = _schedule_breakdown_insight(result)
     if schedule:
         candidates.append(schedule)
+    candidates.extend(_shared_insights(result, used_subjects))
     return candidates
+
+
+def _shared_insights(result: WeekResult, used_subjects: set[str]) -> list[AdditionalInsight]:
+    """One strongest, independently useful candidate for each social pattern."""
+    candidates = [
+        _matching_completions_insight(result),
+        _shared_success_insight(result),
+        _friend_comparison_insight(result),
+        _shared_streak_insight(result, used_subjects),
+        _group_consistency_insight(result),
+        _friend_recovery_insight(result),
+        _reaction_insight(result),
+    ]
+    return [candidate for candidate in candidates if candidate is not None]
+
+
+def _period_map(participant: SharedParticipantResult) -> dict[date, tuple[bool, bool, int, int]]:
+    return {when: (done, active, current, target) for when, done, active, current, target in participant.periods}
+
+
+def _matching_completions_insight(result: WeekResult) -> AdditionalInsight | None:
+    options = []
+    for goal in result.shared_goals:
+        user = _period_map(goal.user)
+        for friend in goal.participants[1:]:
+            friend_periods = _period_map(friend)
+            comparable = sorted(set(user) & set(friend_periods))
+            matching = [when for when in comparable if user[when][0] and friend_periods[when][0]]
+            if matching and (len(matching) >= 2 or len(matching) == len(comparable)):
+                options.append((len(matching), len(matching) / len(comparable), max(matching), len(comparable), goal, friend))
+    if not options:
+        return None
+    count, ratio, recent, active, goal, friend = max(options, key=lambda item: item[:4])
+    label = "the weekly target" if goal.is_weekly else f"{count} of {active} periods"
+    text = "You finished the week together." if goal.is_weekly else f"You matched each other on {count} day{'s' if count != 1 else ''}."
+    return AdditionalInsight(f"shared_momentum:{goal.identifier}:{friend.user_id}", frozenset({goal.name}), (
+        AssistantLine(f"You and {friend.name} moved together."),
+        AssistantCard("SHARED MOMENTUM", goal.name, f"With {friend.name}\nBoth completed {label}"),
+        AssistantLine(text),
+    ))
+
+
+def _shared_success_insight(result: WeekResult) -> AdditionalInsight | None:
+    options = []
+    for goal in result.shared_goals:
+        maps = [_period_map(participant) for participant in goal.participants]
+        for when in set.intersection(*(set(periods) for periods in maps)) if maps else set():
+            if all(periods[when][0] for periods in maps):
+                user_map = maps[0]
+                prior_miss = any(not done for day, (done, *_rest) in user_map.items() if day < when)
+                options.append((len(maps), when, int(prior_miss), goal))
+    if not options:
+        return None
+    people, when, recovered, goal = max(options, key=lambda item: (item[0], item[1], item[2], _shared_goal_activity(item[3])))
+    names = [participant.name for participant in goal.participants]
+    everyone = _join_names(["You", *names[1:]])
+    intro = "Everyone completed the weekly goal." if goal.is_weekly else f"{when.strftime('%A')} belonged to the whole group."
+    return AdditionalInsight(f"shared_success:{goal.identifier}:{when.isoformat()}", frozenset({goal.name}), (
+        AssistantLine(intro),
+        AssistantCard("SHARED SUCCESS", goal.name, f"{everyone}\nall completed the goal"),
+        AssistantLine("Everyone reached their target that period."),
+    ))
+
+
+def _friend_comparison_insight(result: WeekResult) -> AdditionalInsight | None:
+    eligible = [goal for goal in result.shared_goals if sum(participant.active > 0 for participant in goal.participants) >= 2]
+    if not eligible:
+        return None
+    goal = max(eligible, key=lambda item: (_shared_goal_activity(item), len(item.participants), item.name))
+    valid = [participant for participant in goal.participants if participant.active > 0]
+    if goal.user not in valid or all(person.fulfilled == person.active for person in valid):
+        return None
+    people = [goal.user, *sorted((person for person in valid if person.user_id != goal.user.user_id), key=lambda p: (-p.fulfilled, -p.rate, p.name.casefold()))[:3]]
+    if len(people) < 2:
+        return None
+    targets = {target for person in people for _, _, active, _, target in person.periods if active}
+    equal_targets = len(targets) == 1
+    rows = []
+    for index, person in enumerate(people):
+        label = "You" if index == 0 else person.name
+        if equal_targets:
+            current = sum(current for _, _, active, current, _ in person.periods if active)
+            target = sum(target for _, _, active, _, target in person.periods if active)
+            detail = f"{current:,} / {target:,} · {person.fulfilled} of {person.active} periods · {person.rate:.0f}%"
+        else:
+            detail = f"{person.progress_rate:.0f}% of personal target · {person.fulfilled} of {person.active} periods"
+        rows.append((label, detail))
+    leader = max(people, key=lambda person: (person.fulfilled, person.rate, person.name.casefold()))
+    text = "Your result led the group this week." if leader.user_id == goal.user.user_id else f"{leader.name} had the strongest completion rate."
+    return AdditionalInsight(f"friend_comparison:{goal.identifier}", frozenset({goal.name}), (
+        AssistantLine("Here’s how the shared goal moved."),
+        AssistantCard("SHARED GOAL", goal.name, "", tuple(rows)),
+        AssistantLine(text),
+    ))
+
+
+def _shared_streak_insight(result: WeekResult, used_subjects: set[str]) -> AdditionalInsight | None:
+    options = []
+    for goal in result.shared_goals:
+        if goal.name in used_subjects:
+            continue
+        minimum = 2 if goal.is_weekly else 3
+        people = [person for person in goal.participants if person.streak.symbols]
+        if len(people) >= 2 and max(person.streak.value for person in people) >= minimum:
+            options.append((max(person.streak.value for person in people), _shared_goal_activity(goal), goal))
+    if not options:
+        return None
+    _, _, goal = max(options, key=lambda item: item[:2])
+    people = [person for person in goal.participants if person.streak.symbols]
+    rows = tuple(("You" if person.user_id == goal.user.user_id else person.name, person.streak.label) for person in people[:4])
+    leader = max(people, key=lambda person: (person.streak.value, person.name.casefold()))
+    text = "Your streak is currently the longest." if leader.user_id == goal.user.user_id else f"{leader.name} has the longest streak right now."
+    return AdditionalInsight(f"shared_streak:{goal.identifier}", frozenset({goal.name}), (
+        AssistantLine("The group’s streaks tell another story."),
+        AssistantCard("SHARED STREAKS", goal.name, "", rows),
+        AssistantLine(text),
+    ))
+
+
+def _group_consistency_insight(result: WeekResult) -> AdditionalInsight | None:
+    options = []
+    for goal in result.shared_goals:
+        maps = [_period_map(person) for person in goal.participants]
+        comparable = set.intersection(*(set(periods) for periods in maps)) if maps else set()
+        if not comparable:
+            continue
+        everyone = sum(all(periods[when][0] for periods in maps) for when in comparable)
+        half = sum(sum(periods[when][0] for periods in maps) * 2 >= len(maps) for when in comparable)
+        average = sum(person.rate for person in goal.participants) / len(goal.participants)
+        together = everyone / len(comparable)
+        eligible = (len(goal.participants) >= 3 or (len(goal.participants) == 2 and together >= .6)) and (half >= 2 or everyone >= 2)
+        if eligible:
+            options.append((everyone, half, average, len(comparable), goal))
+    if not options:
+        return None
+    everyone, half, average, total, goal = max(options, key=lambda item: item[:4])
+    unit = "weeks" if goal.is_weekly else "days"
+    rows = ((f"{everyone} of {total} {unit}", "everyone completed"), (f"{half} of {total} {unit}", "at least half completed"))
+    return AdditionalInsight(f"group_consistency:{goal.identifier}", frozenset({goal.name}), (
+        AssistantLine("This shared goal stayed active across the group."),
+        AssistantCard("GROUP CONSISTENCY", goal.name, "", rows),
+        AssistantLine("The group kept showing up for this goal."),
+    ))
+
+
+def _friend_recovery_insight(result: WeekResult) -> AdditionalInsight | None:
+    options = []
+    for goal in result.shared_goals:
+        user = _period_map(goal.user)
+        for missed in sorted(day for day, values in user.items() if values[1] and not values[0]):
+            recovered = next((day for day in sorted(user) if day > missed and user[day][0]), None)
+            if recovered is None:
+                continue
+            for friend in goal.participants[1:]:
+                friend_map = _period_map(friend)
+                support = next((day for day in (recovered, missed) if friend_map.get(day, (False,))[0]), None)
+                if support:
+                    options.append((recovered, missed, goal, friend, support))
+    if not options:
+        return None
+    recovered, missed, goal, friend, support = max(options, key=lambda item: item[0])
+    rows = ((missed.strftime("%A"), "missed"), (support.strftime("%A"), f"{friend.name} completed"), (recovered.strftime("%A"), "you completed"))
+    return AdditionalInsight(f"shared_recovery:{goal.identifier}:{recovered.isoformat()}:{friend.user_id}", frozenset({goal.name}), (
+        AssistantLine(f"You rejoined the group after {missed.strftime('%A')}"),
+        AssistantCard("SHARED RECOVERY", goal.name, "", rows),
+        AssistantLine("You were back one period later." if (recovered - missed).days == (7 if goal.is_weekly else 1) else "You found your way back during the week."),
+    ))
+
+
+def _reaction_insight(result: WeekResult) -> AdditionalInsight | None:
+    reactions = [reaction for goal in result.shared_goals for reaction in goal.reactions]
+    if not reactions:
+        return None
+    counts: dict[str, list[str]] = {}
+    names: dict[str, str] = {}
+    for sender_id, sender_name, emote, _ in reactions:
+        counts.setdefault(sender_id, []).append(emote)
+        names[sender_id] = sender_name
+    ordered = sorted(counts, key=lambda sender: (-len(counts[sender]), names[sender].casefold()))
+    rows = tuple((names[sender], f"{len(counts[sender])}" + (f" · {' '.join(counts[sender][:3])}" if counts[sender] else "")) for sender in ordered[:4])
+    total = len(reactions)
+    if len(ordered) == 1:
+        sender = ordered[0]
+        detail = f"{names[sender]} reacted\nto {total} completion{'s' if total != 1 else ''}"
+        text = f"{names[sender]} noticed your progress."
+    else:
+        detail = f"{total} reactions received"
+        text = "Your friends noticed the week."
+    return AdditionalInsight("friend_support:" + ":".join(ordered), frozenset(), (
+        AssistantLine("Your friends noticed the week."),
+        AssistantCard("FRIEND SUPPORT", detail, "", rows),
+        AssistantLine(text),
+    ))
+
+
+def _shared_goal_activity(goal: SharedGoalResult) -> int:
+    return sum(participant.active for participant in goal.participants)
+
+
+def _join_names(names: list[str]) -> str:
+    if len(names) <= 1:
+        return names[0] if names else ""
+    if len(names) == 2:
+        return " and ".join(names)
+    return ", ".join(names[:-1]) + f" and {names[-1]}"
 
 
 def _personal_record_insight(result: WeekResult) -> AdditionalInsight | None:
@@ -583,6 +823,7 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
     period_data: list[tuple[date, bool, bool, int, int, str, str]] = []
     historical: dict[date, list[int]] = {}
     historical_daily: list[tuple[date, bool, bool]] = []
+    shared_goals: list[SharedGoalResult] = []
     previous_active = 0
     previous_done = 0
     for goal in context.user_state.get("goals", []):
@@ -672,6 +913,9 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
                 daily[when][1] += int(_is_completed(item))
                 if _has_progress(item):
                     progress_days.add(when)
+        shared = _analyse_shared_goal(context, goal, start, end, now)
+        if shared is not None:
+            shared_goals.append(shared)
     active = sum(goal.active for goal in goals)
     fulfilled = sum(goal.fulfilled for goal in goals)
     skipped = sum(goal.skipped for goal in goals)
@@ -691,7 +935,110 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
         period_data=tuple(period_data),
         history=tuple((week, values[0], values[1]) for week, values in sorted(historical.items())),
         historical_daily=tuple(historical_daily),
+        shared_goals=tuple(shared_goals),
     )
+
+
+def _analyse_shared_goal(
+    context: AssistantContext,
+    goal: dict[str, Any],
+    start: date,
+    end: date,
+    now: date,
+) -> SharedGoalResult | None:
+    """Extract only active, currently approved participants for social insights."""
+    participants = goal.get("participants", {})
+    if not isinstance(participants, dict) or context.user_id not in participants:
+        return None
+    profiles = context.user_state.get("friend_profiles", {})
+    profiles = profiles if isinstance(profiles, dict) else {}
+    visible_ids = [context.user_id]
+    visible_ids.extend(
+        participant_id
+        for participant_id, participant in participants.items()
+        if participant_id != context.user_id
+        and participant_id in profiles
+        and isinstance(participant, dict)
+        and not participant.get("left_at")
+    )
+    if len(visible_ids) < 2:
+        return None
+    shared_people: list[SharedParticipantResult] = []
+    for participant_id in visible_ids:
+        participant = participants.get(participant_id, {})
+        if not isinstance(participant, dict):
+            continue
+        selected = _participant_selected_outcomes(participant, start, end)
+        active = sum(not _is_excused(item) for _, item in selected)
+        fulfilled = sum(_is_completed(item) for _, item in selected)
+        skipped = sum(_is_excused(item) for _, item in selected)
+        progress_values = [_progress(item)[0] for _, item in selected if not _is_excused(item) and _progress(item) is not None]
+        profile = context.current_user if participant_id == context.user_id else profiles.get(participant_id, {})
+        name = str(profile.get("name") or profile.get("email") or participant_id) if isinstance(profile, dict) else participant_id
+        shared_people.append(SharedParticipantResult(
+            participant_id, name, fulfilled, active, skipped,
+            sum(progress_values) / len(progress_values) if progress_values else 0,
+            _analyse_streak(goal, participant, start, end, now),
+            tuple((when, _is_completed(item), not _is_excused(item), *_period_amounts(item)) for when, item in selected),
+        ))
+    # The user must have data and at least one approved friend must have data.
+    if len(shared_people) < 2 or shared_people[0].user_id != context.user_id or not shared_people[0].periods:
+        return None
+    reactions = _shared_reactions(goal, context.user_id, profiles, start, end)
+    return SharedGoalResult(
+        str(goal.get("id") or goal.get("description", "goal")),
+        str(goal.get("description", "Goal")),
+        str(goal.get("schedule_class", "daily")),
+        tuple(shared_people),
+        reactions,
+    )
+
+
+def _participant_selected_outcomes(participant: dict[str, Any], start: date, end: date) -> list[tuple[date, dict[str, Any]]]:
+    outcomes = participant.get("period_outcomes", {})
+    selected = _outcomes_in(outcomes, start, end)
+    current_start = _date(participant.get("period_start"))
+    if current_start is not None and start <= current_start <= end and not any(day == current_start for day, _ in selected):
+        current = max(0, int(participant.get("current", 0) or 0))
+        target = max(1, int(participant.get("target", 1) or 1))
+        selected.append((current_start, {
+            "completed": current >= target,
+            "fulfilled": current >= target,
+            "skipped": bool(participant.get("skipped", False)),
+            "current": current,
+            "target": target,
+        }))
+    return sorted(selected, key=lambda item: item[0])
+
+
+def _shared_reactions(
+    goal: dict[str, Any],
+    user_id: str,
+    profiles: dict[str, Any],
+    start: date,
+    end: date,
+) -> tuple[tuple[str, str, str, datetime], ...]:
+    participant = goal.get("participants", {}).get(user_id, {})
+    reactions = participant.get("completion_reactions", {}) if isinstance(participant, dict) else {}
+    result = []
+    if not isinstance(reactions, dict):
+        return ()
+    for period_reactions in reactions.values():
+        if not isinstance(period_reactions, dict):
+            continue
+        for sender_id, reaction in period_reactions.items():
+            if sender_id not in profiles or not isinstance(reaction, dict):
+                continue
+            reacted_at = _datetime(reaction.get("reacted_at"))
+            if reacted_at is None:
+                continue
+            local_reacted_at = reacted_at.replace(tzinfo=APP_ZONE) if reacted_at.tzinfo is None else reacted_at.astimezone(APP_ZONE)
+            if not (start <= local_reacted_at.date() <= end):
+                continue
+            profile = profiles[sender_id]
+            name = str(profile.get("name") or profile.get("email") or sender_id) if isinstance(profile, dict) else sender_id
+            result.append((sender_id, name, str(reaction.get("emote", "")), local_reacted_at))
+    return tuple(result)
 
 
 def _analyse_streak(goal: dict[str, Any], participant: dict[str, Any], start: date, end: date, today: date) -> StreakResult:
@@ -907,6 +1254,9 @@ def _has_progress(outcome: dict[str, Any]) -> bool:
 def _week_start(value: date) -> date: return value - timedelta(days=value.weekday())
 def _date(value: Any) -> date | None:
     try: return datetime.fromisoformat(str(value)).date()
+    except ValueError: return None
+def _datetime(value: Any) -> datetime | None:
+    try: return datetime.fromisoformat(str(value))
     except ValueError: return None
 def _now(context: AssistantContext) -> datetime:
     value = context.now or datetime.now(APP_ZONE)
