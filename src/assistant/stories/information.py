@@ -60,7 +60,7 @@ def record_goal_invitation_news(
         state = AssistantState.from_profile(profile)
         events = copy.deepcopy(state.events)
         invitations = pending_goal_invitations(state)
-        if any(item["goal_id"] == goal_id for item in invitations):
+        if any(item["goal_id"] == str(goal["id"]) for item in invitations):
             continue
         friend_ids = {friend.get("user_id") for friend in persistence.list_friends(recipient_user_id)}
         participants = set(goal.get("participants", {}))
