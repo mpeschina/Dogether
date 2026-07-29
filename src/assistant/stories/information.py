@@ -160,7 +160,7 @@ class InformationStory(AssistantStory):
             content=(
                 AssistantLine("Hello."),
                 AssistantLine("I have important news for you.", typing_delay=0.7),
-                AssistantLine(invitation_text, typing_delay=0.7),
+                AssistantLine(invitation_text, typing_delay=2.7),
                 *(_goal_fact_cards(invitations)),
             ),
             choices=(AssistantChoice("acknowledge", "Got it"),),
