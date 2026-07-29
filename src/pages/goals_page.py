@@ -5,6 +5,12 @@ from html import escape
 
 import streamlit as st
 
+from src.push.notifications import (
+    add_goal_friends_with_invitation_news,
+    create_goal_with_invitation_news,
+)
+from src.push.storage import PushStorage
+
 from src.db.persistence import Persistence
 from src.pages.page_helpers import schedule_label
 
@@ -157,6 +163,8 @@ def _render_add_goal_friends(
     user_id: str,
     addable_friend_options: dict[str, str],
     now: datetime | None,
+    push_storage: PushStorage | None,
+    push_settings: dict[str, str] | None,
 ) -> None:
     if not addable_friend_options:
         st.caption("All friends are already on this goal.")
@@ -174,7 +182,10 @@ def _render_add_goal_friends(
                 if not selected_new_friends:
                     st.warning("Choose at least one friend to add.")
                 else:
-                    persistence.add_goal_friends(
+                    add_goal_friends_with_invitation_news(
+                        persistence,
+                        push_storage,
+                        push_settings or {},
                         goal_id=goal["id"],
                         user_id=user_id,
                         friend_user_ids=[
@@ -218,6 +229,8 @@ def _render_active_goal(
     user_id: str,
     friend_options: dict[str, str],
     now: datetime | None,
+    push_storage: PushStorage | None,
+    push_settings: dict[str, str] | None,
 ) -> None:
     participant = goal["participants"][user_id]
     with st.container(border=True):
@@ -237,10 +250,18 @@ def _render_active_goal(
                 user_id,
                 _addable_friend_options(goal, friend_options),
                 now,
+                push_storage,
+                push_settings,
             )
 
 
-def render_goals(persistence: Persistence, user_id: str, now: datetime | None = None) -> None:
+def render_goals(
+    persistence: Persistence,
+    user_id: str,
+    push_storage: PushStorage | None = None,
+    push_settings: dict[str, str] | None = None,
+    now: datetime | None = None,
+) -> None:
     st.markdown(
         """
         <style>
@@ -282,7 +303,10 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
         submitted = st.button("Create goal", type="primary")
         if submitted:
             try:
-                persistence.create_goal(
+                create_goal_with_invitation_news(
+                    persistence,
+                    push_storage,
+                    push_settings or {},
                     created_by=user_id,
                     description=description,
                     schedule_class=schedule_options[schedule_label_value],
@@ -305,6 +329,8 @@ def render_goals(persistence: Persistence, user_id: str, now: datetime | None = 
     if st.session_state.get("goals_pending_leave_id") not in active_goal_ids:
         st.session_state.pop("goals_pending_leave_id", None)
     for goal_index, goal in enumerate(goals):
-        _render_active_goal(persistence, goal, user_id, friend_options, now)
+        _render_active_goal(
+            persistence, goal, user_id, friend_options, now, push_storage, push_settings
+        )
         if goal_index < len(goals) - 1:
             st.markdown('<hr class="goals-mobile-separator">', unsafe_allow_html=True)

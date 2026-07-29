@@ -28,6 +28,11 @@ from src.assistant.stories.greetings import (
     GreetingsStory,
 )
 from src.assistant.stories.push_reminder import PushReminderStory
+from src.assistant.stories.information import (
+    GOAL_INVITATION_EVENT_ID,
+    INFORMATION_STORY_ID,
+    _goal_fact_cards,
+)
 from src.assistant.stories.special_examples import (
     BUTTON_TEST_EVENT_ID,
     CLICK_CHALLENGE_EVENT_ID,
@@ -219,6 +224,48 @@ def test_director_initializes_welcome_once_and_waiting_rerun_is_inert() -> None:
     assert unchanged == state
     assert waiting.turns == []
     assert waiting.finished
+
+
+def test_information_story_preempts_other_stories_and_clears_combined_news() -> None:
+    persistence = RecordingPersistence()
+    session = {}
+    state = AssistantState(
+        story=STANDARD_STORY_ID,
+        scene=READY_NODE,
+        status="completed",
+        events={
+            GOAL_INVITATION_EVENT_ID: {"invitations": [
+                {"goal_id": "goal-one", "inviter_name": "Bob"},
+                {"goal_id": "goal-two", "inviter_name": "Charlie"},
+            ]}
+        },
+    )
+    director = AssistantDirector(persistence, default_stories())
+    initial = RecordingView()
+    paused = director.render(context_for(state, session_state=session), initial)
+
+    assert initial.turns[0].story_id == INFORMATION_STORY_ID
+    assert [item.text for item in initial.turns[0].content if hasattr(item, "text")][-1] == "Bob and Charlie invited you to 2 new shared goals."
+    assert len(initial.turns[0].content) == 5
+    assert paused.story == INFORMATION_STORY_ID
+
+    acknowledged = RecordingView(selection(INFORMATION_STORY_ID, "goal_invitations", "acknowledge"))
+    completed = director.render(context_for(paused, session_state=session), acknowledged)
+    assert acknowledged.turns[0].assistant_leaves is True
+    assert GOAL_INVITATION_EVENT_ID not in completed.events
+    assert completed.story == STANDARD_STORY_ID
+    assert session["assistant.information.complete"] is True
+
+
+def test_information_card_hides_a_single_friend_participant() -> None:
+    card = _goal_fact_cards([
+        {
+            "goal_id": "goal-one", "inviter_name": "Bob", "goal_name": "Walk",
+            "schedule_class": "daily", "required_periods": "1", "target": "4",
+            "friend_participant_count": "1",
+        }
+    ])[0]
+    assert "Friends already participating" not in dict(card.rows)
 
 
 def test_one_selection_advances_and_renders_the_next_stable_round() -> None:

@@ -153,7 +153,7 @@ def friends_page() -> None:
 
 def goals_page() -> None:
     mark_current_page("manage_goals")
-    render_goals(persistence, user_id, now=app_now)
+    render_goals(persistence, user_id, push_storage, configured_push, now=app_now)
 
 
 def historical_data_repair_page() -> None:
@@ -222,9 +222,11 @@ if debug.enabled:
     page_entries.append(debug_page_entry)
 
 assistant_destinations = {
+    "goals": goals_page_entry,
     "friends": friends_page_entry,
     "manage_goals": manage_goals_page_entry,
     "push_notifications": push_notifications_page_entry,
+    "help": help_page_entry,
 }
 
 

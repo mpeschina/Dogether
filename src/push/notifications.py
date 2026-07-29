@@ -6,9 +6,78 @@ from typing import Any, Mapping
 
 from src.db.persistence import Persistence
 from src.db.persistence_helpers import normalize_email
+from src.assistant.stories.information import record_goal_invitation_news
 
 from .sender import push_configured, send_push_to_user
 from .storage import PushStorage
+
+
+def _display_name(user: Mapping[str, Any]) -> str:
+    return str(user.get("name") or user.get("email") or "A friend")
+
+
+def create_goal_with_invitation_news(
+    persistence: Persistence,
+    push_storage: PushStorage | None,
+    push_settings: Mapping[str, str],
+    *,
+    created_by: str,
+    description: str,
+    schedule_class: str,
+    required_periods: int,
+    friend_user_ids: list[str],
+    target: int,
+    current: int = 0,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    goal = persistence.create_goal(
+        created_by, description, schedule_class, required_periods, friend_user_ids, target, current, now
+    )
+    _announce_goal_invitations(persistence, push_storage, push_settings, goal, created_by, friend_user_ids, now=now)
+    return goal
+
+
+def add_goal_friends_with_invitation_news(
+    persistence: Persistence,
+    push_storage: PushStorage | None,
+    push_settings: Mapping[str, str],
+    *,
+    goal_id: str,
+    user_id: str,
+    friend_user_ids: list[str],
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    before = persistence.list_goals_for_user(user_id, now=now)
+    before_goal = next((goal for goal in before if goal.get("id") == goal_id), {})
+    before_participants = set(before_goal.get("participants", {}))
+    goal = persistence.add_goal_friends(goal_id, user_id, friend_user_ids, now=now)
+    recipients = [participant_id for participant_id in goal.get("participants", {}) if participant_id not in before_participants]
+    _announce_goal_invitations(persistence, push_storage, push_settings, goal, user_id, recipients, now=now)
+    return goal
+
+
+def _announce_goal_invitations(
+    persistence: Persistence,
+    push_storage: PushStorage | None,
+    push_settings: Mapping[str, str],
+    goal: Mapping[str, Any],
+    inviter_user_id: str,
+    recipient_user_ids: list[str],
+    *,
+    now: datetime | None,
+) -> None:
+    inviter = persistence.get_user(inviter_user_id) or {}
+    inviter_name = _display_name(inviter)
+    recipients = [user_id for user_id in set(recipient_user_ids) if user_id != inviter_user_id]
+    record_goal_invitation_news(persistence, recipients, goal=goal, inviter_name=inviter_name, now=now)
+    if not push_storage or not push_configured(push_settings):
+        return
+    for recipient_user_id in recipients:
+        send_push_to_user(
+            push_storage, recipient_user_id,
+            title="Assistant", body=f"{inviter_name} invited you to a new shared goal.", url="/",
+            vapid_private_key=push_settings["vapid_private_key"], vapid_subject=push_settings["vapid_subject"],
+        )
 
 
 def create_friend_invite_with_push(

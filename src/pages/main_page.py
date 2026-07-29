@@ -29,6 +29,11 @@ from src.pages.page_helpers import participant_name, schedule_label
 from src.reaction_component import participant_reaction_row
 from src.push.notifications import set_goal_completion_reaction_with_push, update_goal_progress_with_push
 from src.push.storage import PushStorage
+from src.assistant.state import AssistantState
+from src.assistant.stories.information import (
+    clear_goal_invitation_news,
+    pending_goal_invitations,
+)
 from src.viewport_component import viewport_info
 
 
@@ -526,6 +531,10 @@ def render_main(
             border-color: {DONE_BUTTON_GREEN_ACTIVE};
             color: #ffffff;
         }}
+        div[class*="st-key-assistant_information_news"] {{
+            margin-top: 1.5rem;
+            margin-bottom: 2.75rem;
+        }}
         {mini_activity_styles()}
         </style>
         """,
@@ -536,6 +545,19 @@ def render_main(
 
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)
+
+    profile = persistence.get_user(user_id) or current_user
+    invitations = pending_goal_invitations(AssistantState.from_profile(profile))
+    if invitations:
+        with st.container(border=True, key="assistant_information_news"):
+            st.markdown("**Important News from the Assistant**")
+            actions = st.columns(2)
+            if actions[0].button("Call Assistant", type="primary", use_container_width=True):
+                st.session_state["assistant.destination"] = "help"
+                st.rerun(scope="app")
+            if actions[1].button("Dismiss", use_container_width=True):
+                clear_goal_invitation_news(persistence, user_id, now=now)
+                st.rerun(scope="app")
 
     goals = persistence.list_goals_for_user(user_id, now=now)
     if not goals:

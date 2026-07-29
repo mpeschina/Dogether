@@ -8,6 +8,7 @@ from src.assistant.core import AssistantContext
 from src.assistant.director import AssistantDirector
 from src.assistant.state import AssistantState, transient_assistant_state_for_user
 from src.assistant.presentation import StreamlitAssistantView, clear_transcript_for_new_help_visit
+from src.assistant.stories.information import INFORMATION_COMPLETE_SESSION_KEY
 from src.assistant.stories import default_stories
 from src.friends.share_links import create_friend_share_link
 from src.db.persistence import Persistence
@@ -108,6 +109,10 @@ def render_help(
     view = StreamlitAssistantView()
     director = AssistantDirector(persistence, default_stories())
     director.render(context, view)
+    if st.session_state.get(INFORMATION_COMPLETE_SESSION_KEY):
+        if st.button("Go Main Page", type="primary", use_container_width=True):
+            st.session_state["assistant.destination"] = "goals"
+            st.rerun()
 
 
 def _completed_goal_period_count(goals: list[dict], user_id: str) -> int:

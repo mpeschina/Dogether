@@ -20,6 +20,7 @@ from src.assistant.state import (
 )
 from src.assistant.presentation import ASSISTANT_LEFT_THIS_VISIT_KEY
 from src.assistant.stories.greetings import GREETINGS_STORY_ID
+from src.assistant.stories.information import INFORMATION_STORY_ID, pending_goal_invitations
 from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
 from src.assistant.stories.special_examples import SPECIAL_STORY_ID
 from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID
@@ -132,6 +133,8 @@ class AssistantDirector:
             return self.stories.get(selection.story_id)
 
         state = context.state
+        if pending_goal_invitations(state):
+            return self.stories.get(INFORMATION_STORY_ID)
         if state.mode is AssistantMode.SPECIAL:
             return self.stories.get(SPECIAL_STORY_ID)
 
