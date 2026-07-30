@@ -56,11 +56,13 @@ from src.assistant.stories.tutorial import (
     FRIENDS_EXPLANATION_NODE,
     FRIENDS_EXPLANATION_OPTIONS_NODE,
     FRIENDS_NODE,
+    GOALS_EVENT_ID,
     GOALS_EXPLANATION_FINISH_NODE,
     GOALS_EXPLANATION_NODE,
     GOALS_NODE,
     PUSH_EXPLANATION_FINISH_NODE,
     PUSH_EXPLANATION_NODE,
+    PUSH_EVENT_ID,
     PUSH_NODE,
     READY_NODE,
     RESUME_NODE,
@@ -450,6 +452,50 @@ def test_goal_and_notification_explanations_have_explicit_finish_scenes() -> Non
         "Show me Manage Goals",
         "Cool, thank you for the explanation.",
     ]
+
+
+def test_profile_analysis_resumes_after_goal_and_notification_explanations() -> None:
+    story = InitialTutorialStory()
+
+    goal_context = context_for(
+        AssistantState(
+            story=TUTORIAL_STORY_ID,
+            scene=GOALS_EXPLANATION_FINISH_NODE,
+            status="paused",
+        )
+    )
+    after_goals = story.advance(
+        goal_context,
+        GOALS_EXPLANATION_FINISH_NODE,
+        selection(
+            TUTORIAL_STORY_ID,
+            GOALS_EXPLANATION_FINISH_NODE,
+            "Cool, thank you for the explanation.",
+        ),
+    )
+    assert after_goals.state_scene == PUSH_NODE
+    assert after_goals.event_updates == {GOALS_EVENT_ID: {"outcome": "skipped"}}
+    assert after_goals.completed is False
+
+    push_context = context_for(
+        AssistantState(
+            story=TUTORIAL_STORY_ID,
+            scene=PUSH_EXPLANATION_FINISH_NODE,
+            status="paused",
+        )
+    )
+    after_push = story.advance(
+        push_context,
+        PUSH_EXPLANATION_FINISH_NODE,
+        selection(
+            TUTORIAL_STORY_ID,
+            PUSH_EXPLANATION_FINISH_NODE,
+            "Cool, thank you for the explanation.",
+        ),
+    )
+    assert after_push.state_scene == ANALYSIS_COMPLETE_NODE
+    assert after_push.event_updates == {PUSH_EVENT_ID: {"outcome": "skipped"}}
+    assert after_push.completed is False
 
 
 def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:

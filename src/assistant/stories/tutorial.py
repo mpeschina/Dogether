@@ -202,9 +202,9 @@ class InitialTutorialStory(AssistantStory):
                 story_id=self.story_id,
                 scene_id=RESUME_NODE,
                 lines=_lines("Hey, you're back.", ("Continue where we stopped?", 1.2)),
-                choices=_choices("Yes", "Start over"),
+                choices=_choices("Restart", "Continue"),
             )
-        if choice == "Start over":
+        if choice == "Restart":
             return _transition(self.story_id, WELCOME_NODE)
         return _transition(
             self.story_id,
@@ -260,7 +260,7 @@ class InitialTutorialStory(AssistantStory):
                 FRIENDS_NODE,
                 lines=_lines("First: your people.", ("It's quiet in here.", 1.2)),
                 label="Invite someone?",
-                choices=_choices("Invite a friend", "Explain the Friendlist to me", "Later"),
+                choices=_choices("Invite a friend", "Explain the Friendlist to me", "I did already, lets move on"),
             )
         if choice == "Invite a friend":
             return self._navigate_to_friends()
@@ -690,6 +690,13 @@ def _goal_explanation(
             state_scene=GOALS_NODE,
             state_status="paused",
         )
+    if owner == TUTORIAL_STORY_ID:
+        return _transition(
+            owner,
+            PUSH_NODE,
+            lines=_lines("Ciao."),
+            event_updates={GOALS_EVENT_ID: {"outcome": "skipped"}},
+        )
     return _finish_explanation(
         owner,
         lines=_lines("Ciao."),
@@ -813,6 +820,13 @@ def _push_explanation(
             state_story=owner,
             state_scene=PUSH_NODE,
             state_status="paused",
+        )
+    if owner == TUTORIAL_STORY_ID:
+        return _transition(
+            owner,
+            ANALYSIS_COMPLETE_NODE,
+            lines=_lines("Ciao."),
+            event_updates={PUSH_EVENT_ID: {"outcome": "skipped"}},
         )
     return _finish_explanation(
         owner,
