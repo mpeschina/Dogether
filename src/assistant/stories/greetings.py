@@ -219,12 +219,13 @@ class GreetingsStory(AssistantStory):
         selection: AssistantSelection | None,
     ) -> AssistantTurn:
         intro, raw_choices, responses = INTERACTIVE_MESSAGES[greeting_id]
-        if selection is None:
+        choices = tuple(AssistantChoice(id=choice_id, label=label) for choice_id, label in raw_choices)
+        if selection is None or selection.choice_id not in responses:
             return AssistantTurn(
                 story_id=self.story_id,
                 scene_id=greeting_id,
                 lines=(AssistantLine(intro),),
-                choices=tuple(AssistantChoice(id=choice_id, label=label) for choice_id, label in raw_choices),
+                choices=choices,
             )
         context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
         response = responses.get(selection.choice_id, next(iter(responses.values())))
@@ -238,7 +239,7 @@ class GreetingsStory(AssistantStory):
     def _silent_turn(
         self, context: AssistantContext, selection: AssistantSelection | None
     ) -> AssistantTurn:
-        if selection is None:
+        if selection is None or selection.choice_id not in {choice.id for choice in SILENT_GREETING_CHOICES}:
             return AssistantTurn(
                 story_id=self.story_id,
                 scene_id="silent",
@@ -258,7 +259,8 @@ class GreetingsStory(AssistantStory):
     def _waiting_crack_turn(
         self, context: AssistantContext, selection: AssistantSelection | None
     ) -> AssistantTurn:
-        if selection is None:
+        choices = (AssistantChoice("apparently", "Apparently."),)
+        if selection is None or selection.choice_id != "apparently":
             return AssistantTurn(
                 story_id=self.story_id,
                 scene_id="waiting_crack",
@@ -268,7 +270,7 @@ class GreetingsStory(AssistantStory):
                     AssistantLine("", typing_delay=2),
                     AssistantLine("Are we both waiting for the other person?"),
                 ),
-                choices=(AssistantChoice("apparently", "Apparently."),),
+                choices=choices,
             )
         context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
         return AssistantTurn(

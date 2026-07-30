@@ -133,7 +133,7 @@ class InformationStory(AssistantStory):
         invitations = pending_goal_invitations(context.state)
         if not invitations:
             return None
-        if selection is not None:
+        if selection is not None and selection.choice_id == "acknowledge":
             context.session_state[INFORMATION_COMPLETE_SESSION_KEY] = True
             return AssistantTurn(
                 story_id=self.story_id,

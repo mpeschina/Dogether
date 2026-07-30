@@ -57,8 +57,9 @@ def _lines(*items: str | tuple[str, float]) -> tuple[AssistantLine, ...]:
     return tuple(result)
 
 
-def _choices(*labels: str) -> tuple[AssistantChoice, ...]:
-    return tuple(AssistantChoice.from_label(label) for label in labels)
+def _choices(*choices: tuple[str, str]) -> tuple[AssistantChoice, ...]:
+    """Build choices from stable IDs and presentation-only labels."""
+    return tuple(AssistantChoice(id=choice_id, label=label) for choice_id, label in choices)
 
 
 def _scene(
@@ -120,8 +121,14 @@ def _complete(
     )
 
 
-def _selected(selection: AssistantSelection | None) -> str | None:
-    return selection.choice_id if selection is not None else None
+def _selected(
+    selection: AssistantSelection | None,
+    choices: tuple[AssistantChoice, ...],
+) -> str | None:
+    """Return a selected ID only when it belongs to this scene's choices."""
+    if selection is None or selection.choice_id not in {choice.id for choice in choices}:
+        return None
+    return selection.choice_id
 
 
 class InitialTutorialStory(AssistantStory):
@@ -168,7 +175,12 @@ class InitialTutorialStory(AssistantStory):
         return _transition(self.story_id, WELCOME_NODE)
 
     def _welcome(self, selection: AssistantSelection | None) -> AssistantTurn:
-        choice = _selected(selection)
+        choices = _choices(
+            ("analyse_profile", "Analyse my profile"),
+            ("tour", "Give me a tour"),
+            ("decline", "I'm good"),
+        )
+        choice = _selected(selection, choices)
         if choice is None:
             return _scene(
                 self.story_id,
@@ -178,11 +190,11 @@ class InitialTutorialStory(AssistantStory):
                     ("Great to have you here.", 1.2),
                     ("Want some help?", 1.5),
                 ),
-                choices=_choices("Analyse my profile", "Give me a tour", "I'm good"),
+                choices=choices,
             )
-        if choice == "Analyse my profile":
+        if choice == "analyse_profile":
             return _transition(self.story_id, FRIENDS_NODE)
-        if choice == "Give me a tour":
+        if choice == "tour":
             return _transition(self.story_id, TOUR_NODE)
         return _complete(
             READY_NODE,
@@ -196,15 +208,16 @@ class InitialTutorialStory(AssistantStory):
         context: AssistantContext,
         selection: AssistantSelection | None,
     ) -> AssistantTurn:
-        choice = _selected(selection)
+        choices = _choices(("restart", "Restart"), ("continue", "Continue"))
+        choice = _selected(selection, choices)
         if choice is None:
             return AssistantTurn(
                 story_id=self.story_id,
                 scene_id=RESUME_NODE,
                 lines=_lines("Hey, you're back.", ("Continue where we stopped?", 1.2)),
-                choices=_choices("Restart", "Continue"),
+                choices=choices,
             )
-        if choice == "Restart":
+        if choice == "restart":
             return _transition(self.story_id, WELCOME_NODE)
         return _transition(
             self.story_id,
@@ -219,7 +232,17 @@ class InitialTutorialStory(AssistantStory):
     ) -> AssistantTurn:
         count = int(context.user_state.get("friend_count", 0))
         prior = context.state.events.get(FRIENDS_EVENT_ID, {})
-        choice = _selected(selection)
+        one_friend_choices = _choices(
+            ("invite", "Invite someone"), ("continue", "I'm good")
+        )
+        no_friends_choices = _choices(
+            ("invite", "Invite a friend"),
+            ("explain", "Explain the Friendlist to me"),
+            ("continue", "I did already, lets move on"),
+        )
+        choice = _selected(
+            selection, one_friend_choices if count == 1 else no_friends_choices
+        )
 
         if count >= 2:
             return _transition(
@@ -244,9 +267,9 @@ class InitialTutorialStory(AssistantStory):
                     FRIENDS_NODE,
                     lines=_lines("You already found someone.", "Good start."),
                     label="Want another?",
-                    choices=_choices("Invite someone", "I'm good"),
+                    choices=one_friend_choices,
                 )
-            if choice == "Invite someone":
+            if choice == "invite":
                 return self._navigate_to_friends()
             return _transition(
                 self.story_id,
@@ -260,11 +283,11 @@ class InitialTutorialStory(AssistantStory):
                 FRIENDS_NODE,
                 lines=_lines("First: your people.", ("It's quiet in here.", 1.2)),
                 label="Invite someone?",
-                choices=_choices("Invite a friend", "Explain the Friendlist to me", "I did already, lets move on"),
+                choices=no_friends_choices,
             )
-        if choice == "Invite a friend":
+        if choice == "invite":
             return self._navigate_to_friends()
-        if choice == "Explain the Friendlist to me":
+        if choice == "explain":
             return _transition(self.story_id, FRIENDS_EXPLANATION_NODE)
         return _transition(
             self.story_id,
@@ -292,7 +315,12 @@ class InitialTutorialStory(AssistantStory):
     ) -> AssistantTurn:
         count = int(context.user_state.get("goal_count", 0))
         prior = context.state.events.get(GOALS_EVENT_ID, {})
-        choice = _selected(selection)
+        choices = _choices(
+            ("create", "Create a goal"),
+            ("explain", "Explain Goals to me"),
+            ("later", "Later"),
+        )
+        choice = _selected(selection, choices)
         if count == 0:
             if choice is None:
                 return _scene(
@@ -303,9 +331,9 @@ class InitialTutorialStory(AssistantStory):
                         ("You don't have one yet.", 0),
                         ("Let's make that useful.", 0),
                     ),
-                    choices=_choices("Create a goal", "Explain Goals to me", "Later"),
+                    choices=choices,
                 )
-            if choice == "Create a goal":
+            if choice == "create":
                 return AssistantTurn(
                     story_id=self.story_id,
                     scene_id=GOALS_NODE,
@@ -317,7 +345,7 @@ class InitialTutorialStory(AssistantStory):
                     state_scene=GOALS_NODE,
                     state_status="paused",
                 )
-            if choice == "Explain Goals to me":
+            if choice == "explain":
                 return _transition(self.story_id, GOALS_EXPLANATION_NODE)
             return _transition(
                 self.story_id,
@@ -348,7 +376,12 @@ class InitialTutorialStory(AssistantStory):
     ) -> AssistantTurn:
         enabled = bool(context.user_state.get("push_enabled", False))
         prior = context.state.events.get(PUSH_EVENT_ID, {})
-        choice = _selected(selection)
+        choices = _choices(
+            ("enable", "Enable notifications"),
+            ("explain", "Explain notifications to me"),
+            ("skip", "Not now"),
+        )
+        choice = _selected(selection, choices)
         if enabled:
             if prior.get("awaiting") == "enable":
                 lines = _lines("Perfect. ✓", "I'll be gentle.")
@@ -372,11 +405,9 @@ class InitialTutorialStory(AssistantStory):
                     ("I can nudge you.", 0),
                     ("But I need permission.", 0),
                 ),
-                choices=_choices(
-                    "Enable notifications", "Explain notifications to me", "Not now"
-                ),
+                choices=choices,
             )
-        if choice == "Enable notifications":
+        if choice == "enable":
             return AssistantTurn(
                 story_id=self.story_id,
                 scene_id=PUSH_NODE,
@@ -388,7 +419,7 @@ class InitialTutorialStory(AssistantStory):
                 state_scene=PUSH_NODE,
                 state_status="paused",
             )
-        if choice == "Explain notifications to me":
+        if choice == "explain":
             return _transition(self.story_id, PUSH_EXPLANATION_NODE)
         return _transition(
             self.story_id,
@@ -399,7 +430,8 @@ class InitialTutorialStory(AssistantStory):
     def _analysis_complete(
         self, selection: AssistantSelection | None
     ) -> AssistantTurn:
-        if selection is None:
+        choices = _choices(("finish", "Thanks!"))
+        if _selected(selection, choices) is None:
             return _scene(
                 self.story_id,
                 ANALYSIS_COMPLETE_NODE,
@@ -408,7 +440,7 @@ class InitialTutorialStory(AssistantStory):
                     ("You're ready. ✓", 0),
                     ("I'll get out of your way.", 0),
                 ),
-                choices=_choices("Thanks!"),
+                choices=choices,
             )
         return _complete(
             READY_NODE,
@@ -416,7 +448,8 @@ class InitialTutorialStory(AssistantStory):
         )
 
     def _tour(self, selection: AssistantSelection | None) -> AssistantTurn:
-        if selection is None:
+        choices = _choices(("finish", "Got it"))
+        if _selected(selection, choices) is None:
             return _scene(
                 self.story_id,
                 TOUR_NODE,
@@ -428,7 +461,7 @@ class InitialTutorialStory(AssistantStory):
                     ("That's basically it.", 0),
                     ("You'll figure out the rest.", 0),
                 ),
-                choices=_choices("Got it"),
+                choices=choices,
             )
         return _complete(
             READY_NODE,
@@ -513,9 +546,9 @@ def _friend_explanation(
     scene_id: str,
     selection: AssistantSelection | None,
 ) -> AssistantTurn:
-    choice = _selected(selection)
     if scene_id == FRIENDS_EXPLANATION_NODE:
-        if choice is None:
+        choices = _choices(("continue", "How do I add friends?"), ("skip", "Got it"))
+        if _selected(selection, choices) is None:
             return _scene(
                 owner,
                 scene_id,
@@ -524,12 +557,13 @@ def _friend_explanation(
                     ("Friends unlock shared goals.", None),
                     ("You have the same goal with your friends and work on it together. Every day. You see each others progress and help to stay on track!", 0),
                 ),
-                choices=_choices("How do I add friends?", "Got it"),
+                choices=choices,
             )
         return _transition(owner, FRIENDS_EXPLANATION_OPTIONS_NODE)
 
     if scene_id == FRIENDS_EXPLANATION_OPTIONS_NODE:
-        if choice is None:
+        choices = _choices(("continue", "How does the link work?"), ("skip", "Makes sense"))
+        if _selected(selection, choices) is None:
             return _scene(
                 owner,
                 scene_id,
@@ -538,11 +572,17 @@ def _friend_explanation(
                     ("1. Invite them by email using the Friends menu, or", 0),
                     ("2. Share your invite link.", 0),
                 ),
-                choices=_choices("How does the link work?", "Makes sense"),
+                choices=choices,
             )
         return _transition(owner, FRIENDS_EXPLANATION_LINK_NODE)
 
     if scene_id == FRIENDS_EXPLANATION_LINK_NODE:
+        choices = _choices(
+            ("create_link", "Create a Link for me"),
+            ("open_friends", "Show me the Friends Page"),
+            ("continue", "Ok, thank you"),
+        )
+        choice = _selected(selection, choices)
         if choice is None:
             return _scene(
                 owner,
@@ -555,20 +595,16 @@ def _friend_explanation(
                     ("And it is at the heart of the app..", None),
                     ("to work on a shared goal together with your friends.", 3),
                 ),
-                choices=_choices(
-                    "Create a Link for me", "Show me the Friends Page", "Got it"
-                ),
+                choices=choices,
             )
-        if choice == "Create a Link for me":
+        if choice == "create_link":
             if context.create_friend_share_link is None:
                 return _scene(
                     owner,
                     scene_id,
                     statuses=("I couldn't create a link right now.",),
                     keep_statuses_in_history=True,
-                    choices=_choices(
-                        "Create a Link for me", "Show me the Friends Page", "Got it"
-                    ),
+                    choices=choices,
                 )
             return _transition(
                 owner,
@@ -577,7 +613,7 @@ def _friend_explanation(
                     (f"Here’s your invite link:\n\n{context.create_friend_share_link()}", 0)
                 ),
             )
-        if choice == "Show me the Friends Page":
+        if choice == "open_friends":
             if owner == STANDARD_STORY_ID:
                 return _finish_explanation(owner, destination="friends")
             return AssistantTurn(
@@ -590,12 +626,6 @@ def _friend_explanation(
             )
         return _transition(owner, FRIENDS_EXPLANATION_GOODBYE_NODE)
 
-    if choice is None:
-        return _scene(
-            owner,
-            FRIENDS_EXPLANATION_GOODBYE_NODE,
-            choices=_choices("Ok, thank you"),
-        )
     if owner == TUTORIAL_STORY_ID:
         return _transition(
             owner,
@@ -613,7 +643,6 @@ def _goal_explanation(
     selection: AssistantSelection | None,
 ) -> AssistantTurn:
     del context
-    choice = _selected(selection)
     scenes = {
         GOALS_EXPLANATION_NODE: (
             _lines(
@@ -622,7 +651,7 @@ def _goal_explanation(
                 ("You work on them every day.", 0),
                 ("And your friends help you stay on track.", 0),
             ),
-            _choices("Ok, whats more?", "Got it"),
+            _choices(("continue", "Ok, whats more?"), ("skip", "Got it")),
             GOALS_EXPLANATION_HOW_NODE,
         ),
         GOALS_EXPLANATION_HOW_NODE: (
@@ -632,7 +661,7 @@ def _goal_explanation(
                 ("But you only see your friends.", 0),
                 ("There may be others too.", 0),
             ),
-            _choices("Makes sense", "What about progress?"),
+            _choices(("continue", "Makes sense"), ("progress", "What about progress?")),
             GOALS_EXPLANATION_PROGRESS_NODE,
         ),
         GOALS_EXPLANATION_PROGRESS_NODE: (
@@ -641,7 +670,7 @@ def _goal_explanation(
                 ("And everyone can have their own maximum.", 0),
                 ("So the goal stays personal.", 0),
             ),
-            _choices("Nice", "What do friends do?"),
+            _choices(("continue", "Nice"), ("friends", "What do friends do?")),
             GOALS_EXPLANATION_FRIENDS_NODE,
         ),
         GOALS_EXPLANATION_FRIENDS_NODE: (
@@ -650,7 +679,7 @@ def _goal_explanation(
                 ("When a friend completes the goal…", 0),
                 ("You can get a notification.", 0),
             ),
-            _choices("And then?"),
+            _choices(("continue", "And then?")),
             GOALS_EXPLANATION_REACTIONS_NODE,
         ),
         GOALS_EXPLANATION_REACTIONS_NODE: (
@@ -659,24 +688,29 @@ def _goal_explanation(
                 ("A little celebration.", 0),
                 ("Or some friendly pressure.", 0),
             ),
-            _choices("Got it"),
+            _choices(("continue", "Got it")),
             GOALS_EXPLANATION_FINISH_NODE,
         ),
     }
     if scene_id in scenes:
         lines, choices, next_scene = scenes[scene_id]
-        if choice is None:
+        if _selected(selection, choices) is None:
             return _scene(owner, scene_id, lines=lines, choices=choices)
         return _transition(owner, next_scene)
 
+    choices = _choices(
+        ("create", "Create a goal"),
+        ("finish", "Cool, thank you for the explanation."),
+    )
+    choice = _selected(selection, choices)
     if choice is None:
         return _scene(
             owner,
             GOALS_EXPLANATION_FINISH_NODE,
             lines=_lines(("That’s basically goals.", 0)),
-            choices=_choices("Create a goal", "Cool, thank you for the explanation."),
+            choices=choices,
         )
-    if choice == "Create a goal":
+    if choice == "create":
         if owner == STANDARD_STORY_ID:
             return _finish_explanation(owner, destination="manage_goals")
         return AssistantTurn(
@@ -711,7 +745,6 @@ def _push_explanation(
     selection: AssistantSelection | None,
 ) -> AssistantTurn:
     del context
-    choice = _selected(selection)
     scenes = {
         PUSH_EXPLANATION_NODE: (
             _lines(
@@ -721,7 +754,7 @@ def _push_explanation(
                     0,
                 ),
             ),
-            _choices("Why do they matter?", "Got it"),
+            _choices(("continue", "Why do they matter?"), ("skip", "Got it")),
             PUSH_EXPLANATION_SHARED_NODE,
         ),
         PUSH_EXPLANATION_SHARED_NODE: (
@@ -730,7 +763,7 @@ def _push_explanation(
                 ("You can celebrate right away.", 0),
                 ("They can react when you finish too.", 0),
             ),
-            _choices("How do I enable them?", "Makes sense"),
+            _choices(("continue", "How do I enable them?"), ("skip", "Makes sense")),
             PUSH_EXPLANATION_MOBILE_NODE,
         ),
         PUSH_EXPLANATION_MOBILE_NODE: (
@@ -741,7 +774,7 @@ def _push_explanation(
                     0,
                 ),
             ),
-            _choices("Why install it?", "Got it"),
+            _choices(("continue", "Why install it?"), ("skip", "Got it")),
             PUSH_EXPLANATION_CONSENT_NODE,
         ),
         PUSH_EXPLANATION_CONSENT_NODE: (
@@ -752,7 +785,7 @@ def _push_explanation(
                     3,
                 ),
             ),
-            _choices("What can I control?", "Makes sense"),
+            _choices(("continue", "What can I control?"), ("skip", "Makes sense")),
             PUSH_EXPLANATION_CONTROLS_NODE,
         ),
         PUSH_EXPLANATION_CONTROLS_NODE: (
@@ -760,7 +793,7 @@ def _push_explanation(
                 ("Notifications are not all-or-nothing.", 0),
                 ("Each goal has its own settings.", 0),
             ),
-            _choices("Which settings?", "Got it"),
+            _choices(("continue", "Which settings?"), ("skip", "Got it")),
             PUSH_EXPLANATION_SETTINGS_NODE,
         ),
         PUSH_EXPLANATION_SETTINGS_NODE: (
@@ -770,21 +803,22 @@ def _push_explanation(
                     3.5,
                 )
             ),
-            _choices("Where are those controls?", "Makes sense"),
+            _choices(("continue", "Where are those controls?"), ("skip", "Makes sense")),
             PUSH_EXPLANATION_FINISH_NODE,
         ),
     }
     if scene_id in scenes:
         lines, choices, next_scene = scenes[scene_id]
-        if choice is None:
+        if _selected(selection, choices) is None:
             return _scene(owner, scene_id, lines=lines, choices=choices)
         return _transition(owner, next_scene)
 
     options = _choices(
-        "Enable notifications",
-        "Show me Manage Goals",
-        "Cool, thank you for the explanation.",
+        ("enable", "Enable notifications"),
+        ("open_goals", "Show me Manage Goals"),
+        ("finish", "Cool, thank you for the explanation."),
     )
+    choice = _selected(selection, options)
     if choice is None:
         return _scene(
             owner,
@@ -796,7 +830,7 @@ def _push_explanation(
             ),
             choices=options,
         )
-    if choice == "Enable notifications":
+    if choice == "enable":
         if owner == STANDARD_STORY_ID:
             return _finish_explanation(owner, destination="push_notifications")
         return AssistantTurn(
@@ -810,7 +844,7 @@ def _push_explanation(
             state_scene=PUSH_NODE,
             state_status="paused",
         )
-    if choice == "Show me Manage Goals":
+    if choice == "open_goals":
         if owner == STANDARD_STORY_ID:
             return _finish_explanation(owner, destination="manage_goals")
         return AssistantTurn(

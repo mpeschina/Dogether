@@ -31,7 +31,7 @@ class WeeklySummaryStory(AssistantStory):
         scene = scene_id or self.entry_scene(context)
         now = _now(context)
         if scene == SELECT_SCENE:
-            if selection is None:
+            if selection is None or selection.choice_id not in {"this", "last"}:
                 if now.weekday() >= 3:
                     return AssistantTurn(self.story_id, SELECT_SCENE, lines=(AssistantLine("Which week should I analyse?"),), choices=(AssistantChoice("this", "This week"), AssistantChoice("last", "Last week")), state_story=self.story_id, state_scene=SELECT_SCENE, state_status="active")
                 return self._summary_turn(context, _week_start(now.date() - timedelta(days=7)), False)

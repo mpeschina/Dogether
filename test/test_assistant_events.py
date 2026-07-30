@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from src.assistant.core import AssistantContext, AssistantSelection
+import pytest
+
+from src.assistant.core import AssistantChoice, AssistantContext, AssistantSelection, AssistantTurn
 from src.assistant.director import AssistantDirector, apply_turn
 from src.assistant.presentation import (
     ACTIVE_CONTROL_KEY,
@@ -280,7 +282,7 @@ def test_one_selection_advances_and_renders_the_next_stable_round() -> None:
         status="paused",
     )
     view = RecordingView(
-        selection(TUTORIAL_STORY_ID, WELCOME_NODE, "Analyse my profile")
+        selection(TUTORIAL_STORY_ID, WELCOME_NODE, "analyse_profile")
     )
 
     updated = director.render(
@@ -293,8 +295,51 @@ def test_one_selection_advances_and_renders_the_next_stable_round() -> None:
     assert [choice.label for choice in view.turns[-1].choices] == [
         "Invite a friend",
         "Explain the Friendlist to me",
-        "Later",
+        "I did already, lets move on",
     ]
+
+
+def test_choice_ids_are_independent_from_tutorial_labels() -> None:
+    story = InitialTutorialStory()
+    context = context_for(AssistantState(story=TUTORIAL_STORY_ID, scene=WELCOME_NODE))
+
+    prompt = story.advance(context, WELCOME_NODE, None)
+    assert prompt.choices[0].id == "analyse_profile"
+    relabelled = replace(prompt.choices[0], label="Review my account")
+    assert relabelled.id == "analyse_profile"
+
+    selected = story.advance(
+        context,
+        WELCOME_NODE,
+        selection(TUTORIAL_STORY_ID, WELCOME_NODE, relabelled.id, relabelled.label),
+    )
+    assert selected.state_scene == FRIENDS_NODE
+
+
+def test_unknown_tutorial_choice_reprompts_current_scene() -> None:
+    story = InitialTutorialStory()
+    context = context_for(AssistantState(story=TUTORIAL_STORY_ID, scene=WELCOME_NODE))
+
+    turn = story.advance(
+        context,
+        WELCOME_NODE,
+        selection(TUTORIAL_STORY_ID, WELCOME_NODE, "old-visible-label"),
+    )
+
+    assert turn.scene_id == WELCOME_NODE
+    assert turn.state_scene == WELCOME_NODE
+    assert [choice.id for choice in turn.choices] == ["analyse_profile", "tour", "decline"]
+
+
+def test_choices_require_non_empty_unique_ids() -> None:
+    with pytest.raises(ValueError, match="non-empty"):
+        AssistantChoice("", "Continue")
+    with pytest.raises(ValueError, match="unique"):
+        AssistantTurn(
+            story_id="test",
+            scene_id="test.scene",
+            choices=(AssistantChoice("continue", "Continue"), AssistantChoice("continue", "Next")),
+        )
 
 
 def test_declining_welcome_completes_durably() -> None:
@@ -306,7 +351,7 @@ def test_declining_welcome_completes_durably() -> None:
         scene=WELCOME_NODE,
         status="paused",
     )
-    view = RecordingView(selection(TUTORIAL_STORY_ID, WELCOME_NODE, "I'm good"))
+    view = RecordingView(selection(TUTORIAL_STORY_ID, WELCOME_NODE, "decline"))
 
     completed = director.render(context_for(state, profile=profile), view)
 
@@ -330,7 +375,7 @@ def test_resume_scene_preserves_interrupted_scene_or_restarts() -> None:
     resumed = story.advance(
         context,
         RESUME_NODE,
-        selection(TUTORIAL_STORY_ID, RESUME_NODE, "Yes"),
+        selection(TUTORIAL_STORY_ID, RESUME_NODE, "continue"),
     )
     assert resumed.state_scene == GOALS_NODE
     assert resumed.continue_flow
@@ -338,7 +383,7 @@ def test_resume_scene_preserves_interrupted_scene_or_restarts() -> None:
     restarted = story.advance(
         context,
         RESUME_NODE,
-        selection(TUTORIAL_STORY_ID, RESUME_NODE, "Start over"),
+        selection(TUTORIAL_STORY_ID, RESUME_NODE, "restart"),
     )
     assert restarted.state_scene == WELCOME_NODE
 
@@ -389,7 +434,7 @@ def test_friend_explanation_is_explicit_and_can_create_link() -> None:
     next_turn = story.advance(
         context,
         FRIENDS_EXPLANATION_NODE,
-        selection(TUTORIAL_STORY_ID, FRIENDS_EXPLANATION_NODE, "Got it"),
+        selection(TUTORIAL_STORY_ID, FRIENDS_EXPLANATION_NODE, "skip"),
     )
     assert next_turn.state_scene == FRIENDS_EXPLANATION_OPTIONS_NODE
 
@@ -399,7 +444,7 @@ def test_friend_explanation_is_explicit_and_can_create_link() -> None:
         selection(
             TUTORIAL_STORY_ID,
             FRIENDS_EXPLANATION_LINK_NODE,
-            "Create a Link for me",
+            "create_link",
         ),
     )
     assert link.state_scene == FRIENDS_EXPLANATION_GOODBYE_NODE
@@ -420,7 +465,7 @@ def test_friend_explanation_continues_profile_analysis_in_onboarding() -> None:
         selection(
             TUTORIAL_STORY_ID,
             FRIENDS_EXPLANATION_GOODBYE_NODE,
-            "Ciao, thanks for the explanation",
+            "finish",
         ),
     )
 
@@ -470,7 +515,7 @@ def test_profile_analysis_resumes_after_goal_and_notification_explanations() -> 
         selection(
             TUTORIAL_STORY_ID,
             GOALS_EXPLANATION_FINISH_NODE,
-            "Cool, thank you for the explanation.",
+            "finish",
         ),
     )
     assert after_goals.state_scene == PUSH_NODE
@@ -490,7 +535,7 @@ def test_profile_analysis_resumes_after_goal_and_notification_explanations() -> 
         selection(
             TUTORIAL_STORY_ID,
             PUSH_EXPLANATION_FINISH_NODE,
-            "Cool, thank you for the explanation.",
+            "finish",
         ),
     )
     assert after_push.state_scene == ANALYSIS_COMPLETE_NODE
@@ -807,7 +852,7 @@ def test_durable_completion_clears_transient_state() -> None:
         }
     }
     director = AssistantDirector(persistence, default_stories())
-    view = RecordingView(selection(TUTORIAL_STORY_ID, WELCOME_NODE, "I'm good"))
+    view = RecordingView(selection(TUTORIAL_STORY_ID, WELCOME_NODE, "decline"))
     completed = director.render(
         context_for(
             AssistantState(

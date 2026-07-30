@@ -61,9 +61,9 @@ class AssistantChoice:
     id: str
     label: str
 
-    @classmethod
-    def from_label(cls, label: str) -> "AssistantChoice":
-        return cls(id=label, label=label)
+    def __post_init__(self) -> None:
+        if not self.id:
+            raise ValueError("Assistant choice IDs must be non-empty.")
 
 
 @dataclass(frozen=True)
@@ -134,6 +134,11 @@ class AssistantTurn:
     state_story: str | None = None  # Next active story. where the assistant should resume on a later rerun or page return.
     state_scene: str | None = None  # Next active scene. where the assistant should resume on a later rerun or page return.
     state_status: str | None = None  # Next conversation status. the saved lifecycle state, such as active, paused, or completed.
+
+    def __post_init__(self) -> None:
+        choice_ids = tuple(choice.id for choice in self.choices)
+        if len(choice_ids) != len(set(choice_ids)):
+            raise ValueError("Assistant turn choice IDs must be unique.")
 
     @property
     def has_control(self) -> bool:
