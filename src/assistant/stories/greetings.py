@@ -21,6 +21,8 @@ GREETING_PENDING_SESSION_KEY: Final = "greetings.pending"
 GREETING_RANDOMIZED_AT_SESSION_KEY: Final = "greetings.randomized_at"
 GREETING_SILENT_REPLY_SESSION_KEY: Final = "greetings.silent_reply"
 GREETING_INTERVAL: Final = timedelta(hours=1)
+# Set to ``None`` to restore normal greeting selection.
+DEBUG_GREETING_ID: str | None = None # "waiting_crack"
 
 NORMAL_GREETING_IDS: Final = (
     "tiny_progress",
@@ -152,6 +154,9 @@ class GreetingsStory(AssistantStory):
         self._random_source = random_source
 
     def entry_scene(self, context: AssistantContext) -> str:
+        if DEBUG_GREETING_ID is not None:
+            return DEBUG_GREETING_ID
+
         session = context.session_state
         pending = session.get(GREETING_PENDING_SESSION_KEY)
         if isinstance(pending, str):
@@ -175,7 +180,7 @@ class GreetingsStory(AssistantStory):
         scene_id: str | None,
         selection: AssistantSelection | None,
     ) -> AssistantTurn:
-        greeting_id = scene_id or self.entry_scene(context)
+        greeting_id = DEBUG_GREETING_ID or scene_id or self.entry_scene(context)
         if greeting_id in INTERACTIVE_GREETING_IDS:
             return self._interactive_turn(context, greeting_id, selection)
         if greeting_id == "silent":
@@ -258,8 +263,10 @@ class GreetingsStory(AssistantStory):
                 story_id=self.story_id,
                 scene_id="waiting_crack",
                 lines=(
-                    AssistantLine("…", wait_before=2.5),
-                    AssistantLine("Are we both waiting for the other person?", wait_before=1, typing_delay=2),
+                    AssistantLine("", wait_before=1, typing_delay=2.5, wait_after=2),
+                    AssistantLine("", typing_delay=0.5, wait_after=1),
+                    AssistantLine("", typing_delay=2),
+                    AssistantLine("Are we both waiting for the other person?"),
                 ),
                 choices=(AssistantChoice("apparently", "Apparently."),),
             )

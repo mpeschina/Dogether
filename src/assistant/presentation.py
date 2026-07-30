@@ -165,16 +165,17 @@ class StreamlitAssistantView:
     def _present_line(self, line: AssistantLine) -> None:
         if line.wait_before > 0:
             time.sleep(line.wait_before)
-        self._transcript.append(("assistant", line.text))
         if line.typing_delay is not None:
             self._typing_indicator(line.typing_delay)
-        placeholder = st.empty()
-        response = ""
-        for part in response_generator(line.text):
-            response += part
-            self._render_assistant_message(response, placeholder=placeholder)
-        if not response:
-            self._render_assistant_message(line.text, placeholder=placeholder)
+        if line.text:
+            self._transcript.append(("assistant", line.text))
+            placeholder = st.empty()
+            response = ""
+            for part in response_generator(line.text):
+                response += part
+                self._render_assistant_message(response, placeholder=placeholder)
+            if not response:
+                self._render_assistant_message(line.text, placeholder=placeholder)
         if line.wait_after > 0:
             time.sleep(line.wait_after)
 
