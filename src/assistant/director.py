@@ -278,6 +278,3 @@ def _parse_datetime(value: Any) -> datetime | None:
         return None
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
 
-
-# Legacy test/import name.
-apply_event_outcome = apply_turn
