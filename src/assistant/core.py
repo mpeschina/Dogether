@@ -78,10 +78,17 @@ class AssistantCard:
 
 @dataclass(frozen=True)
 class AssistantSelection:
+    """A queued user control action that directs the next assistant story turn."""
+
+    # the story that displayed the control
     story_id: str
+    # the scene where it was displayed
     scene_id: str
+    # the selected action/option
     choice_id: str
+    # the user-visible choice text (or submitted message)
     label: str
+    # the kind of control used
     control_kind: ControlKind = "choices"
 
 
