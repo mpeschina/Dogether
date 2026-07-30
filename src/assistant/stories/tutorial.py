@@ -424,8 +424,7 @@ class InitialTutorialStory(AssistantStory):
                     "Sure.",
                     ("Dogether is simple.", 0),
                     ("Pick something worth doing.", 0),
-                    ("Bring someone along.", 0),
-                    ("Keep each other moving.", 0),
+                    ("Bring someone along and Keep each other moving.", 0),
                     ("That's basically it.", 0),
                     ("You'll figure out the rest.", 0),
                 ),
@@ -551,8 +550,10 @@ def _friend_explanation(
                 lines=_lines(
                     ("Your link belongs to you.", 0),
                     ("Someone opens it.", None),
-                    ("You get a friend invite that you can accept or deny. Only Friends can share goals.", 3),
-                    ("And it is at the heart of the app to work on a shared goal together with your friends.", 0),
+                    ("You get a friend invite that you can accept or deny.", 0),
+                    ("Only Friends can share goals.", 0),
+                    ("And it is at the heart of the app..", None),
+                    ("to work on a shared goal together with your friends.", 3),
                 ),
                 choices=_choices(
                     "Create a Link for me", "Show me the Friends Page", "Got it"
@@ -585,7 +586,7 @@ def _friend_explanation(
                 destination="friends",
                 state_story=owner,
                 state_scene=FRIENDS_NODE,
-                state_status="paused",
+                state_status="paused", 
             )
         return _transition(owner, FRIENDS_EXPLANATION_GOODBYE_NODE)
 
@@ -593,7 +594,14 @@ def _friend_explanation(
         return _scene(
             owner,
             FRIENDS_EXPLANATION_GOODBYE_NODE,
-            choices=_choices("Ciao, thanks for the explanation"),
+            choices=_choices("Ok, thank you"),
+        )
+    if owner == TUTORIAL_STORY_ID:
+        return _transition(
+            owner,
+            GOALS_NODE,
+            lines=_lines("Ok, no problem. Lets move on."),
+            event_updates={FRIENDS_EVENT_ID: {"outcome": "skipped"}},
         )
     return _finish_explanation(owner, assistant_leaves=True)
 
@@ -647,7 +655,7 @@ def _goal_explanation(
         ),
         GOALS_EXPLANATION_REACTIONS_NODE: (
             _lines(
-                ("Send them a reaction.", 0),
+                ("Send them a reaction!", 0),
                 ("A little celebration.", 0),
                 ("Or some friendly pressure.", 0),
             ),

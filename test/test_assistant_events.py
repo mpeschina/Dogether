@@ -50,6 +50,7 @@ from src.assistant.stories.standard import (
 )
 from src.assistant.stories.tutorial import (
     ANALYSIS_COMPLETE_NODE,
+    FRIENDS_EVENT_ID,
     FRIENDS_EXPLANATION_GOODBYE_NODE,
     FRIENDS_EXPLANATION_LINK_NODE,
     FRIENDS_EXPLANATION_NODE,
@@ -401,6 +402,31 @@ def test_friend_explanation_is_explicit_and_can_create_link() -> None:
     )
     assert link.state_scene == FRIENDS_EXPLANATION_GOODBYE_NODE
     assert "https://dogether.example/friend?share=abc" in link.lines[0].text
+
+
+def test_friend_explanation_continues_profile_analysis_in_onboarding() -> None:
+    story = InitialTutorialStory()
+    state = AssistantState(
+        story=TUTORIAL_STORY_ID,
+        scene=FRIENDS_EXPLANATION_GOODBYE_NODE,
+        status="paused",
+    )
+
+    returned = story.advance(
+        context_for(state, user_state={"friend_count": 0}),
+        FRIENDS_EXPLANATION_GOODBYE_NODE,
+        selection(
+            TUTORIAL_STORY_ID,
+            FRIENDS_EXPLANATION_GOODBYE_NODE,
+            "Ciao, thanks for the explanation",
+        ),
+    )
+
+    assert returned.state_story == TUTORIAL_STORY_ID
+    assert returned.state_scene == GOALS_NODE
+    assert returned.state_status == "active"
+    assert returned.completed is False
+    assert returned.event_updates == {FRIENDS_EVENT_ID: {"outcome": "skipped"}}
 
 
 def test_goal_and_notification_explanations_have_explicit_finish_scenes() -> None:
