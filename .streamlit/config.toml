@@ -1,5 +1,7 @@
 [server]
 enableStaticServing = true
+runOnSave = true
+fileWatcherType = "poll"
 
 [theme]
 primaryColor = "#1F2937"
