@@ -39,7 +39,14 @@ class AssistantContext:
 
 @dataclass(frozen=True)
 class AssistantLine:
-    """One assistant bubble and the pause shown immediately before it."""
+    """One assistant message and its presentation timing.
+
+    ``text`` is the message content. ``typing_delay`` controls the typing
+    indicator shown before it: ``None`` disables it, ``0`` chooses a random
+    duration, and a positive value specifies its duration in seconds.
+    ``wait_before`` and ``wait_after`` are plain pauses, in seconds, before
+    and after the message is presented.
+    """
 
     text: str
     typing_delay: float | None = None
