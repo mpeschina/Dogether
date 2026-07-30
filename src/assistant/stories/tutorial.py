@@ -522,7 +522,8 @@ def _friend_explanation(
                 scene_id,
                 lines=_lines(
                     ("Sure, I'll explain it to you:", 0),
-                    ("Friends unlock shared goals.", 0),
+                    ("Friends unlock shared goals.", None),
+                    ("You have the same goal with your friends and work on it together. Every day. You see each others progress and help to stay on track!", 0),
                 ),
                 choices=_choices("How do I add friends?", "Got it"),
             )
@@ -534,9 +535,9 @@ def _friend_explanation(
                 owner,
                 scene_id,
                 lines=_lines(
-                    ("You have two options to add friends here.", 0),
-                    ("Invite them by email.", 0),
-                    ("Or share your invite link.", 0),
+                    ("You have two options to add friends here:", 0),
+                    ("1. Invite them by email using the Friends menu, or", 0),
+                    ("2. Share your invite link.", 0),
                 ),
                 choices=_choices("How does the link work?", "Makes sense"),
             )
@@ -549,15 +550,9 @@ def _friend_explanation(
                 scene_id,
                 lines=_lines(
                     ("Your link belongs to you.", 0),
-                    "Someone opens it.",
-                    (
-                        "You get a friend invite that you can accept or deny. Only Friends can share goals.",
-                        3,
-                    ),
-                    (
-                        "And it is at the heart of the app to work on a shared goal together with your friends.",
-                        0,
-                    ),
+                    ("Someone opens it.", None),
+                    ("You get a friend invite that you can accept or deny. Only Friends can share goals.", 3),
+                    ("And it is at the heart of the app to work on a shared goal together with your friends.", 0),
                 ),
                 choices=_choices(
                     "Create a Link for me", "Show me the Friends Page", "Got it"
