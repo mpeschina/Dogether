@@ -18,7 +18,7 @@ from src.assistant.state import (
     clear_transient_assistant_state,
     save_transient_assistant_state,
 )
-from src.assistant.presentation import ASSISTANT_LEFT_THIS_VISIT_KEY
+from src.assistant.presentation import ASSISTANT_LEFT_THIS_VISIT_KEY, StreamlitAssistantView
 from src.assistant.stories.greetings import GREETINGS_STORY_ID
 from src.assistant.stories.information import INFORMATION_STORY_ID, pending_goal_invitations
 from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
@@ -53,7 +53,9 @@ class AssistantDirector:
             self.stories[str(key)] = story
             self.stories[story.story_id] = story
 
-    def render(self, context: AssistantContext, view) -> AssistantState:
+    def render(
+        self, context: AssistantContext, view: StreamlitAssistantView
+    ) -> AssistantState:
         if (
             context.state.status == "dismissed"
             or view.waiting_for_input
@@ -63,6 +65,7 @@ class AssistantDirector:
             return context.state
 
         state = context.state
+        # The queued user action to process on this render's first story turn.
         selection: AssistantSelection | None = view.selection
         state_changed = False
         save_durably = False

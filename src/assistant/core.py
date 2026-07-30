@@ -62,7 +62,6 @@ class AssistantChoice:
 @dataclass(frozen=True)
 class AssistantCard:
     """A compact, data-led card displayed inline in the assistant transcript."""
-
     title: str
     value: str = ""
     detail: str = ""
@@ -79,7 +78,6 @@ class AssistantCard:
 @dataclass(frozen=True)
 class AssistantSelection:
     """A queued user control action that directs the next assistant story turn."""
-
     # the story that displayed the control
     story_id: str
     # the scene where it was displayed
