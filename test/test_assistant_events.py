@@ -648,7 +648,7 @@ def test_smalltalk_menu_choice_is_owned_by_smalltalk_story_and_returns_to_standa
     assert returned_state.story == STANDARD_STORY_ID
     assert returned_state.scene == STANDARD_MENU_SCENE
 
-    ordinary_smalltalk = SmalltalkStory(random_source=StubRandom(0.1, 0))
+    ordinary_smalltalk = SmalltalkStory(random_source=StubRandom(0.9, 0))
     ordinary = ordinary_smalltalk.advance(context, None, None)
     assert [line.text for line in ordinary.lines] == [
         "Smalltalk is currently unavailable.",

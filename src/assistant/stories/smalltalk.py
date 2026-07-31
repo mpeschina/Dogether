@@ -234,7 +234,7 @@ class SmalltalkStory(AssistantStory):
         story_session(context.session_state, self.story_id).set(
             SMALLTALK_CLICKED_AT_KEY, _now(context).isoformat()
         )
-        if self._random_source.random() < 0.1:
+        if self._random_source.random() < 0.2:
             lines = [
                 AssistantLine(text)
                 for text in self._random_source.choice(FUNNY_SMALLTALK_RESPONSES)
