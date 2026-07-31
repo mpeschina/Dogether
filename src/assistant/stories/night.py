@@ -1,7 +1,8 @@
 """The overnight assistant interruption."""
 from __future__ import annotations
 
-from typing import Final
+import random
+from typing import Any, Final
 
 from src.assistant.core import (
     AssistantChoice,
@@ -21,7 +22,16 @@ NIGHT_AFTER_LEAVING_SCENE: Final = "night.after_leaving"
 NIGHT_GOOD_NIGHT_SCENE: Final = "night.good_night"
 NIGHT_CLICKS_KEY: Final = "clicks"
 NIGHT_COMPLETED_COUNT_KEY: Final = "completed_count"
-INITIAL_STATUS: Final = "It seems to be empty here"
+INITIAL_STATUSES: Final = (
+    "It seems to be empty here",
+    "You imagine to hear sleeping noises",
+    "Is someone here? You dont know",
+    "You feel calm and quiet, with a gentle touch of loneliness.",
+    "Something nearby has recently moved.",
+    "You have the strange feeling that you arrived too late.",
+    "What does this send button do?",
+    "The silence makes every small movement feel important.",
+)
 STATUS_CLICK_COUNT: Final = 6
 PROGRESS_BAR_CLICK_COUNT: Final = 30
 PROGRESS_BAR_COUNT: Final = 3
@@ -32,6 +42,9 @@ class NightStory(AssistantStory):
     """Make persistent night owls work through the assistant's sleepiness."""
 
     story_id = NIGHT_STORY_ID
+
+    def __init__(self, *, random_source: Any = random) -> None:
+        self._random_source = random_source
 
     def entry_scene(self, context: AssistantContext) -> str | None:
         del context
@@ -57,7 +70,11 @@ class NightStory(AssistantStory):
             return self._send_turn(
                 context,
                 clicks,
-                statuses=(f"{clicks}x",) if clicks else (INITIAL_STATUS,),
+                statuses=(
+                    (f"{clicks}x",)
+                    if clicks
+                    else (self._initial_status(),)
+                ),
                 keep_statuses_in_history=selection is None,
             )
 
@@ -97,6 +114,9 @@ class NightStory(AssistantStory):
             completed=True,
             state_status="paused",
         )
+
+    def _initial_status(self) -> str:
+        return self._random_source.choice(INITIAL_STATUSES)
 
     def _after_leaving(self) -> AssistantTurn:
         """Accept the user's reaction without responding before the final exit."""

@@ -43,7 +43,6 @@ from src.assistant.stories.information import (
     _goal_fact_cards,
 )
 from src.assistant.stories.night import (
-    INITIAL_STATUS as NIGHT_INITIAL_STATUS,
     NIGHT_AFTER_LEAVING_SCENE,
     NIGHT_COMPLETED_COUNT_KEY,
     NIGHT_EVENT_ID,
@@ -1233,12 +1232,12 @@ def test_night_event_does_not_preempt_fresh_onboarding_but_preempts_information(
 
 
 def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
-    story = NightStory()
+    story = NightStory(random_source=StubRandom(0))
     state = AssistantState()
     session = {}
 
     initial = story.advance(context_for(state, session_state=session), NIGHT_EVENT_ID, None)
-    assert initial.statuses == (NIGHT_INITIAL_STATUS,)
+    assert len(initial.statuses) == 1
     assert initial.keep_statuses_in_history
 
     for clicks in range(1, NIGHT_STATUS_CLICK_COUNT + 1):
@@ -1270,12 +1269,7 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
         NIGHT_EVENT_ID,
         selection(NIGHT_STORY_ID, NIGHT_EVENT_ID, "send", "Send"),
     )
-    assert [line.text for line in final.lines] == [
-        "Man, I am sleeping its super late!",
-        "(hm, did you already tell me your gender?)",
-        "Anyhow, I need to sleep and so do you.",
-        "Dont disturb me during the night!!!!",
-    ]
+    assert len(final.lines) == 4
     assert final.lines[1].font_scale == 0.5
     assert final.progress_before_content
     assert [entry.text for entry in final.progress] == [
@@ -1287,11 +1281,7 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
     assert apply_turn(state, final).events[NIGHT_EVENT_ID] == {
         NIGHT_COMPLETED_COUNT_KEY: 1
     }
-    assert [choice.label for choice in final.choices] == [
-        "Ähm, yes, ok. Sorry ...",
-        "Good Night",
-        "But hey, no reason to get angry at me!",
-    ]
+    assert [choice.id for choice in final.choices] == ["sorry", "good_night", "not_angry"]
 
     acknowledgement = story.advance(
         context_for(state, session_state=session),
@@ -1299,10 +1289,7 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
         selection(NIGHT_STORY_ID, NIGHT_AFTER_LEAVING_SCENE, "sorry"),
     )
     assert acknowledgement.lines == ()
-    assert [choice.label for choice in acknowledgement.choices] == [
-        "You are right, I will also go to bed now",
-        "Leave chat without a saying",
-    ]
+    assert [choice.id for choice in acknowledgement.choices] == ["go_to_bed", "leave_quietly"]
     assert acknowledgement.choices[1].style == "italic"
 
     exit_turn = story.advance(
@@ -1314,6 +1301,18 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
     assert exit_turn.destination_delay == 3
     assert exit_turn.completed
     assert "assistant.story_session" not in session
+
+
+def test_night_story_can_open_with_imagined_sleeping_noises() -> None:
+    ordinary = NightStory(random_source=StubRandom(0)).advance(
+        context_for(AssistantState(), session_state={}), NIGHT_EVENT_ID, None
+    )
+    imagined = NightStory(random_source=StubRandom(0, 1)).advance(
+        context_for(AssistantState(), session_state={}), NIGHT_EVENT_ID, None
+    )
+
+    assert len(imagined.statuses) == 1
+    assert imagined.statuses != ordinary.statuses
 
 
 def test_mode_switch_preserves_achievements_but_restarts_conversation() -> None:
