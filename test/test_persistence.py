@@ -129,7 +129,8 @@ class FakeMongoNativeCollection:
             actual = self._get_path(document, key)
             if isinstance(expected, dict):
                 if "$in" in expected:
-                    if actual not in expected["$in"]:
+                    actual_values = actual if isinstance(actual, list) else [actual]
+                    if not any(value in expected["$in"] for value in actual_values):
                         return False
                     continue
                 if "$ne" in expected:
@@ -1822,6 +1823,62 @@ def test_mongodb_native_list_goals_rolls_over_shared_participants() -> None:
     stored_bob = database["goals"].documents[goal["id"]]["participants"]["bob"]
     assert stored_bob["current"] == 0
     assert "2026-06-01" in stored_bob["period_outcomes"]
+
+
+def test_mongodb_native_rollover_bulk_loads_active_goals_for_stat_refreshes() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob", at("2026-06-01T09:01:00"))
+    invite = persistence.create_friend_invite(
+        alice["user_id"],
+        alice["email"],
+        bob["email"],
+        at("2026-06-01T09:02:00"),
+    )
+    persistence.respond_friend_invite(invite["id"], bob["user_id"], bob["email"], approve=True, now=at("2026-06-01T09:03:00"))
+    first_goal = persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Steps",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[bob["user_id"]],
+        target=10,
+        current=10,
+        now=at("2026-06-01T09:04:00"),
+    )
+    second_goal = persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Reading",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[bob["user_id"]],
+        target=5,
+        current=5,
+        now=at("2026-06-01T09:05:00"),
+    )
+    for collection in database.collections.values():
+        collection.calls.clear()
+
+    goals = persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-02T08:00:00"))
+
+    assert [goal["id"] for goal in goals] == [first_goal["id"], second_goal["id"]]
+    assert all(goal["participants"]["alice"]["current"] == 0 for goal in goals)
+    assert all(goal["participants"]["bob"]["current"] == 0 for goal in goals)
+    assert database["user_stats"].documents["alice"]["activity_days"]["2026-06-01"] == {
+        "active_goals": 2,
+        "fulfilled_goals": 2,
+        "percent": 100.0,
+    }
+    goal_find_calls = [call for call in database["goals"].calls if call[0] == "find"]
+    assert [call[1] for call in goal_find_calls] == [
+        {
+            "participant_user_ids": "alice",
+            "archived_at": None,
+            "participants.alice.left_at": None,
+        },
+        {"participant_user_ids": {"$in": ["alice", "bob"]}, "archived_at": None},
+    ]
 
 
 def test_mongodb_native_correct_goal_period_progress_updates_outcome_and_activity() -> None:

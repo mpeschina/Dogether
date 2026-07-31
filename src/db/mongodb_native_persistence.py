@@ -205,14 +205,43 @@ class MongoNativePersistence:
 
         return self._read_cached(("active_goals_for_user", user_id), load_goals)
 
-    def _refresh_activity_day_for_user(self, user_id: str, day: Any) -> None:
+    def _active_goals_for_users(self, user_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        unique_ids = tuple(sorted(set(user_ids)))
+        if not unique_ids:
+            return {}
+
+        def load_goals() -> dict[str, list[dict[str, Any]]]:
+            goals = self._strip_many(
+                self._goals_collection().find(
+                    {"participant_user_ids": {"$in": list(unique_ids)}, "archived_at": None}
+                )
+            )
+            _normalise_goal_participants({goal["id"]: goal for goal in goals if "id" in goal})
+            return {
+                candidate_user_id: [
+                    goal for goal in goals if _goal_active_for_user(goal, candidate_user_id)
+                ]
+                for candidate_user_id in unique_ids
+            }
+
+        return self._read_cached(("active_goals_for_users", unique_ids), load_goals)
+
+    def _refresh_activity_day_for_user(
+        self,
+        user_id: str,
+        day: Any,
+        active_goals: list[dict[str, Any]] | None = None,
+    ) -> None:
         stats = self._user_stats_for_user(user_id)
         data = {
             "users": {},
             "friend_invites": {},
             "friend_suggestions": {},
             "friendships": {},
-            "goals": {goal["id"]: goal for goal in self._active_goals_for_user(user_id)},
+            "goals": {
+                goal["id"]: goal
+                for goal in (active_goals if active_goals is not None else self._active_goals_for_user(user_id))
+            },
             "user_stats": {user_id: stats},
             "debug": {"time_offset_seconds": 0},
         }
@@ -248,7 +277,13 @@ class MongoNativePersistence:
         self._cache_clear()
         return updated
 
-    def _rollover_goal_participant(self, goal: dict[str, Any], user_id: str, now: datetime) -> dict[str, Any]:
+    def _rollover_goal_participant(
+        self,
+        goal: dict[str, Any],
+        user_id: str,
+        now: datetime,
+        affected_days_by_user: dict[str, set[Any]] | None = None,
+    ) -> dict[str, Any]:
         if not _goal_active_for_user(goal, user_id):
             return goal
         participant = goal["participants"][user_id]
@@ -276,19 +311,38 @@ class MongoNativePersistence:
                 {"$set": {f"participants.{user_id}": participant}},
             )
             self._cache_clear()
-            for affected_day in affected_days:
-                self._refresh_activity_day_for_user(user_id, affected_day)
-            self._refresh_activity_day_for_user(user_id, now.date())
+            if affected_days_by_user is None:
+                for affected_day in affected_days:
+                    self._refresh_activity_day_for_user(user_id, affected_day)
+                self._refresh_activity_day_for_user(user_id, now.date())
+            else:
+                affected_days_by_user.setdefault(user_id, set()).update(affected_days)
+                affected_days_by_user[user_id].add(now.date())
         return goal
 
     def _rollover_user_goals(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
         now_dt = _now(now)
         goals = self._active_goals_for_user(user_id)
-        return [self._rollover_goal_participants(goal, now_dt) for goal in goals]
+        affected_days_by_user: dict[str, set[Any]] = {}
+        rolled_over_goals = [
+            self._rollover_goal_participants(goal, now_dt, affected_days_by_user)
+            for goal in goals
+        ]
+        active_goals_by_user = self._active_goals_for_users(list(affected_days_by_user))
+        for affected_user_id, affected_days in affected_days_by_user.items():
+            active_goals = active_goals_by_user.get(affected_user_id, [])
+            for affected_day in sorted(affected_days):
+                self._refresh_activity_day_for_user(affected_user_id, affected_day, active_goals)
+        return rolled_over_goals
 
-    def _rollover_goal_participants(self, goal: dict[str, Any], now: datetime) -> dict[str, Any]:
+    def _rollover_goal_participants(
+        self,
+        goal: dict[str, Any],
+        now: datetime,
+        affected_days_by_user: dict[str, set[Any]] | None = None,
+    ) -> dict[str, Any]:
         for participant_id in list(goal.get("participants", {})):
-            self._rollover_goal_participant(goal, participant_id, now)
+            self._rollover_goal_participant(goal, participant_id, now, affected_days_by_user)
         return goal
 
     def upsert_user(self, user_id: str, email: str, name: str, now: datetime | None = None) -> dict[str, Any]:
