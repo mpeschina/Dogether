@@ -51,7 +51,7 @@ Instead:
 
 
 
-def render_help(
+def render_assistant(
     persistence: Persistence,
     current_user: dict,
     user_id: str,
@@ -67,11 +67,11 @@ def render_help(
     st.markdown(
         "<div class='assistant-page-heading'>"
         "<span class='assistant-page-icon' aria-hidden='true'>✨</span>"
-        "<span>Help</span>"
+        "<span>Assistant</span>"
         "</div>",
         unsafe_allow_html=True,
     )
-    st.caption("Dogether Assistant")
+    st.caption("your friendly helper")
 
     state = transient_assistant_state_for_user(st.session_state, user_id)
     if state is None:
@@ -98,7 +98,7 @@ def render_help(
         current_user=current_user,
         state=state,
         session_state=st.session_state,
-        current_page_key="help",
+        current_page_key="assistant",
         previous_page_key=previous_page_key,
         now=now,
         user_state=user_state,

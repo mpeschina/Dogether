@@ -96,7 +96,7 @@ class StandardStory(AssistantStory):
     ) -> AssistantTurn:
         scene_id = scene_id or self.entry_scene(context)
         if scene_id in EXPLANATION_SCENES:
-            if context.previous_page_key != "help" and selection is None:
+            if context.previous_page_key != "assistant" and selection is None:
                 return replace(
                     standard_menu_turn(),
                     state_story=self.story_id,

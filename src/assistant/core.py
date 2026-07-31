@@ -152,7 +152,21 @@ class AssistantStory(ABC):
 
     @abstractmethod
     def entry_scene(self, context: AssistantContext) -> str | None:
-        """Return the scene where this story should currently begin."""
+        """Return the scene where this story should currently begin.
+
+        ``AssistantDirector`` calls this when there is no pending user
+        selection, then passes the returned scene ID to ``advance``. When a
+        user selection is pending, the director uses ``selection.scene_id``
+        instead.
+
+        Args:
+            context: The current user, assistant state, session state, page,
+                and application data used to determine the starting scene.
+
+        Returns:
+            The ID of the scene to enter, or ``None`` when this story has
+            nothing to show.
+        """
 
     @abstractmethod
     def advance(
@@ -161,4 +175,18 @@ class AssistantStory(ABC):
         scene_id: str | None,
         selection: AssistantSelection | None,
     ) -> AssistantTurn | None:
-        """Produce the next declarative conversation turn."""
+        """Produce the next declarative conversation turn. ``AssistantDirector`` calls this.
+
+        Args:
+            context: The current user, assistant state, session state, page,
+                and application data available to this transition.
+            scene_id: The ID of the scene to process. This is the entry scene
+                for an automatic turn, or the scene that displayed a user's
+                control for a selected turn.
+            selection: The user's selected choice or submitted message. It is
+                ``None`` when this is an automatic turn with no user action.
+
+        Returns:
+            An ``AssistantTurn`` describing UI output and state changes, or
+            ``None`` when no turn should be presented.
+        """

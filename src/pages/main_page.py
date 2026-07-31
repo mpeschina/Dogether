@@ -553,7 +553,7 @@ def render_main(
             st.markdown("**Important News from the Assistant**")
             actions = st.columns(2)
             if actions[0].button("Call Assistant", type="primary", use_container_width=True):
-                st.session_state["assistant.destination"] = "help"
+                st.session_state["assistant.destination"] = "assistant"
                 st.rerun(scope="app")
             if actions[1].button("Dismiss", use_container_width=True):
                 clear_goal_invitation_news(persistence, user_id, now=now)

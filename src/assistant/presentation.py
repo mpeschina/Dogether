@@ -39,8 +39,8 @@ LEGACY_EXPLANATION_STEP_KEYS = (
 def clear_transcript_for_new_help_visit(
     session_state: MutableMapping[str, Any], previous_page_key: str | None
 ) -> None:
-    """Discard transient conversation UI after leaving Help unless retained."""
-    if previous_page_key == "help":
+    """Discard transient conversation UI after leaving Assistant unless retained."""
+    if previous_page_key == "assistant":
         return
     if session_state.pop(PERSIST_TRANSCRIPT_ACROSS_PAGE_HOPS_KEY, False):
         return

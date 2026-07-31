@@ -24,7 +24,7 @@ from src.pages.debug_page import DebugMechanics, render_debug
 from src.pages.friends_page import render_friends
 from src.pages.goals_page import render_goals
 from src.pages.health_data_import_page import render_health_data_import
-from src.pages.help_page import render_help
+from src.pages.assistant_page import render_assistant
 from src.pages.login_page import login_screen
 from src.pages.main_page import render_main
 from src.pages.push_notifications_page import render_push_notifications
@@ -176,10 +176,10 @@ def push_notifications_page() -> None:
     render_push_notifications(current_user, user_id, push_storage, configured_push, now=app_now)
 
 
-def help_page() -> None:
+def assistant_page() -> None:
     previous_page_key = st.session_state.get("current_page_key")
-    mark_current_page("help")
-    render_help(
+    mark_current_page("assistant")
+    render_assistant(
         persistence,
         current_user,
         user_id,
@@ -204,7 +204,7 @@ health_data_import_page_entry = st.Page(
 push_notifications_page_entry = st.Page(
     push_notifications_page, title="Push Notifications", icon=":material/notifications:"
 )
-help_page_entry = st.Page(help_page, title="Help", icon=":material/support_agent:")
+assistant_page_entry = st.Page(assistant_page, title="Assistant", icon=":material/support_agent:")
 historical_data_repair_page_entry = st.Page(historical_data_repair_page, title="H.D.R.", icon=":material/edit_calendar:")
 account_page_entry = st.Page(account_page, title="Account", icon=":material/account_circle:")
 debug_page_entry = st.Page(debug_page, title="Debug", icon=":material/bug_report:")
@@ -214,7 +214,7 @@ page_entries = [
     manage_goals_page_entry,
     health_data_import_page_entry,
     push_notifications_page_entry,
-    help_page_entry,
+    assistant_page_entry,
     historical_data_repair_page_entry,
     account_page_entry,
 ]
@@ -226,7 +226,7 @@ assistant_destinations = {
     "friends": friends_page_entry,
     "manage_goals": manage_goals_page_entry,
     "push_notifications": push_notifications_page_entry,
-    "help": help_page_entry,
+    "assistant": assistant_page_entry,
 }
 
 

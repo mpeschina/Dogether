@@ -140,7 +140,7 @@ class InitialTutorialStory(AssistantStory):
         if (
             context.state.status == "paused"
             and context.state.story == self.story_id
-            and context.previous_page_key != "help"
+            and context.previous_page_key != "assistant"
         ):
             return RESUME_NODE
         return context.state.scene or WELCOME_NODE

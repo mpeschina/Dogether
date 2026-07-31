@@ -24,7 +24,7 @@ def _context(now: datetime) -> AssistantContext:
         current_user={},
         state=AssistantState(),
         session_state={},
-        current_page_key="help",
+        current_page_key="assistant",
         now=now,
         user_state={
             "goals": [
@@ -165,7 +165,7 @@ def test_week_to_week_chart_shows_selected_week_and_nineteen_prior_weeks() -> No
             for day in range(7)
         })
     context = AssistantContext(
-        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="help",
+        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={"goals": [{"description": "Walking", "participants": {"alice": {"period_outcomes": outcomes}}}]},
     )
@@ -198,7 +198,7 @@ def test_week_to_week_chart_renders_missing_weeks_as_zero_bars() -> None:
         for day in range(7)
     })
     context = AssistantContext(
-        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="help",
+        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={"goals": [{"description": "Walking", "participants": {"alice": {"period_outcomes": outcomes}}}]},
     )
@@ -232,7 +232,7 @@ def test_new_streak_record_reuses_the_mini_activity_diagram_for_recent() -> None
         for day in range(7)
     })
     context = AssistantContext(
-        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="help",
+        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={"goals": [{"description": "Walking", "participants": {"alice": {"period_outcomes": outcomes}}}]},
     )
@@ -252,7 +252,7 @@ def test_allowance_skip_preserves_daily_streak_without_claiming_completion() -> 
         for day in range(20, 27)
     }
     context = AssistantContext(
-        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="help",
+        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={"goals": [{"description": "Exercise", "schedule_class": "daily_x_per_week", "participants": {"alice": {"period_outcomes": outcomes}}}]},
     )
@@ -272,7 +272,7 @@ def test_weekly_streak_uses_weeks_and_open_week_does_not_extend_it() -> None:
         "2026-07-20": {"fulfilled": True},
     }
     context = AssistantContext(
-        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="help",
+        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="assistant",
         now=datetime(2026, 7, 30, tzinfo=timezone.utc),
         user_state={"goals": [{"description": "Reading", "schedule_class": "weekly", "participants": {"alice": {"period_outcomes": outcomes, "period_start": "2026-07-27", "current": 1, "target": 1}}}]},
     )
@@ -292,7 +292,7 @@ def test_streak_break_and_restart_are_detected_inside_selected_week() -> None:
         "2026-07-26": {"fulfilled": True},
     }
     context = AssistantContext(
-        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="help",
+        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={"goals": [{"description": "Jogging", "participants": {"alice": {"period_outcomes": outcomes}}}]},
     )
@@ -331,7 +331,7 @@ def test_valid_allowance_is_excused_without_being_counted_as_completion() -> Non
         current_user={},
         state=AssistantState(),
         session_state={},
-        current_page_key="help",
+        current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={
             "goals": [
@@ -368,7 +368,7 @@ def test_near_miss_is_selected_as_a_helpful_focus_insight() -> None:
         current_user={},
         state=AssistantState(),
         session_state={},
-        current_page_key="help",
+        current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={
             "goals": [
@@ -416,7 +416,7 @@ def test_substantial_daily_goal_outranks_a_perfect_weekly_one_off() -> None:
         current_user={},
         state=AssistantState(),
         session_state={},
-        current_page_key="help",
+        current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={
             "goals": [
@@ -463,7 +463,7 @@ def test_week_result_exposes_perfect_and_progress_days() -> None:
         current_user={},
         state=AssistantState(),
         session_state={},
-        current_page_key="help",
+        current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={
             "goals": [
@@ -487,7 +487,7 @@ def test_week_comparison_keeps_goals_that_were_only_active_last_week() -> None:
         current_user={},
         state=AssistantState(),
         session_state={},
-        current_page_key="help",
+        current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={
             "goals": [
@@ -528,7 +528,7 @@ def test_weekly_period_is_not_mislabelled_as_monday_activity() -> None:
         current_user={},
         state=AssistantState(),
         session_state={},
-        current_page_key="help",
+        current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={
             "goals": [
@@ -569,7 +569,7 @@ def test_shared_insights_cover_all_social_patterns_and_restrict_people_to_approv
     alice["2026-07-23"]["completion_reactions"] = {}  # outcome data remains ordinary
     context = AssistantContext(
         user_id="alice", current_user={"name": "Alice"}, state=AssistantState(), session_state={},
-        current_page_key="help", now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        current_page_key="assistant", now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={
             "friend_profiles": {"maya": {"name": "Maya"}, "leo": {"name": "Leo"}},
             "goals": [{
@@ -603,7 +603,7 @@ def test_shared_comparison_hides_raw_progress_when_targets_differ_and_streak_is_
 
     context = AssistantContext(
         user_id="alice", current_user={"name": "Alice"}, state=AssistantState(), session_state={},
-        current_page_key="help", now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        current_page_key="assistant", now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={"friend_profiles": {"maya": {"name": "Maya"}}, "goals": [{
             "id": "walk", "description": "Walking", "participants": {
                 "alice": participant(10, {20, 21, 22, 23, 24, 25}),

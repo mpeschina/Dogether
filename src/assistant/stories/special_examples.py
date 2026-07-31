@@ -16,7 +16,7 @@ from src.assistant.core import (
 
 SPECIAL_STORY_ID: Final = "special_examples"
 SPECIAL_SEQUENCE_ID: Final = "special_examples"
-HELP_PAGE_KEY: Final = "help"
+ASSISTANT_PAGE_KEY: Final = "assistant"
 WELCOME_EVENT_ID: Final = "special.welcome"
 BUTTON_TEST_EVENT_ID: Final = "special.button_test"
 CLICK_CHALLENGE_EVENT_ID: Final = "special.click_challenge"
@@ -38,7 +38,7 @@ class SpecialExampleStory(AssistantStory):
         if position == 0:
             return scene
         event_state = context.state.events.get(scene, {})
-        if context.previous_page_key != HELP_PAGE_KEY or event_state.get("active") is True:
+        if context.previous_page_key != ASSISTANT_PAGE_KEY or event_state.get("active") is True:
             return scene
         return None
 
