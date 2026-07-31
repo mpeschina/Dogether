@@ -6,7 +6,12 @@ from src.assistant.stories.greetings import (
     GREETING_RANDOMIZED_AT_SESSION_KEY,
     GREETING_SELECTION_SESSION_KEY,
 )
-from src.pages.account_page import activity_diagram_html, clear_greeting_session, greeting_debug_info
+from src.pages.account_page import (
+    activity_diagram_html,
+    assistant_transient_debug_info,
+    clear_greeting_session,
+    greeting_debug_info,
+)
 
 BERLIN = ZoneInfo("Europe/Berlin")
 
@@ -73,3 +78,26 @@ def test_greeting_debug_info_shows_and_clears_only_session_greeting_state() -> N
     clear_greeting_session(session_state)
 
     assert session_state == {"unrelated": "kept"}
+
+
+def test_assistant_transient_debug_info_shows_all_assistant_owned_session_values() -> None:
+    session_state = {
+        "assistant.transient_state": {"user_id": "user-1", "assistant_state": {"story": "weekly_summary"}},
+        "assistant.transcript": [("card", {"title": "Weekly completion"})],
+        "assistant_choice_3_0": False,
+        "assistant_mode_user-1": "normal",
+        "assistant_send_input_4": "Hello",
+        "greetings.selection": "cowboy",
+        "help_assistant_dummy_input": "",
+        "unrelated": "kept",
+    }
+
+    assert assistant_transient_debug_info(session_state) == {
+        "assistant.transcript": [["card", {"title": "Weekly completion"}]],
+        "assistant.transient_state": {"user_id": "user-1", "assistant_state": {"story": "weekly_summary"}},
+        "assistant_choice_3_0": False,
+        "assistant_mode_user-1": "normal",
+        "assistant_send_input_4": "Hello",
+        "greetings.selection": "cowboy",
+        "help_assistant_dummy_input": "",
+    }

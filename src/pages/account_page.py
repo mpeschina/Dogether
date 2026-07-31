@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping
+from dataclasses import asdict, is_dataclass
 from datetime import date, datetime, timedelta
+from enum import Enum
 from html import escape
+from typing import Any
 import streamlit as st
 
 from src.assistant.state import AssistantMode, AssistantState, clear_transient_assistant_state
@@ -67,8 +70,8 @@ def render_assistant_settings(
     state = AssistantState.from_profile(current_user)
     st.caption("Current assistant state")
     st.json(state.to_dict())
-    st.caption("Greeting session debug")
-    st.json(greeting_debug_info(st.session_state))
+    st.caption("Current assistant transient state")
+    st.json(assistant_transient_debug_info(st.session_state))
 
     widget_key = f"assistant_mode_{user_id}"
     mode_options = [mode.value for mode in AssistantMode]
@@ -112,6 +115,47 @@ def greeting_debug_info(session_state: Mapping[str, object]) -> dict[str, object
         "randomized_at": session_state.get(GREETING_RANDOMIZED_AT_SESSION_KEY),
         "pending_interaction": session_state.get(GREETING_PENDING_SESSION_KEY),
     }
+
+
+def assistant_transient_debug_info(
+    session_state: Mapping[str, object],
+) -> dict[str, object]:
+    """Return every session value owned by the assistant, ready for JSON debug output."""
+    keys = sorted(
+        key
+        for key in session_state
+        if _is_assistant_transient_key(key)
+    )
+    return {key: _json_debug_value(session_state[key]) for key in keys}
+
+
+def _is_assistant_transient_key(key: object) -> bool:
+    if not isinstance(key, str):
+        return False
+    return key == "help_assistant_dummy_input" or key.startswith(
+        (
+            "assistant.",
+            "assistant_choice_",
+            "assistant_mode_",
+            "assistant_send_input_",
+            "greetings.",
+        )
+    )
+
+
+def _json_debug_value(value: Any) -> object:
+    """Make transcript cards and other assistant objects visible in ``st.json``."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_debug_value(asdict(value))
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Mapping):
+        return {str(key): _json_debug_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_debug_value(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return repr(value)
 
 
 def clear_greeting_session(session_state: MutableMapping[str, object]) -> None:
