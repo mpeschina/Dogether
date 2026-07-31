@@ -29,6 +29,12 @@ class CountingJsonPersistence(JsonPersistence):
         super()._write_uncached(data)
 
 
+class FakeMongoWriteResult:
+    def __init__(self, matched_count: int = 0, upserted_id=None) -> None:
+        self.matched_count = matched_count
+        self.upserted_id = upserted_id
+
+
 class FakeMongoNativeCollection:
     def __init__(self, name: str, database=None) -> None:
         self.name = name
@@ -97,12 +103,14 @@ class FakeMongoNativeCollection:
         if document_id in self.documents or upsert:
             self.documents[document_id] = copy.deepcopy(replacement)
 
-    def update_one(self, query: dict, update: dict, upsert: bool = False) -> None:
+    def update_one(self, query: dict, update: dict, upsert: bool = False) -> FakeMongoWriteResult:
         self.calls.append(("update_one", copy.deepcopy(query), copy.deepcopy(update), upsert))
         document = None
         document_id = query.get("_id")
         if document_id is not None:
-            document = self.documents.get(document_id)
+            candidate = self.documents.get(document_id)
+            if candidate is not None and self._matches(candidate, query):
+                document = candidate
         if document is None:
             for candidate in self.documents.values():
                 if self._matches(candidate, query):
@@ -110,12 +118,18 @@ class FakeMongoNativeCollection:
                     break
         if document is None:
             if not upsert:
-                return
+                return FakeMongoWriteResult()
             document_id = document_id or update.get("$set", {}).get("id")
+            if document_id in self.documents:
+                return FakeMongoWriteResult()
             document = {"_id": document_id}
             self.documents[document_id] = document
+            upserted_id = document_id
+        else:
+            upserted_id = None
         for key, value in update.get("$set", {}).items():
             self._set_path(document, key, copy.deepcopy(value))
+        return FakeMongoWriteResult(matched_count=1 if upserted_id is None else 0, upserted_id=upserted_id)
 
     def delete_one(self, query: dict) -> None:
         self.calls.append(("delete_one", copy.deepcopy(query)))
@@ -1879,6 +1893,78 @@ def test_mongodb_native_rollover_bulk_loads_active_goals_for_stat_refreshes() ->
         },
         {"participant_user_ids": {"$in": ["alice", "bob"]}, "archived_at": None},
     ]
+    stats_find_calls = [call for call in database["user_stats"].calls if call[0] == "find_one"]
+    stats_update_calls = [call for call in database["user_stats"].calls if call[0] == "update_one"]
+    assert [call[1] for call in stats_find_calls] == [{"_id": "alice"}, {"_id": "bob"}]
+    assert [call[1]["_id"] for call in stats_update_calls] == ["alice", "bob"]
+    assert all(call[1]["revision"] >= 1 for call in stats_update_calls)
+
+
+def test_mongodb_native_rollover_batches_long_gap_activity_stats_write() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2025-06-01T09:00:00"))
+    persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Steps",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=10,
+        now=at("2025-06-01T09:01:00"),
+    )
+    for collection in database.collections.values():
+        collection.calls.clear()
+
+    persistence.list_goals_for_user(alice["user_id"], now=at("2026-06-02T08:00:00"))
+
+    activity_days = database["user_stats"].documents["alice"]["activity_days"]
+    stats_update_calls = [call for call in database["user_stats"].calls if call[0] == "update_one"]
+    assert len(activity_days) == 365
+    assert len(stats_update_calls) == 1
+
+
+def test_mongodb_native_user_stats_write_retries_after_revision_conflict() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    persistence.create_goal(
+        created_by=alice["user_id"],
+        description="Steps",
+        schedule_class="daily",
+        required_periods=1,
+        friend_user_ids=[],
+        target=10,
+        now=at("2026-06-01T09:01:00"),
+    )
+    stats_collection = database["user_stats"]
+    original_update_one = stats_collection.update_one
+    injected_conflict = False
+
+    def update_with_conflict(query: dict, update: dict, upsert: bool = False):
+        nonlocal injected_conflict
+        if not injected_conflict and "revision" in query:
+            injected_conflict = True
+            stats = stats_collection.documents["alice"]
+            stats["revision"] += 1
+            stats["activity_days"]["2026-05-30"] = {
+                "active_goals": 9,
+                "fulfilled_goals": 8,
+                "percent": 88.9,
+            }
+        return original_update_one(query, update, upsert)
+
+    stats_collection.update_one = update_with_conflict
+    persistence._refresh_activity_day_for_user(
+        alice["user_id"],
+        at("2026-06-02T08:00:00").date(),
+        persistence._active_goals_for_user(alice["user_id"]),
+    )
+
+    stats = stats_collection.documents["alice"]
+    assert injected_conflict
+    assert stats["activity_days"]["2026-05-30"]["percent"] == 88.9
+    assert "2026-06-02" in stats["activity_days"]
 
 
 def test_mongodb_native_correct_goal_period_progress_updates_outcome_and_activity() -> None:

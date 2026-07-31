@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from time import monotonic
 from typing import Any, Iterable, Mapping
 
+from pymongo.errors import DuplicateKeyError
+
 from src.assistant.state import AssistantState
 
 from .persistence_helpers import (
@@ -36,6 +38,7 @@ from .persistence_helpers import (
 )
 
 MIGRATION_ID = "native_mongo_v1"
+USER_STATS_WRITE_RETRIES = 3
 
 
 class MongoNativePersistence:
@@ -232,25 +235,82 @@ class MongoNativePersistence:
         day: Any,
         active_goals: list[dict[str, Any]] | None = None,
     ) -> None:
+        goals = active_goals if active_goals is not None else self._active_goals_for_user(user_id)
+        self._refresh_activity_days_for_users({user_id: {day}}, {user_id: goals})
+
+    def _updated_activity_stats(
+        self,
+        user_id: str,
+        affected_days: set[Any],
+        active_goals: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         stats = self._user_stats_for_user(user_id)
         data = {
             "users": {},
             "friend_invites": {},
             "friend_suggestions": {},
             "friendships": {},
-            "goals": {
-                goal["id"]: goal
-                for goal in (active_goals if active_goals is not None else self._active_goals_for_user(user_id))
-            },
+            "goals": {goal["id"]: goal for goal in active_goals},
             "user_stats": {user_id: stats},
             "debug": {"time_offset_seconds": 0},
         }
-        before = copy.deepcopy(data["user_stats"][user_id])
-        _refresh_activity_day(data, user_id, day)
-        updated = data["user_stats"][user_id]
-        if updated != before:
-            self._user_stats_collection().replace_one({"_id": user_id}, {"_id": user_id, **updated}, upsert=True)
-            self._cache_clear()
+        before = copy.deepcopy(stats)
+        for affected_day in sorted(affected_days):
+            _refresh_activity_day(data, user_id, affected_day)
+        return before, data["user_stats"][user_id]
+
+    def _write_user_stats_if_current(
+        self,
+        user_id: str,
+        before: dict[str, Any],
+        updated: dict[str, Any],
+    ) -> bool:
+        revision = max(0, int(before.get("revision", 0) or 0))
+        stored = {key: value for key, value in updated.items() if key != "revision"}
+        stored["revision"] = revision + 1
+        result = self._user_stats_collection().update_one(
+            {"_id": user_id, "revision": revision},
+            {"$set": stored},
+        )
+        if result.matched_count:
+            return True
+        if revision:
+            return False
+        try:
+            legacy_result = self._user_stats_collection().update_one(
+                {"_id": user_id, "revision": {"$exists": False}},
+                {"$set": stored},
+                upsert=True,
+            )
+        except DuplicateKeyError:
+            return False
+        return bool(legacy_result.matched_count or legacy_result.upserted_id)
+
+    def _refresh_activity_days_for_users(
+        self,
+        affected_days_by_user: dict[str, set[Any]],
+        active_goals_by_user: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        wrote_stats = False
+        try:
+            for user_id, affected_days in affected_days_by_user.items():
+                for _attempt in range(USER_STATS_WRITE_RETRIES):
+                    before, updated = self._updated_activity_stats(
+                        user_id,
+                        affected_days,
+                        active_goals_by_user.get(user_id, []),
+                    )
+                    if updated == before:
+                        break
+                    if self._write_user_stats_if_current(user_id, before, updated):
+                        wrote_stats = True
+                        break
+                    self._cache_clear()
+                else:
+                    raise RuntimeError("User statistics changed repeatedly; please retry.")
+        finally:
+            if wrote_stats:
+                self._cache_clear()
 
     def _user_stats_for_user(self, user_id: str) -> dict[str, Any]:
         def load_stats() -> dict[str, Any]:
@@ -259,23 +319,28 @@ class MongoNativePersistence:
         return self._read_cached(("user_stats", user_id), load_stats)
 
     def _repair_activity_days_for_user(self, user_id: str, now: datetime) -> dict[str, Any]:
-        stats = self._user_stats_for_user(user_id)
-        if stats.get("activity_days_repair_version") == ACTIVITY_DAYS_REPAIR_VERSION:
-            return stats
-        data = {
-            "users": {},
-            "friend_invites": {},
-            "friend_suggestions": {},
-            "friendships": {},
-            "goals": {goal["id"]: goal for goal in self._active_goals_for_user(user_id)},
-            "user_stats": {user_id: stats},
-            "debug": {"time_offset_seconds": 0},
-        }
-        _repair_activity_days(data, user_id, now)
-        updated = data["user_stats"][user_id]
-        self._user_stats_collection().replace_one({"_id": user_id}, {"_id": user_id, **updated}, upsert=True)
-        self._cache_clear()
-        return updated
+        active_goals = self._active_goals_for_user(user_id)
+        for _attempt in range(USER_STATS_WRITE_RETRIES):
+            stats = self._user_stats_for_user(user_id)
+            if stats.get("activity_days_repair_version") == ACTIVITY_DAYS_REPAIR_VERSION:
+                return stats
+            data = {
+                "users": {},
+                "friend_invites": {},
+                "friend_suggestions": {},
+                "friendships": {},
+                "goals": {goal["id"]: goal for goal in active_goals},
+                "user_stats": {user_id: stats},
+                "debug": {"time_offset_seconds": 0},
+            }
+            _repair_activity_days(data, user_id, now)
+            updated = data["user_stats"][user_id]
+            if self._write_user_stats_if_current(user_id, stats, updated):
+                updated["revision"] = max(0, int(stats.get("revision", 0) or 0)) + 1
+                self._cache_clear()
+                return updated
+            self._cache_clear()
+        raise RuntimeError("User statistics changed repeatedly; please retry.")
 
     def _rollover_goal_participant(
         self,
@@ -329,10 +394,7 @@ class MongoNativePersistence:
             for goal in goals
         ]
         active_goals_by_user = self._active_goals_for_users(list(affected_days_by_user))
-        for affected_user_id, affected_days in affected_days_by_user.items():
-            active_goals = active_goals_by_user.get(affected_user_id, [])
-            for affected_day in sorted(affected_days):
-                self._refresh_activity_day_for_user(affected_user_id, affected_day, active_goals)
+        self._refresh_activity_days_for_users(affected_days_by_user, active_goals_by_user)
         return rolled_over_goals
 
     def _rollover_goal_participants(
