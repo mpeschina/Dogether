@@ -121,6 +121,8 @@ class StreamlitAssistantView:
                 if entry[0] != "live_progress"
             ]
         with self._live_transcript:
+            if turn.progress_before_content:
+                self._present_progress(turn.progress)
             if turn.content:
                 for item in turn.content:
                     if isinstance(item, AssistantLine):
@@ -137,19 +139,24 @@ class StreamlitAssistantView:
                     "status" if turn.keep_statuses_in_history else "live_status",
                     message,
                 )
-            for progress in turn.progress:
-                self._append_and_render(
-                    "live_progress",
-                    {"value": progress.value, "text": progress.text},
-                )
+            if not turn.progress_before_content:
+                self._present_progress(turn.progress)
             if turn.assistant_leaves:
                 self._append_and_render("live_status", "Assistant left the chat")
-                st.session_state[ASSISTANT_LEFT_THIS_VISIT_KEY] = True
+                if not turn.allow_interaction_after_leaving:
+                    st.session_state[ASSISTANT_LEFT_THIS_VISIT_KEY] = True
 
         if turn.destination:
             st.session_state["assistant.destination"] = turn.destination
         if turn.has_control:
             self._set_control(turn)
+
+    def _present_progress(self, progress_entries: tuple[ProgressEntry, ...]) -> None:
+        for progress in progress_entries:
+            self._append_and_render(
+                "live_progress",
+                {"value": progress.value, "text": progress.text},
+            )
 
     def clear_control(self) -> None:
         st.session_state.pop(ACTIVE_CONTROL_KEY, None)

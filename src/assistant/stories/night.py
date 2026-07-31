@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Final
 
 from src.assistant.core import (
+    AssistantChoice,
     AssistantContext,
     AssistantLine,
     AssistantSelection,
@@ -16,7 +17,10 @@ from src.assistant.story_session import story_session
 
 NIGHT_STORY_ID: Final = "night"
 NIGHT_EVENT_ID: Final = "night.interruption"
+NIGHT_AFTER_LEAVING_SCENE: Final = "night.after_leaving"
+NIGHT_GOOD_NIGHT_SCENE: Final = "night.good_night"
 NIGHT_CLICKS_KEY: Final = "clicks"
+INITIAL_STATUS: Final = "It seems to be empty here"
 STATUS_CLICK_COUNT: Final = 6
 PROGRESS_BAR_CLICK_COUNT: Final = 30
 PROGRESS_BAR_COUNT: Final = 3
@@ -37,7 +41,11 @@ class NightStory(AssistantStory):
         scene_id: str | None,
         selection: AssistantSelection | None,
     ) -> AssistantTurn:
-        del scene_id
+        if scene_id == NIGHT_AFTER_LEAVING_SCENE:
+            return self._after_leaving()
+        if scene_id == NIGHT_GOOD_NIGHT_SCENE:
+            return self._leave_for_main_page(context)
+
         session = story_session(context.session_state, self.story_id)
         clicks = _non_negative_int(session.get(NIGHT_CLICKS_KEY))
         if selection is not None:
@@ -45,7 +53,10 @@ class NightStory(AssistantStory):
 
         if clicks <= STATUS_CLICK_COUNT:
             return self._send_turn(
-                context, clicks, statuses=(f"{clicks}x",) if clicks else ()
+                context,
+                clicks,
+                statuses=(f"{clicks}x",) if clicks else (INITIAL_STATUS,),
+                keep_statuses_in_history=selection is None,
             )
 
         progress_clicks = clicks - STATUS_CLICK_COUNT
@@ -53,10 +64,9 @@ class NightStory(AssistantStory):
         if progress_clicks < PROGRESS_BAR_CLICK_COUNT * PROGRESS_BAR_COUNT:
             return self._send_turn(context, clicks, progress=progress)
 
-        session.clear()
         return AssistantTurn(
             story_id=self.story_id,
-            scene_id=NIGHT_EVENT_ID,
+            scene_id=NIGHT_AFTER_LEAVING_SCENE,
             lines=(
                 AssistantLine("Man, I am sleeping its super late!"),
                 AssistantLine(
@@ -66,8 +76,41 @@ class NightStory(AssistantStory):
                 AssistantLine("Dont disturb me during the night!!!!"),
             ),
             progress=progress,
+            progress_before_content=True,
             assistant_leaves=True,
+            allow_interaction_after_leaving=True,
+            choices=(
+                AssistantChoice("sorry", "Ähm, yes, ok. Sorry ..."),
+                AssistantChoice("good_night", "Good Night"),
+                AssistantChoice(
+                    "not_angry", "But hey, no reason to get angry at me!"
+                ),
+            ),
+            state_status="paused",
+        )
+
+    def _after_leaving(self) -> AssistantTurn:
+        """Accept the user's reaction without responding before the final exit."""
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id=NIGHT_GOOD_NIGHT_SCENE,
+            choices=(
+                AssistantChoice("go_to_bed", "You are right, I will also go to bed now"),
+                AssistantChoice(
+                    "leave_quietly", "Leave chat without a saying", style="italic"
+                ),
+            ),
+            state_status="paused",
+        )
+
+    def _leave_for_main_page(self, context: AssistantContext) -> AssistantTurn:
+        story_session(context.session_state, self.story_id).clear()
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id=NIGHT_GOOD_NIGHT_SCENE,
+            destination="goals",
             completed=True,
+            state_status="completed",
         )
 
     def _send_turn(
@@ -77,6 +120,7 @@ class NightStory(AssistantStory):
         *,
         statuses: tuple[str, ...] = (),
         progress: tuple[ProgressEntry, ...] = (),
+        keep_statuses_in_history: bool = False,
     ) -> AssistantTurn:
         story_session(context.session_state, self.story_id).set(NIGHT_CLICKS_KEY, clicks)
         return AssistantTurn(
@@ -86,7 +130,7 @@ class NightStory(AssistantStory):
             record_selection=False,
             statuses=statuses,
             progress=progress,
-            keep_statuses_in_history=False,
+            keep_statuses_in_history=keep_statuses_in_history,
             state_status="paused",
         )
 

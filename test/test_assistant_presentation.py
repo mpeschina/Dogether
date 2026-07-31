@@ -181,6 +181,29 @@ view.finish()
     ]
 
 
+def test_progress_can_render_before_assistant_messages() -> None:
+    app_source = """
+import src.assistant.presentation as presentation
+from src.assistant.core import AssistantLine, AssistantTurn, ProgressEntry
+
+view = presentation.StreamlitAssistantView()
+if not view.waiting_for_input:
+    view.present(AssistantTurn(
+        story_id='test', scene_id='done',
+        lines=(AssistantLine('Finished'),),
+        progress=(ProgressEntry(1, 'Complete'),),
+        progress_before_content=True,
+    ))
+view.finish()
+"""
+    app = AppTest.from_string(app_source, default_timeout=10).run()
+
+    assert app.session_state.filtered_state["assistant.transcript"] == [
+        ("live_progress", {"value": 1, "text": "Complete"}),
+        ("assistant", "Finished"),
+    ]
+
+
 def test_small_assistant_line_is_rendered_at_half_size_and_persists_in_history(monkeypatch) -> None:
     from src.assistant.core import AssistantLine
 

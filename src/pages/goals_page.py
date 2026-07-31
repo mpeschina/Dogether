@@ -15,6 +15,9 @@ from src.db.persistence import Persistence
 from src.pages.page_helpers import schedule_label
 
 
+GOAL_CREATED_INFO_SESSION_KEY = "goals_created_info"
+
+
 def _addable_friend_options(goal: dict, friend_options: dict[str, str]) -> dict[str, str]:
     existing_participant_ids = set(goal.get("participants", {}))
     return {
@@ -281,6 +284,10 @@ def render_goals(
         unsafe_allow_html=True,
     )
     st.title("Create / Manage Shared Goals")
+    created_goal_info = st.session_state.pop(GOAL_CREATED_INFO_SESSION_KEY, None)
+    if isinstance(created_goal_info, str):
+        st.info(created_goal_info)
+
     friends = persistence.list_friends(user_id)
     friend_options = {f"{friend.get('name', friend['email'])} <{friend['email']}>": friend["user_id"] for friend in friends}
 
@@ -316,7 +323,7 @@ def render_goals(
                     current=int(0),
                     now=now,
                 )
-                st.success("Goal created.")
+                st.session_state[GOAL_CREATED_INFO_SESSION_KEY] = "Goal created."
                 st.rerun()
             except ValueError as error:
                 st.error(str(error))

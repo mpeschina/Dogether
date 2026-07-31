@@ -124,9 +124,12 @@ class AssistantTurn:
     record_selection: bool = True  # Whether to add the choice to history.
     statuses: tuple[str, ...] = ()  # Status messages to show.
     progress: tuple[ProgressEntry, ...] = ()  # Progress indicators to show.
+    # Render progress before content instead of after it.
+    progress_before_content: bool = False
     # Keep statuses in conversation history rather than treating them as live UI feedback.
     keep_statuses_in_history: bool = False
     assistant_leaves: bool = False  # Whether the assistant leaves the chat.
+    allow_interaction_after_leaving: bool = False  # Keep controls available after the departure status.
     destination: str | None = None  # Page to open next.
     completed: bool = False  # Whether to save state durably.
     continue_flow: bool = False  # Whether to advance again immediately.

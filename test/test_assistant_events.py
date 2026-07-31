@@ -43,7 +43,10 @@ from src.assistant.stories.information import (
     _goal_fact_cards,
 )
 from src.assistant.stories.night import (
+    INITIAL_STATUS as NIGHT_INITIAL_STATUS,
+    NIGHT_AFTER_LEAVING_SCENE,
     NIGHT_EVENT_ID,
+    NIGHT_GOOD_NIGHT_SCENE,
     NIGHT_STORY_ID,
     PROGRESS_BAR_CLICK_COUNT as NIGHT_PROGRESS_BAR_CLICK_COUNT,
     PROGRESS_BAR_COUNT as NIGHT_PROGRESS_BAR_COUNT,
@@ -1216,6 +1219,10 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
     state = AssistantState()
     session = {}
 
+    initial = story.advance(context_for(state, session_state=session), NIGHT_EVENT_ID, None)
+    assert initial.statuses == (NIGHT_INITIAL_STATUS,)
+    assert initial.keep_statuses_in_history
+
     for clicks in range(1, NIGHT_STATUS_CLICK_COUNT + 1):
         turn = story.advance(
             context_for(state, session_state=session),
@@ -1252,12 +1259,38 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
         "Dont disturb me during the night!!!!",
     ]
     assert final.lines[1].font_scale == 0.5
+    assert final.progress_before_content
     assert [entry.text for entry in final.progress] == [
         f"{NIGHT_PROGRESS_BAR_CLICK_COUNT} / {NIGHT_PROGRESS_BAR_CLICK_COUNT}"
     ] * NIGHT_PROGRESS_BAR_COUNT
     assert final.assistant_leaves
-    assert final.completed
-    assert NIGHT_EVENT_ID not in apply_turn(state, final).events
+    assert final.allow_interaction_after_leaving
+    assert not final.completed
+    assert [choice.label for choice in final.choices] == [
+        "Ähm, yes, ok. Sorry ...",
+        "Good Night",
+        "But hey, no reason to get angry at me!",
+    ]
+
+    acknowledgement = story.advance(
+        context_for(state, session_state=session),
+        NIGHT_AFTER_LEAVING_SCENE,
+        selection(NIGHT_STORY_ID, NIGHT_AFTER_LEAVING_SCENE, "sorry"),
+    )
+    assert acknowledgement.lines == ()
+    assert [choice.label for choice in acknowledgement.choices] == [
+        "You are right, I will also go to bed now",
+        "Leave chat without a saying",
+    ]
+    assert acknowledgement.choices[1].style == "italic"
+
+    exit_turn = story.advance(
+        context_for(state, session_state=session),
+        NIGHT_GOOD_NIGHT_SCENE,
+        selection(NIGHT_STORY_ID, NIGHT_GOOD_NIGHT_SCENE, "leave_quietly"),
+    )
+    assert exit_turn.destination == "goals"
+    assert exit_turn.completed
     assert "assistant.story_session" not in session
 
 
