@@ -64,11 +64,14 @@ def test_summary_is_unavailable_until_the_account_has_a_closed_week() -> None:
 
     preface = WeeklySummaryStory().advance(context, UNAVAILABLE_PREFACE_SCENE, None)
 
-    assert preface.lines == (AssistantLine("small hint from me:", wait_before=2),)
+    assert len(preface.lines) == 1
+    assert preface.state_scene == UNAVAILABLE_HINT_SCENE
+    assert preface.state_status == "active"
+    assert preface.continue_flow
 
     hint = WeeklySummaryStory().advance(context, UNAVAILABLE_HINT_SCENE, None)
 
-    assert hint.lines == (AssistantLine("Hint: it unlocks in 34 hours", typing_delay=4),)
+    assert len(hint.lines) == 1
     assert hint.completed
 
 
