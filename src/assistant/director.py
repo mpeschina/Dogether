@@ -206,7 +206,7 @@ class AssistantDirector:
         )
 
     def _important_issue_story(self, context: AssistantContext):
-        return self.stories.get(NIGHT_STORY_ID) #just for debugging this event
+        # return self.stories.get(NIGHT_STORY_ID) ##### just for debugging this event, keep this line
         now = context.now or datetime.now(timezone.utc)
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
