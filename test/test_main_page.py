@@ -182,14 +182,27 @@ def test_balloons_are_only_eligible_for_a_new_completion_over_double_target() ->
     assert not should_render_balloons_for_goal_hit({"current": 10, "target": 10}, {"current": 21, "target": 10}, random_value=0.01)
 
 
-def test_site_break_requires_an_unskipped_crossing_at_least_three_times_target() -> None:
+def test_site_break_requires_an_unskipped_crossing_at_least_two_times_target() -> None:
     previous = {"current": 9, "target": 10, "skipped": False}
 
-    assert should_render_site_break_for_goal_hit(previous, {"current": 30, "target": 10, "skipped": False})
-    assert should_render_site_break_for_goal_hit({"current": 10, "target": 10}, {"current": 30, "target": 10})
-    assert not should_render_site_break_for_goal_hit(previous, {"current": 29, "target": 10, "skipped": False})
-    assert not should_render_site_break_for_goal_hit({"current": 30, "target": 10}, {"current": 31, "target": 10})
-    assert not should_render_site_break_for_goal_hit(previous, {"current": 30, "target": 10, "skipped": True})
+    assert should_render_site_break_for_goal_hit(
+        previous, {"current": 20, "target": 10, "skipped": False}, random_value=0.19
+    )
+    assert not should_render_site_break_for_goal_hit(
+        previous, {"current": 20, "target": 10, "skipped": False}, random_value=0.20
+    )
+    assert should_render_site_break_for_goal_hit(
+        {"current": 10, "target": 10}, {"current": 20, "target": 10}, random_value=0
+    )
+    assert not should_render_site_break_for_goal_hit(
+        previous, {"current": 19, "target": 10, "skipped": False}, random_value=0
+    )
+    assert not should_render_site_break_for_goal_hit(
+        {"current": 20, "target": 10}, {"current": 21, "target": 10}, random_value=0
+    )
+    assert not should_render_site_break_for_goal_hit(
+        previous, {"current": 20, "target": 10, "skipped": True}, random_value=0
+    )
 
 
 def test_participant_name_with_progress_keeps_progress_inline_and_escaped() -> None:

@@ -39,6 +39,7 @@ from src.viewport_component import viewport_info
 
 
 BALLOON_CHANCE = 0.10
+SITE_BREAK_CHANCE = 0.20
 BALLOON_GOAL_ID_SESSION_KEY = "balloon_goal_id"
 SITE_BREAK_GOAL_ID_SESSION_KEY = "site_break_goal_id"
 SITE_BREAK_CSS = """.goal--too-motivated {
@@ -74,15 +75,20 @@ SITE_BREAK_CSS = """.goal--too-motivated {
 def should_render_site_break_for_goal_hit(
     previous_participant: dict,
     updated_participant: dict,
+    *,
+    random_value: float | None = None,
 ) -> bool:
-    """Return whether progress newly crosses the three-times-target threshold."""
+    """Return whether a two-times-target crossing wins the daily 20% roll."""
     if previous_participant.get("skipped") or updated_participant.get("skipped"):
         return False
     previous_current = max(0, int(previous_participant.get("current", 0) or 0))
     previous_target = max(1, int(previous_participant.get("target", 1) or 1))
     current = max(0, int(updated_participant.get("current", 0) or 0))
     target = max(1, int(updated_participant.get("target", 1) or 1))
-    return previous_current < 3 * previous_target and current >= 3 * target
+    crossed_threshold = previous_current < 2 * previous_target and current >= 2 * target
+    if not crossed_threshold:
+        return False
+    return (random() if random_value is None else random_value) < SITE_BREAK_CHANCE
 
 
 def should_render_balloons_for_goal_hit(
@@ -116,11 +122,23 @@ def queue_site_break_for_goal_hit(
     user_id: str,
     now: datetime | None,
 ) -> bool:
-    """Queue the one-time main-page interruption for an extreme completion."""
+    """Claim today's chance and queue an extreme-completion interruption if it wins."""
     updated_participant = updated_goal.get("participants", {}).get(user_id, {})
-    if not should_render_site_break_for_goal_hit(previous_participant, updated_participant):
+    previous_current = max(0, int(previous_participant.get("current", 0) or 0))
+    previous_target = max(1, int(previous_participant.get("target", 1) or 1))
+    current = max(0, int(updated_participant.get("current", 0) or 0))
+    target = max(1, int(updated_participant.get("target", 1) or 1))
+    crossed_threshold = (
+        not previous_participant.get("skipped")
+        and not updated_participant.get("skipped")
+        and previous_current < 2 * previous_target
+        and current >= 2 * target
+    )
+    if not crossed_threshold:
         return False
     if not persistence.claim_site_break_effect(user_id, now=now):
+        return False
+    if not should_render_site_break_for_goal_hit(previous_participant, updated_participant):
         return False
     st.session_state[SITE_BREAK_GOAL_ID_SESSION_KEY] = updated_goal.get("id")
     return True
