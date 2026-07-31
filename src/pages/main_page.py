@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from html import escape
 from random import random
@@ -35,6 +36,7 @@ from src.assistant.stories.information import (
     clear_goal_invitation_news,
     pending_goal_invitations,
 )
+from src.assistant.stories.tutorial import TUTORIAL_STORY_ID, WELCOME_NODE
 
 
 BALLOON_CHANCE = 0.10
@@ -687,6 +689,9 @@ def render_main(
             margin-top: 1.5rem;
             margin-bottom: 2.75rem;
         }}
+        div[class*="st-key-assistant_tutorial_offer"] button {{
+            font-style: italic;
+        }}
         {mini_activity_styles()}
         </style>
         """,
@@ -697,6 +702,40 @@ def render_main(
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)
 
     profile = persistence.get_user(user_id) or current_user
+    assistant_state = AssistantState.from_profile(profile)
+    if tutorial_has_never_started(assistant_state):
+        with st.container(border=True, key="assistant_tutorial_offer"):
+            st.markdown("The assistant might help you.")
+            actions = st.columns(2)
+            if actions[0].button(
+                "Write the assistant",
+                type="primary",
+                use_container_width=True,
+            ):
+                started_state = replace(
+                    assistant_state,
+                    story=TUTORIAL_STORY_ID,
+                    scene=WELCOME_NODE,
+                    status="active",
+                )
+                stored_state = persistence.save_assistant_state(
+                    user_id,
+                    started_state.to_dict(),
+                    now=now,
+                )
+                current_user["assistant_state"] = stored_state
+                st.session_state["assistant.destination"] = "assistant"
+                st.rerun(scope="app")
+            if actions[1].button("Do not write the assistant", use_container_width=True):
+                dismissed_state = replace(assistant_state, status="dismissed")
+                stored_state = persistence.save_assistant_state(
+                    user_id,
+                    dismissed_state.to_dict(),
+                    now=now,
+                )
+                current_user["assistant_state"] = stored_state
+                st.rerun(scope="app")
+
     invitations = pending_goal_invitations(AssistantState.from_profile(profile))
     if invitations:
         with st.container(border=True, key="assistant_information_news"):
@@ -726,3 +765,8 @@ def render_main(
         )
         if site_break_rendered:
             return
+
+
+def tutorial_has_never_started(state: AssistantState) -> bool:
+    """Return whether the initial assistant tutorial has no saved progress."""
+    return state.status == "new" and state.story is None and state.scene is None

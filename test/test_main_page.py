@@ -24,6 +24,7 @@ from src.pages.common_helpers import (
     _participant_sparkline_values,
 )
 from src.db.persistence_helpers import STANDARD_REACTION_EMOTES
+from src.assistant.state import AssistantState
 from src.pages.main_page import (
     current_user_reaction_emote,
     display_users_for_goal,
@@ -35,6 +36,7 @@ from src.pages.main_page import (
     ordered_active_participant_ids,
     should_render_balloons_for_goal_hit,
     should_render_site_break_for_goal_hit,
+    tutorial_has_never_started,
     visible_participant_ids,
     truncate_participant_name,
 )
@@ -42,6 +44,14 @@ from src.pages.main_page import (
 
 def test_standard_reaction_emotes_exclude_remove_and_include_rocket() -> None:
     assert STANDARD_REACTION_EMOTES == ["🚀", "🔥", "👏", "💪", "❤️"]
+
+
+def test_tutorial_has_never_started_only_for_a_fresh_assistant_state() -> None:
+    assert tutorial_has_never_started(AssistantState()) is True
+    assert tutorial_has_never_started(
+        AssistantState(story="tutorial", scene="onboarding.welcome")
+    ) is False
+    assert tutorial_has_never_started(AssistantState(status="dismissed")) is False
 
 def test_ordered_active_participant_ids_pins_current_user_first() -> None:
     goal = {
