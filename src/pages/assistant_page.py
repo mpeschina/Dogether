@@ -44,7 +44,7 @@ Rules:
     One thought per message.
     Usually 2-10 words.
     Never more than ~18 words.
-    Maximum 2-3 assistant bubbles before a choice.
+    Maximum 3-4 assistant bubbles before a choice.
     Choices are buttons.
     Fake typing between meaningful beats.
     Never ask open-ended questions when a button works.
