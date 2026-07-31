@@ -21,17 +21,19 @@ from src.assistant.state import (
     AssistantState,
     transient_assistant_state_for_user,
 )
+from src.assistant.story_session import story_session
 from src.assistant.stories import default_stories
 from src.assistant.stories.greetings import (
-    GREETING_PENDING_SESSION_KEY,
-    GREETING_RANDOMIZED_AT_SESSION_KEY,
-    GREETING_SELECTION_SESSION_KEY,
+    GREETING_PENDING_KEY,
+    GREETING_RANDOMIZED_AT_KEY,
+    GREETING_SELECTION_KEY,
     GREETINGS_STORY_ID,
     GreetingsStory,
 )
 from src.assistant.stories.push_reminder import PushReminderStory
 from src.assistant.stories.information import (
     GOAL_INVITATION_EVENT_ID,
+    INFORMATION_COMPLETE_KEY,
     INFORMATION_STORY_ID,
     _goal_fact_cards,
 )
@@ -45,9 +47,9 @@ from src.assistant.stories.special_examples import (
     SpecialExampleStory,
 )
 from src.assistant.stories.smalltalk import (
-    SMALLTALK_CLICKED_AT_SESSION_KEY,
+    SMALLTALK_CLICKED_AT_KEY,
     SMALLTALK_OPENERS,
-    SMALLTALK_OPENER_SELECTED_AT_SESSION_KEY,
+    SMALLTALK_OPENER_SELECTED_AT_KEY,
     SmalltalkStory,
 )
 from src.assistant.stories.standard import (
@@ -194,10 +196,12 @@ def test_transcript_clear_also_clears_active_control_unless_retained() -> None:
         ACTIVE_CONTROL_KEY: {"round_id": 1},
         CONTROL_ROUND_KEY: 1,
     }
+    story_session(session, INFORMATION_STORY_ID).set(INFORMATION_COMPLETE_KEY, True)
     clear_transcript_for_new_help_visit(session, "goals")
     assert TRANSCRIPT_KEY not in session
     assert ACTIVE_CONTROL_KEY not in session
     assert CONTROL_ROUND_KEY not in session
+    assert story_session(session, INFORMATION_STORY_ID).get(INFORMATION_COMPLETE_KEY) is None
 
     retained = {
         TRANSCRIPT_KEY: [("assistant", "Hello")],
@@ -266,7 +270,7 @@ def test_information_story_preempts_other_stories_and_clears_combined_news() -> 
     assert acknowledged.turns[0].assistant_leaves is True
     assert GOAL_INVITATION_EVENT_ID not in completed.events
     assert completed.story == STANDARD_STORY_ID
-    assert session["assistant.information.complete"] is True
+    assert story_session(session, INFORMATION_STORY_ID).get(INFORMATION_COMPLETE_KEY) is True
 
 
 def test_information_card_hides_a_single_friend_participant() -> None:
@@ -646,7 +650,7 @@ def test_smalltalk_opener_is_session_scoped_and_refreshes_after_three_hours() ->
     )
 
     assert smalltalk.menu_choice(initial).label == SMALLTALK_OPENERS[0]
-    assert SMALLTALK_OPENER_SELECTED_AT_SESSION_KEY in session
+    assert story_session(session, "smalltalk").get(SMALLTALK_OPENER_SELECTED_AT_KEY) is not None
 
     random_source.choice_index = 1
     within_interval = replace(initial, now=datetime(2026, 7, 26, 14, 59, tzinfo=timezone.utc))
@@ -669,7 +673,7 @@ def test_smalltalk_choice_is_hidden_for_one_hour_after_clicking() -> None:
 
     assert smalltalk.menu_choice(initial) is not None
     smalltalk.advance(initial, None, None)
-    assert SMALLTALK_CLICKED_AT_SESSION_KEY in session
+    assert story_session(session, "smalltalk").get(SMALLTALK_CLICKED_AT_KEY) is not None
     assert smalltalk.menu_choice(initial) is None
 
     within_cooldown = replace(initial, now=datetime(2026, 7, 26, 12, 59, tzinfo=timezone.utc))
@@ -764,8 +768,9 @@ def test_greetings_choose_a_randomized_greeting_once_per_hour_and_forward_to_men
     assert turn.story_id == GREETINGS_STORY_ID
     assert turn.continue_flow is True
     assert turn.lines[0].text == "Tiny progress time."
-    assert session[GREETING_SELECTION_SESSION_KEY] == "tiny_progress"
-    randomized_at = session[GREETING_RANDOMIZED_AT_SESSION_KEY]
+    greeting_session = story_session(session, GREETINGS_STORY_ID)
+    assert greeting_session.get(GREETING_SELECTION_KEY) == "tiny_progress"
+    randomized_at = greeting_session.get(GREETING_RANDOMIZED_AT_KEY)
 
     within_hour = replace(
         context,
@@ -774,21 +779,21 @@ def test_greetings_choose_a_randomized_greeting_once_per_hour_and_forward_to_men
     assert normal.entry_scene(within_hour) == "default"
     hello = normal.advance(within_hour, "default", None)
     assert hello.lines[0].text == "Hello"
-    assert session[GREETING_SELECTION_SESSION_KEY] == "tiny_progress"
-    assert session[GREETING_RANDOMIZED_AT_SESSION_KEY] == randomized_at
+    assert greeting_session.get(GREETING_SELECTION_KEY) == "tiny_progress"
+    assert greeting_session.get(GREETING_RANDOMIZED_AT_KEY) == randomized_at
 
     after_hour = replace(
         context,
         now=datetime(2026, 7, 26, 1, 0, tzinfo=timezone.utc),
     )
     assert normal.entry_scene(after_hour) == "tiny_progress"
-    assert session[GREETING_RANDOMIZED_AT_SESSION_KEY] != randomized_at
+    assert greeting_session.get(GREETING_RANDOMIZED_AT_KEY) != randomized_at
 
     interactive_session = {}
     interactive_context = replace(context, session_state=interactive_session)
     interactive = GreetingsStory(random_source=StubRandom(0.8, 0))
     scene = interactive.entry_scene(interactive_context)
-    assert interactive_session[GREETING_PENDING_SESSION_KEY] == "mood_check"
+    assert story_session(interactive_session, GREETINGS_STORY_ID).get(GREETING_PENDING_KEY) == "mood_check"
     prompt = interactive.advance(interactive_context, scene, None)
     assert [choice.label for choice in prompt.choices] == ["Ready.", "Absolutely not."]
     response = interactive.advance(
@@ -798,7 +803,7 @@ def test_greetings_choose_a_randomized_greeting_once_per_hour_and_forward_to_men
     )
     assert response.story_id == GREETINGS_STORY_ID
     assert response.continue_flow is True
-    assert GREETING_PENDING_SESSION_KEY not in interactive_session
+    assert story_session(interactive_session, GREETINGS_STORY_ID).get(GREETING_PENDING_KEY) is None
 
 
 def test_greetings_choose_interactive_rare_variants_and_keep_them_pending() -> None:

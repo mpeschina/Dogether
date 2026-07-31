@@ -16,6 +16,7 @@ from src.assistant.core import (
     AssistantTurn,
     ProgressEntry,
 )
+from src.assistant.stories.information import clear_information_session
 from src.pages.common_helpers import mini_activity_styles
 
 
@@ -52,7 +53,7 @@ def clear_transcript_for_new_help_visit(
     session_state.pop(PENDING_SELECTION_KEY, None)
     session_state.pop(CONTROL_ROUND_KEY, None)
     session_state.pop(ASSISTANT_LEFT_THIS_VISIT_KEY, None)
-    session_state.pop("assistant.information.complete", None)
+    clear_information_session(session_state)
     for key in LEGACY_EXPLANATION_STEP_KEYS:
         session_state.pop(key, None)
 

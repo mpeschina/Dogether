@@ -9,11 +9,12 @@ from typing import Any
 import streamlit as st
 
 from src.assistant.state import AssistantMode, AssistantState, clear_transient_assistant_state
+from src.assistant.story_session import story_session
 from src.assistant.stories.greetings import (
-    GREETING_PENDING_SESSION_KEY,
-    GREETING_RANDOMIZED_AT_SESSION_KEY,
-    GREETING_SELECTION_SESSION_KEY,
-    GREETING_SILENT_REPLY_SESSION_KEY,
+    GREETING_PENDING_KEY,
+    GREETING_RANDOMIZED_AT_KEY,
+    GREETING_SELECTION_KEY,
+    GREETINGS_STORY_ID,
 )
 from src.db.persistence import Persistence
 from src.pages.common_helpers import (
@@ -106,14 +107,15 @@ def render_assistant_settings(
         st.rerun()
 
 
-def greeting_debug_info(session_state: Mapping[str, object]) -> dict[str, object]:
+def greeting_debug_info(session_state: MutableMapping[str, object]) -> dict[str, object]:
     """Expose transient greeting state without adding it to assistant persistence."""
-    current_greeting = session_state.get(GREETING_SELECTION_SESSION_KEY)
+    session = story_session(session_state, GREETINGS_STORY_ID)
+    current_greeting = session.get(GREETING_SELECTION_KEY)
     return {
         "greeting": current_greeting,
         "current_greeting_variable": current_greeting,
-        "randomized_at": session_state.get(GREETING_RANDOMIZED_AT_SESSION_KEY),
-        "pending_interaction": session_state.get(GREETING_PENDING_SESSION_KEY),
+        "randomized_at": session.get(GREETING_RANDOMIZED_AT_KEY),
+        "pending_interaction": session.get(GREETING_PENDING_KEY),
     }
 
 
@@ -138,7 +140,6 @@ def _is_assistant_transient_key(key: object) -> bool:
             "assistant_choice_",
             "assistant_mode_",
             "assistant_send_input_",
-            "greetings.",
         )
     )
 
@@ -160,13 +161,7 @@ def _json_debug_value(value: Any) -> object:
 
 def clear_greeting_session(session_state: MutableMapping[str, object]) -> None:
     """Reset only the session-scoped greeting keys used for Help testing."""
-    for key in (
-        GREETING_SELECTION_SESSION_KEY,
-        GREETING_PENDING_SESSION_KEY,
-        GREETING_RANDOMIZED_AT_SESSION_KEY,
-        GREETING_SILENT_REPLY_SESSION_KEY,
-    ):
-        session_state.pop(key, None)
+    story_session(session_state, GREETINGS_STORY_ID).clear()
 
 
 def render_activity_diagram(

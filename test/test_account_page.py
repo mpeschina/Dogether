@@ -2,10 +2,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from src.assistant.stories.greetings import (
-    GREETING_PENDING_SESSION_KEY,
-    GREETING_RANDOMIZED_AT_SESSION_KEY,
-    GREETING_SELECTION_SESSION_KEY,
+    GREETING_PENDING_KEY,
+    GREETING_RANDOMIZED_AT_KEY,
+    GREETING_SELECTION_KEY,
+    GREETINGS_STORY_ID,
 )
+from src.assistant.story_session import ASSISTANT_STORY_SESSION_KEY
 from src.pages.account_page import (
     activity_diagram_html,
     assistant_transient_debug_info,
@@ -60,9 +62,13 @@ def test_activity_diagram_html_renders_full_past_365_days() -> None:
 
 def test_greeting_debug_info_shows_and_clears_only_session_greeting_state() -> None:
     session_state = {
-        GREETING_RANDOMIZED_AT_SESSION_KEY: "2026-07-26T12:00:00+00:00",
-        GREETING_SELECTION_SESSION_KEY: "cowboy",
-        GREETING_PENDING_SESSION_KEY: "cowboy",
+        ASSISTANT_STORY_SESSION_KEY: {
+            GREETINGS_STORY_ID: {
+                GREETING_RANDOMIZED_AT_KEY: "2026-07-26T12:00:00+00:00",
+                GREETING_SELECTION_KEY: "cowboy",
+                GREETING_PENDING_KEY: "cowboy",
+            }
+        },
         "unrelated": "kept",
     }
 
@@ -87,7 +93,7 @@ def test_assistant_transient_debug_info_shows_all_assistant_owned_session_values
         "assistant_choice_3_0": False,
         "assistant_mode_user-1": "normal",
         "assistant_send_input_4": "Hello",
-        "greetings.selection": "cowboy",
+        ASSISTANT_STORY_SESSION_KEY: {"greetings": {"selection": "cowboy"}},
         "help_assistant_dummy_input": "",
         "unrelated": "kept",
     }
@@ -98,6 +104,6 @@ def test_assistant_transient_debug_info_shows_all_assistant_owned_session_values
         "assistant_choice_3_0": False,
         "assistant_mode_user-1": "normal",
         "assistant_send_input_4": "Hello",
-        "greetings.selection": "cowboy",
+        ASSISTANT_STORY_SESSION_KEY: {"greetings": {"selection": "cowboy"}},
         "help_assistant_dummy_input": "",
     }

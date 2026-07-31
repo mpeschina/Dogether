@@ -13,13 +13,14 @@ from src.assistant.core import (
     AssistantStory,
     AssistantTurn,
 )
+from src.assistant.story_session import story_session
 
 
 GREETINGS_STORY_ID: Final = "greetings"
-GREETING_SELECTION_SESSION_KEY: Final = "greetings.selection"
-GREETING_PENDING_SESSION_KEY: Final = "greetings.pending"
-GREETING_RANDOMIZED_AT_SESSION_KEY: Final = "greetings.randomized_at"
-GREETING_SILENT_REPLY_SESSION_KEY: Final = "greetings.silent_reply"
+GREETING_SELECTION_KEY: Final = "selection"
+GREETING_PENDING_KEY: Final = "pending"
+GREETING_RANDOMIZED_AT_KEY: Final = "randomized_at"
+GREETING_SILENT_REPLY_KEY: Final = "silent_reply"
 GREETING_INTERVAL: Final = timedelta(hours=1)
 # Set to ``None`` to restore normal greeting selection.
 DEBUG_GREETING_ID: str | None = None # "waiting_crack"
@@ -157,8 +158,8 @@ class GreetingsStory(AssistantStory):
         if DEBUG_GREETING_ID is not None:
             return DEBUG_GREETING_ID
 
-        session = context.session_state
-        pending = session.get(GREETING_PENDING_SESSION_KEY)
+        session = story_session(context.session_state, self.story_id)
+        pending = session.get(GREETING_PENDING_KEY)
         if isinstance(pending, str):
             return pending
 
@@ -166,12 +167,12 @@ class GreetingsStory(AssistantStory):
             return "default"
 
         greeting_id = self._choose_greeting_id()
-        session[GREETING_SELECTION_SESSION_KEY] = greeting_id
-        session[GREETING_RANDOMIZED_AT_SESSION_KEY] = _now(context).isoformat()
+        session.set(GREETING_SELECTION_KEY, greeting_id)
+        session.set(GREETING_RANDOMIZED_AT_KEY, _now(context).isoformat())
         if greeting_id in INTERACTIVE_GREETING_IDS or greeting_id in RARE_GREETING_IDS:
-            session[GREETING_PENDING_SESSION_KEY] = greeting_id
+            session.set(GREETING_PENDING_KEY, greeting_id)
         if greeting_id == "silent":
-            session[GREETING_SILENT_REPLY_SESSION_KEY] = self._random_source.choice(SILENT_REPLIES)
+            session.set(GREETING_SILENT_REPLY_KEY, self._random_source.choice(SILENT_REPLIES))
         return greeting_id
 
     def advance(
@@ -188,7 +189,7 @@ class GreetingsStory(AssistantStory):
         if greeting_id == "waiting_crack":
             return self._waiting_crack_turn(context, selection)
         if greeting_id == "malfunction":
-            context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
+            story_session(context.session_state, self.story_id).pop(GREETING_PENDING_KEY)
             return AssistantTurn(
                 story_id=self.story_id,
                 scene_id=greeting_id,
@@ -227,7 +228,7 @@ class GreetingsStory(AssistantStory):
                 lines=(AssistantLine(intro),),
                 choices=choices,
             )
-        context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
+        story_session(context.session_state, self.story_id).pop(GREETING_PENDING_KEY)
         response = responses.get(selection.choice_id, next(iter(responses.values())))
         return AssistantTurn(
             story_id=self.story_id,
@@ -245,10 +246,9 @@ class GreetingsStory(AssistantStory):
                 scene_id="silent",
                 choices=SILENT_GREETING_CHOICES,
             )
-        context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
-        reply = context.session_state.pop(
-            GREETING_SILENT_REPLY_SESSION_KEY, SILENT_REPLIES[0]
-        )
+        session = story_session(context.session_state, self.story_id)
+        session.pop(GREETING_PENDING_KEY)
+        reply = session.pop(GREETING_SILENT_REPLY_KEY, SILENT_REPLIES[0])
         return AssistantTurn(
             story_id=self.story_id,
             scene_id="silent",
@@ -272,7 +272,7 @@ class GreetingsStory(AssistantStory):
                 ),
                 choices=choices,
             )
-        context.session_state.pop(GREETING_PENDING_SESSION_KEY, None)
+        story_session(context.session_state, self.story_id).pop(GREETING_PENDING_KEY)
         return AssistantTurn(
             story_id=self.story_id,
             scene_id="waiting_crack",
@@ -291,7 +291,7 @@ class GreetingsStory(AssistantStory):
     @staticmethod
     def _randomized_greeting_is_due(context: AssistantContext) -> bool:
         selected_at = _parse_timestamp(
-            context.session_state.get(GREETING_RANDOMIZED_AT_SESSION_KEY)
+            story_session(context.session_state, GREETINGS_STORY_ID).get(GREETING_RANDOMIZED_AT_KEY)
         )
         return selected_at is None or _now(context) >= selected_at + GREETING_INTERVAL
 

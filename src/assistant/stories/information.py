@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime
+from collections.abc import MutableMapping
 from typing import Any, Mapping
 
 from src.assistant.core import (
@@ -15,12 +16,13 @@ from src.assistant.core import (
     AssistantTurn,
 )
 from src.assistant.state import AssistantState
+from src.assistant.story_session import story_session
 from src.assistant.stories.tutorial import READY_NODE, STANDARD_STORY_ID
 
 
 INFORMATION_STORY_ID = "information"
 GOAL_INVITATION_EVENT_ID = "information.goal_invitations"
-INFORMATION_COMPLETE_SESSION_KEY = "assistant.information.complete"
+INFORMATION_COMPLETE_KEY = "complete"
 
 
 def pending_goal_invitations(state: AssistantState | Mapping[str, Any]) -> list[dict[str, str]]:
@@ -134,7 +136,9 @@ class InformationStory(AssistantStory):
         if not invitations:
             return None
         if selection is not None and selection.choice_id == "acknowledge":
-            context.session_state[INFORMATION_COMPLETE_SESSION_KEY] = True
+            story_session(context.session_state, self.story_id).set(
+                INFORMATION_COMPLETE_KEY, True
+            )
             return AssistantTurn(
                 story_id=self.story_id,
                 scene_id="goal_invitations",
@@ -168,6 +172,14 @@ class InformationStory(AssistantStory):
             state_scene="goal_invitations",
             state_status="paused",
         )
+
+
+def information_completed(session_state: MutableMapping[str, object]) -> bool:
+    return story_session(session_state, INFORMATION_STORY_ID).get(INFORMATION_COMPLETE_KEY) is True
+
+
+def clear_information_session(session_state: MutableMapping[str, object]) -> None:
+    story_session(session_state, INFORMATION_STORY_ID).clear()
 
 
 def _goal_fact_cards(invitations: list[dict[str, str]]) -> tuple[AssistantCard, ...]:

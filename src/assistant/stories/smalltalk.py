@@ -13,6 +13,7 @@ from src.assistant.core import (
     AssistantStory,
     AssistantTurn,
 )
+from src.assistant.story_session import story_session
 from src.assistant.stories.tutorial import STANDARD_STORY_ID
 
 
@@ -20,10 +21,10 @@ SMALLTALK_STORY_ID: Final = "smalltalk"
 SMALLTALK_MENU_CHOICE_ID: Final = "smalltalk"
 SMALLTALK_PLACEHOLDER_SCENE: Final = "smalltalk.unavailable"
 STANDARD_MENU_SCENE: Final = "standard.menu"
-SMALLTALK_OPENER_SESSION_KEY: Final = "smalltalk.opener"
-SMALLTALK_OPENER_SELECTED_AT_SESSION_KEY: Final = "smalltalk.opener_selected_at"
+SMALLTALK_OPENER_KEY: Final = "opener"
+SMALLTALK_OPENER_SELECTED_AT_KEY: Final = "opener_selected_at"
 SMALLTALK_OPENER_INTERVAL: Final = timedelta(hours=3)
-SMALLTALK_CLICKED_AT_SESSION_KEY: Final = "smalltalk.clicked_at"
+SMALLTALK_CLICKED_AT_KEY: Final = "clicked_at"
 SMALLTALK_COOLDOWN: Final = timedelta(hours=1)
 
 SMALLTALK_OPENERS: Final = (
@@ -141,19 +142,20 @@ class SmalltalkStory(AssistantStory):
 
     def menu_choice(self, context: AssistantContext) -> AssistantChoice | None:
         now = _now(context)
+        session = story_session(context.session_state, self.story_id)
         clicked_at = _session_timestamp(
-            context.session_state.get(SMALLTALK_CLICKED_AT_SESSION_KEY)
+            session.get(SMALLTALK_CLICKED_AT_KEY)
         )
         if clicked_at is not None and now - clicked_at < SMALLTALK_COOLDOWN:
             return None
         if clicked_at is not None:
-            context.session_state.pop(SMALLTALK_CLICKED_AT_SESSION_KEY, None)
-            context.session_state.pop(SMALLTALK_OPENER_SESSION_KEY, None)
-            context.session_state.pop(SMALLTALK_OPENER_SELECTED_AT_SESSION_KEY, None)
+            session.pop(SMALLTALK_CLICKED_AT_KEY)
+            session.pop(SMALLTALK_OPENER_KEY)
+            session.pop(SMALLTALK_OPENER_SELECTED_AT_KEY)
 
-        opener = context.session_state.get(SMALLTALK_OPENER_SESSION_KEY)
+        opener = session.get(SMALLTALK_OPENER_KEY)
         selected_at = _session_timestamp(
-            context.session_state.get(SMALLTALK_OPENER_SELECTED_AT_SESSION_KEY)
+            session.get(SMALLTALK_OPENER_SELECTED_AT_KEY)
         )
         if (
             not isinstance(opener, str)
@@ -162,8 +164,8 @@ class SmalltalkStory(AssistantStory):
             or now - selected_at >= SMALLTALK_OPENER_INTERVAL
         ):
             opener = self._random_source.choice(SMALLTALK_OPENERS)
-            context.session_state[SMALLTALK_OPENER_SESSION_KEY] = opener
-            context.session_state[SMALLTALK_OPENER_SELECTED_AT_SESSION_KEY] = now.isoformat()
+            session.set(SMALLTALK_OPENER_KEY, opener)
+            session.set(SMALLTALK_OPENER_SELECTED_AT_KEY, now.isoformat())
         return AssistantChoice(
             SMALLTALK_MENU_CHOICE_ID,
             opener,
@@ -180,7 +182,9 @@ class SmalltalkStory(AssistantStory):
         selection: AssistantSelection | None,
     ) -> AssistantTurn:
         del scene_id, selection
-        context.session_state[SMALLTALK_CLICKED_AT_SESSION_KEY] = _now(context).isoformat()
+        story_session(context.session_state, self.story_id).set(
+            SMALLTALK_CLICKED_AT_KEY, _now(context).isoformat()
+        )
         lines = [AssistantLine("Smalltalk is currently unavailable.")]
         if self._random_source.random() < 0.1:
             lines.insert(0, AssistantLine("Excellent opener."))
