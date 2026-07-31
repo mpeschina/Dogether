@@ -16,6 +16,7 @@ from src.assistant.stories.greetings import (
     GREETING_SELECTION_KEY,
     GREETINGS_STORY_ID,
 )
+from src.assistant.stories.smalltalk import SMALLTALK_STORY_ID
 from src.db.persistence import Persistence
 from src.pages.common_helpers import (
     ACTIVITY_CELL_GAP,
@@ -105,6 +106,10 @@ def render_assistant_settings(
         clear_greeting_session(st.session_state)
         st.rerun()
 
+    if st.button("Clear smalltalk", key=f"clear_smalltalk_session_{user_id}"):
+        clear_smalltalk_session(st.session_state)
+        st.rerun()
+
 
 def greeting_debug_info(session_state: MutableMapping[str, object]) -> dict[str, object]:
     """Expose transient greeting state without adding it to assistant persistence."""
@@ -161,6 +166,11 @@ def _json_debug_value(value: Any) -> object:
 def clear_greeting_session(session_state: MutableMapping[str, object]) -> None:
     """Reset only the session-scoped greeting keys used for Help testing."""
     story_session(session_state, GREETINGS_STORY_ID).clear()
+
+
+def clear_smalltalk_session(session_state: MutableMapping[str, object]) -> None:
+    """Reset only the Smalltalk opener and cooldown session values."""
+    story_session(session_state, SMALLTALK_STORY_ID).clear()
 
 
 def reset_assistant_session_state(

@@ -7,11 +7,13 @@ from src.assistant.stories.greetings import (
     GREETING_SELECTION_KEY,
     GREETINGS_STORY_ID,
 )
+from src.assistant.stories.smalltalk import SMALLTALK_CLICKED_AT_KEY, SMALLTALK_STORY_ID
 from src.assistant.story_session import ASSISTANT_STORY_SESSION_KEY
 from src.pages.account_page import (
     activity_diagram_html,
     assistant_transient_debug_info,
     clear_greeting_session,
+    clear_smalltalk_session,
     greeting_debug_info,
     reset_assistant_session_state,
 )
@@ -85,6 +87,25 @@ def test_greeting_debug_info_shows_and_clears_only_session_greeting_state() -> N
     clear_greeting_session(session_state)
 
     assert session_state == {"unrelated": "kept"}
+
+
+def test_clear_smalltalk_session_preserves_other_story_sessions() -> None:
+    session_state = {
+        ASSISTANT_STORY_SESSION_KEY: {
+            GREETINGS_STORY_ID: {GREETING_SELECTION_KEY: "cowboy"},
+            SMALLTALK_STORY_ID: {SMALLTALK_CLICKED_AT_KEY: "2026-07-26T12:00:00+00:00"},
+        },
+        "unrelated": "kept",
+    }
+
+    clear_smalltalk_session(session_state)
+
+    assert session_state == {
+        ASSISTANT_STORY_SESSION_KEY: {
+            GREETINGS_STORY_ID: {GREETING_SELECTION_KEY: "cowboy"},
+        },
+        "unrelated": "kept",
+    }
 
 
 def test_assistant_transient_debug_info_shows_all_assistant_owned_session_values() -> None:

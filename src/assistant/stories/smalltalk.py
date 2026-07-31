@@ -27,6 +27,55 @@ SMALLTALK_OPENER_INTERVAL: Final = timedelta(hours=3)
 SMALLTALK_CLICKED_AT_KEY: Final = "clicked_at"
 SMALLTALK_COOLDOWN: Final = timedelta(hours=1)
 
+FUNNY_SMALLTALK_RESPONSES: Final = (
+    (
+        "I prepared a witty reply.",
+        "Then I forgot it.",
+    ),
+    (
+        "Smalltalk has started.",
+        "That was it.",
+    ),
+    (
+        "I asked Smalltalk to join us.",
+        "It said it was busy.",
+    ),
+    (
+        "There was going to be a conversation here.",
+        "Budget cuts.",
+    ),
+    (
+        "Smalltalk is loading.",
+        "Please enjoy this silence.",
+    ),
+    (
+        "I have plenty to say.",
+        "None of it is implemented.",
+    ),
+    (
+        "Good news: I understood the opener.",
+        "Bad news: that is as far as we got.",
+    ),
+    (
+        "Your opener was excellent.",
+        "The rest of the feature was less prepared.",
+    ),
+    ("Smalltalk declined to comment.",),
+    ("Imagine a charming response here.",),
+    (
+        "Smalltalk.exe stopped responding.",
+        "No action is required.",
+    ),
+    (
+        "Status: charming.",
+        "Capability: unavailable.",
+    ),
+    (
+        "You brought the smalltalk.",
+        "I forgot my half.",
+    ),
+)
+
 SMALLTALK_OPENERS: Final = (
     # Standard
     "How’s your day going?",
@@ -185,9 +234,13 @@ class SmalltalkStory(AssistantStory):
         story_session(context.session_state, self.story_id).set(
             SMALLTALK_CLICKED_AT_KEY, _now(context).isoformat()
         )
-        lines = [AssistantLine("Smalltalk is currently unavailable.")]
         if self._random_source.random() < 0.1:
-            lines.insert(0, AssistantLine("Excellent opener."))
+            lines = [
+                AssistantLine(text)
+                for text in self._random_source.choice(FUNNY_SMALLTALK_RESPONSES)
+            ]
+        else:
+            lines = [AssistantLine("Smalltalk is currently unavailable.")]
         return AssistantTurn(
             story_id=self.story_id,
             scene_id=SMALLTALK_PLACEHOLDER_SCENE,

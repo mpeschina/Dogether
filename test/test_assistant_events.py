@@ -47,6 +47,7 @@ from src.assistant.stories.special_examples import (
     SpecialExampleStory,
 )
 from src.assistant.stories.smalltalk import (
+    FUNNY_SMALLTALK_RESPONSES,
     SMALLTALK_CLICKED_AT_KEY,
     SMALLTALK_OPENERS,
     SMALLTALK_OPENER_SELECTED_AT_KEY,
@@ -638,8 +639,7 @@ def test_smalltalk_menu_choice_is_owned_by_smalltalk_story_and_returns_to_standa
         selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "smalltalk", menu.choices[1].label),
     )
     assert [line.text for line in placeholder.lines] == [
-        "Excellent opener.",
-        "Smalltalk is currently unavailable.",
+        *FUNNY_SMALLTALK_RESPONSES[1],
     ]
     assert [choice.id for choice in placeholder.choices] == ["help", "weekly_summary"]
     assert placeholder.story_id == STANDARD_STORY_ID
