@@ -14,7 +14,7 @@ from src.assistant.stories.weekly_summary_analysis import _analyse
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _used_existing_insights
 
 
-def _context(now: datetime) -> AssistantContext:
+def _context(now: datetime, state: AssistantState | None = None) -> AssistantContext:
     outcomes = {
         f"2026-07-{day:02d}": {"fulfilled": day != 22, "skipped": False}
         for day in range(20, 31)
@@ -22,7 +22,7 @@ def _context(now: datetime) -> AssistantContext:
     return AssistantContext(
         user_id="alice",
         current_user={},
-        state=AssistantState(),
+        state=state or AssistantState(),
         session_state={},
         current_page_key="assistant",
         now=now,
@@ -72,6 +72,37 @@ def test_week_selection_uses_the_apps_local_weekday() -> None:
 
     assert prompt.scene_id == SELECT_SCENE
     assert [choice.label for choice in prompt.choices] == ["This week", "Last week"]
+
+
+def test_completed_weekly_summary_prompts_for_a_week_again() -> None:
+    context = _context(
+        datetime(2026, 7, 30, tzinfo=timezone.utc),
+        AssistantState(
+            events={"weekly_summary.selection": {"start": "2026-07-20", "partial": False}},
+            story=WEEKLY_SUMMARY_STORY_ID,
+            scene=SUMMARY_SCENE,
+            status="completed",
+        ),
+    )
+
+    prompt = WeeklySummaryStory().advance(context, None, None)
+
+    assert prompt.scene_id == SELECT_SCENE
+    assert [choice.label for choice in prompt.choices] == ["This week", "Last week"]
+
+
+def test_active_weekly_summary_resumes_without_showing_week_picker() -> None:
+    context = _context(
+        datetime(2026, 7, 30, tzinfo=timezone.utc),
+        AssistantState(
+            events={"weekly_summary.selection": {"start": "2026-07-27", "partial": True}},
+            story=WEEKLY_SUMMARY_STORY_ID,
+            scene=SUMMARY_SCENE,
+            status="active",
+        ),
+    )
+
+    assert WeeklySummaryStory().entry_scene(context) == SUMMARY_SCENE
 
 
 def test_completed_summary_groups_analysis_and_keeps_cards_adjacent() -> None:

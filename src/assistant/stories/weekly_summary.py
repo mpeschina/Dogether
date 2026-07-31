@@ -22,9 +22,16 @@ class WeeklySummaryStory(AssistantStory):
     story_id = WEEKLY_SUMMARY_STORY_ID
 
     def entry_scene(self, context: AssistantContext) -> str:
-        selected = context.state.events.get(WEEK_SELECTION_EVENT_ID, {})
-        if isinstance(selected, dict) and selected.get("start"):
-            return SUMMARY_SCENE
+        # A saved selection belongs to a previous run once this story is no
+        # longer active.  Start completed runs at the picker so users can
+        # choose the current or last week again.  An active run, on the other
+        # hand, resumes exactly where it left off.
+        if (
+            context.state.story == self.story_id
+            and context.state.status == "active"
+            and context.state.scene is not None
+        ):
+            return context.state.scene
         return SELECT_SCENE
 
     def advance(self, context: AssistantContext, scene_id: str | None, selection: AssistantSelection | None) -> AssistantTurn:
