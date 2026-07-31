@@ -23,6 +23,7 @@ from src.assistant.stories.tutorial import READY_NODE, STANDARD_STORY_ID
 INFORMATION_STORY_ID = "information"
 GOAL_INVITATION_EVENT_ID = "information.goal_invitations"
 INFORMATION_COMPLETE_KEY = "complete"
+GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY = "information.goal_invitation_notifications_unlocked"
 
 
 def pending_goal_invitations(state: AssistantState | Mapping[str, Any]) -> list[dict[str, str]]:
@@ -52,15 +53,20 @@ def record_goal_invitation_news(
     *,
     goal: Mapping[str, Any],
     inviter_name: str,
+    mark_notifications_unlocked_recipient_ids: list[str] | None = None,
     now: datetime | None = None,
 ) -> None:
     """Append one durable Assistant news item for each newly added participant."""
+    mark_notifications_unlocked_for = set(mark_notifications_unlocked_recipient_ids or [])
     for recipient_user_id in sorted(set(recipient_user_ids)):
         profile = persistence.get_user(recipient_user_id)
         if not profile:
             continue
         state = AssistantState.from_profile(profile)
         events = copy.deepcopy(state.events)
+        knowledge = copy.deepcopy(state.knowledge)
+        if recipient_user_id in mark_notifications_unlocked_for:
+            knowledge[GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY] = True
         invitations = pending_goal_invitations(state)
         if any(item["goal_id"] == str(goal["id"]) for item in invitations):
             continue
@@ -85,7 +91,7 @@ def record_goal_invitation_news(
             AssistantState(
                 mode=state.mode,
                 sequences=state.sequences,
-                knowledge=state.knowledge,
+                knowledge=knowledge,
                 events=events,
                 story=state.story,
                 scene=state.scene,
@@ -158,16 +164,30 @@ class InformationStory(AssistantStory):
             if len(invitations) == 1
             else f"{inviter_text} invited you to {len(invitations)} new shared goals."
         )
+        unlock_intro = ()
+        knowledge_updates = {}
+        if not context.state.knowledge.get(GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY, False):
+            unlock_intro = (
+                AssistantLine("You have your 3rd shared Goal!"),
+                AssistantLine("I got one STAR reward for it, thank you so much."),
+                AssistantLine("This enables me to inform you on new goal invites, from now on."),
+            )
+            knowledge_updates = {GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY: True}
         return AssistantTurn(
             story_id=self.story_id,
             scene_id="goal_invitations",
             content=(
+                *unlock_intro,
                 AssistantLine("Hello."),
                 AssistantLine("I have important news for you.", typing_delay=0.7),
                 AssistantLine(invitation_text, typing_delay=2.7),
                 *(_goal_fact_cards(invitations)),
             ),
             choices=(AssistantChoice("acknowledge", "Got it"),),
+            knowledge_updates=knowledge_updates,
+            # Persist the one-time unlock as soon as its lines are presented;
+            # otherwise a new browser session could replay the introduction.
+            completed=bool(unlock_intro),
             state_story=self.story_id,
             state_scene="goal_invitations",
             state_status="paused",

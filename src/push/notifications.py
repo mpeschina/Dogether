@@ -1,7 +1,7 @@
 """Application-level push notification hooks."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from src.db.persistence import Persistence
@@ -10,6 +10,10 @@ from src.assistant.stories.information import record_goal_invitation_news
 
 from .sender import push_configured, send_push_to_user
 from .storage import PushStorage
+
+
+MIN_ACTIVE_GOALS_FOR_INVITATION_NOTIFICATIONS = 3
+INVITATION_NOTIFICATION_ACCOUNT_AGE = timedelta(weeks=2)
 
 
 def _display_name(user: Mapping[str, Any]) -> str:
@@ -68,16 +72,62 @@ def _announce_goal_invitations(
 ) -> None:
     inviter = persistence.get_user(inviter_user_id) or {}
     inviter_name = _display_name(inviter)
-    recipients = [user_id for user_id in set(recipient_user_ids) if user_id != inviter_user_id]
-    record_goal_invitation_news(persistence, recipients, goal=goal, inviter_name=inviter_name, now=now)
+    recipients = sorted({user_id for user_id in recipient_user_ids if user_id != inviter_user_id})
+    eligible_recipients = []
+    age_unlocked_recipient_ids = []
+    for recipient_user_id in recipients:
+        profile = persistence.get_user(recipient_user_id) or {}
+        reached_goal_threshold = (
+            len(persistence.list_goals_for_user(recipient_user_id, now=now))
+            >= MIN_ACTIVE_GOALS_FOR_INVITATION_NOTIFICATIONS
+        )
+        reached_account_age_threshold = _account_is_older_than_invitation_grace_period(profile, now)
+        if not (reached_goal_threshold or reached_account_age_threshold):
+            continue
+        eligible_recipients.append(recipient_user_id)
+        if reached_account_age_threshold and not reached_goal_threshold:
+            age_unlocked_recipient_ids.append(recipient_user_id)
+
+    if not eligible_recipients:
+        return
+
+    record_goal_invitation_news(
+        persistence,
+        eligible_recipients,
+        goal=goal,
+        inviter_name=inviter_name,
+        mark_notifications_unlocked_recipient_ids=age_unlocked_recipient_ids,
+        now=now,
+    )
     if not push_storage or not push_configured(push_settings):
         return
-    for recipient_user_id in recipients:
+    for recipient_user_id in eligible_recipients:
         send_push_to_user(
             push_storage, recipient_user_id,
             title="Assistant", body=f"{inviter_name} invited you to a new shared goal.", url="/",
             vapid_private_key=push_settings["vapid_private_key"], vapid_subject=push_settings["vapid_subject"],
         )
+
+
+def _account_is_older_than_invitation_grace_period(
+    profile: Mapping[str, Any], now: datetime | None
+) -> bool:
+    created_at = profile.get("created_at")
+    if not isinstance(created_at, str):
+        return False
+    try:
+        created_at_dt = datetime.fromisoformat(created_at)
+    except ValueError:
+        return False
+    if created_at_dt.tzinfo is None:
+        return False
+
+    current_time = now or datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+    return current_time.astimezone(timezone.utc) > (
+        created_at_dt.astimezone(timezone.utc) + INVITATION_NOTIFICATION_ACCOUNT_AGE
+    )
 
 
 def create_friend_invite_with_push(

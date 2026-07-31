@@ -18,7 +18,10 @@ from src.push.notifications import (
     update_goal_progress_with_push,
 )
 from src.assistant.state import AssistantState
-from src.assistant.stories.information import pending_goal_invitations
+from src.assistant.stories.information import (
+    GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY,
+    pending_goal_invitations,
+)
 
 
 class MemoryPushStorage:
@@ -52,6 +55,11 @@ def test_goal_participant_additions_send_assistant_push_and_persist_news(monkeyp
         "vapid_subject": "mailto:test@example.com",
     }
 
+    # Self-created goals count toward the recipient's notification threshold.
+    for number in range(2):
+        persistence.create_goal("bob", f"Bob baseline {number}", "daily", 1, ["alice"], 1)
+        persistence.create_goal("charlie", f"Charlie baseline {number}", "daily", 1, ["alice"], 1)
+
     goal = create_goal_with_invitation_news(
         persistence, MemoryPushStorage(), settings,
         created_by="alice", description="Walk", schedule_class="daily", required_periods=1,
@@ -79,16 +87,126 @@ def test_goal_participant_additions_send_assistant_push_and_persist_news(monkeyp
     assert charlie_news[0]["friend_participant_count"] == "1"
 
 
-def test_goal_news_is_persisted_without_push(tmp_path: Path) -> None:
+def test_goal_invites_are_suppressed_until_the_recipient_has_three_active_goals(monkeypatch, tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
     bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
     make_friends(persistence, alice, bob)
-    goal = create_goal_with_invitation_news(
-        persistence, None, {}, created_by="alice", description="Walk", schedule_class="daily",
+    calls = []
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1},
+    )
+    settings = {
+        "vapid_public_key": "public",
+        "vapid_private_key": "private",
+        "vapid_subject": "mailto:test@example.com",
+    }
+
+    create_goal_with_invitation_news(
+        persistence, MemoryPushStorage(), settings, created_by="alice", description="First", schedule_class="daily",
         required_periods=1, friend_user_ids=["bob"], target=1,
     )
-    assert pending_goal_invitations(AssistantState.from_profile(persistence.get_user("bob") or {}))[0]["goal_id"] == goal["id"]
+    create_goal_with_invitation_news(
+        persistence, MemoryPushStorage(), settings, created_by="alice", description="Second", schedule_class="daily",
+        required_periods=1, friend_user_ids=["bob"], target=1,
+    )
+
+    assert calls == []
+    assert pending_goal_invitations(AssistantState.from_profile(persistence.get_user("bob") or {})) == []
+
+    third = create_goal_with_invitation_news(
+        persistence, MemoryPushStorage(), settings, created_by="alice", description="Third", schedule_class="daily",
+        required_periods=1, friend_user_ids=["bob"], target=1,
+    )
+
+    assert [call[0][1] for call in calls] == ["bob"]
+    assert [item["goal_id"] for item in pending_goal_invitations(
+        AssistantState.from_profile(persistence.get_user("bob") or {})
+    )] == [third["id"]]
+
+
+def test_self_created_third_goal_waits_for_a_later_invite(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    make_friends(persistence, alice, bob)
+
+    for number in range(3):
+        persistence.create_goal("bob", f"Bob goal {number}", "daily", 1, ["alice"], 1)
+
+    assert pending_goal_invitations(AssistantState.from_profile(persistence.get_user("bob") or {})) == []
+
+    invited_goal = create_goal_with_invitation_news(
+        persistence, None, {}, created_by="alice", description="Alice invite", schedule_class="daily",
+        required_periods=1, friend_user_ids=["bob"], target=1,
+    )
+
+    assert [item["goal_id"] for item in pending_goal_invitations(
+        AssistantState.from_profile(persistence.get_user("bob") or {})
+    )] == [invited_goal["id"]]
+
+
+def test_goal_invites_notify_accounts_older_than_two_weeks_without_goal_unlock_intro(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob", at("2026-06-01T09:00:00"))
+    make_friends(persistence, alice, bob)
+    calls = []
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1},
+    )
+    now = at("2026-06-15T09:00:01")
+    settings = {
+        "vapid_public_key": "public",
+        "vapid_private_key": "private",
+        "vapid_subject": "mailto:test@example.com",
+    }
+
+    goal = create_goal_with_invitation_news(
+        persistence, MemoryPushStorage(), settings, created_by="alice", description="Walk", schedule_class="daily",
+        required_periods=1, friend_user_ids=["bob"], target=1, now=now,
+    )
+
+    bob_state = AssistantState.from_profile(persistence.get_user("bob") or {})
+    assert [call[0][1] for call in calls] == ["bob"]
+    assert [item["goal_id"] for item in pending_goal_invitations(bob_state)] == [goal["id"]]
+    assert bob_state.knowledge[GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY] is True
+
+
+def test_goal_invites_at_two_weeks_or_with_invalid_creation_time_stay_suppressed(monkeypatch, tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob", at("2026-06-01T09:00:00"))
+    make_friends(persistence, alice, bob)
+    calls = []
+    monkeypatch.setattr(
+        "src.push.notifications.send_push_to_user",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {"sent": 1},
+    )
+    settings = {
+        "vapid_public_key": "public",
+        "vapid_private_key": "private",
+        "vapid_subject": "mailto:test@example.com",
+    }
+
+    create_goal_with_invitation_news(
+        persistence, MemoryPushStorage(), settings, created_by="alice", description="Exact age", schedule_class="daily",
+        required_periods=1, friend_user_ids=["bob"], target=1, now=at("2026-06-15T09:00:00"),
+    )
+    profile = persistence.get_user("bob") or {}
+    profile["created_at"] = "not-a-date"
+    data = persistence._read()
+    data["users"]["bob"] = profile
+    persistence._write(data)
+    create_goal_with_invitation_news(
+        persistence, MemoryPushStorage(), settings, created_by="alice", description="Invalid age", schedule_class="daily",
+        required_periods=1, friend_user_ids=["bob"], target=1, now=at("2026-06-16T09:00:00"),
+    )
+
+    assert calls == []
+    assert pending_goal_invitations(AssistantState.from_profile(persistence.get_user("bob") or {})) == []
 
 
 def test_new_friend_invite_sends_push_to_registered_recipient(monkeypatch, tmp_path: Path) -> None:

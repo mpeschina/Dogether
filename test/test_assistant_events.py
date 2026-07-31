@@ -35,6 +35,7 @@ from src.assistant.stories.information import (
     GOAL_INVITATION_EVENT_ID,
     INFORMATION_COMPLETE_KEY,
     INFORMATION_STORY_ID,
+    GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY,
     _goal_fact_cards,
 )
 from src.assistant.stories.special_examples import (
@@ -263,9 +264,16 @@ def test_information_story_preempts_other_stories_and_clears_combined_news() -> 
     paused = director.render(context_for(state, session_state=session), initial)
 
     assert initial.turns[0].story_id == INFORMATION_STORY_ID
+    assert [item.text for item in initial.turns[0].content if hasattr(item, "text")][:3] == [
+        "You have your 3rd shared Goal!",
+        "I got one STAR reward for it, thank you so much.",
+        "This enables me to inform you on new goal invites, from now on.",
+    ]
     assert [item.text for item in initial.turns[0].content if hasattr(item, "text")][-1] == "Bob and Charlie invited you to 2 new shared goals."
-    assert len(initial.turns[0].content) == 5
+    assert len(initial.turns[0].content) == 8
     assert paused.story == INFORMATION_STORY_ID
+    assert paused.knowledge[GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY] is True
+    assert persistence.saved_states[-1]["knowledge"][GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY] is True
 
     acknowledged = RecordingView(selection(INFORMATION_STORY_ID, "goal_invitations", "acknowledge"))
     completed = director.render(context_for(paused, session_state=session), acknowledged)
@@ -284,6 +292,31 @@ def test_information_card_hides_a_single_friend_participant() -> None:
         }
     ])[0]
     assert "Friends already participating" not in dict(card.rows)
+
+
+def test_information_story_does_not_repeat_goal_notification_unlock_intro() -> None:
+    persistence = RecordingPersistence()
+    state = AssistantState(
+        story=STANDARD_STORY_ID,
+        scene=READY_NODE,
+        status="completed",
+        knowledge={GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY: True},
+        events={
+            GOAL_INVITATION_EVENT_ID: {
+                "invitations": [{"goal_id": "goal-three", "inviter_name": "Bob"}]
+            }
+        },
+    )
+    view = RecordingView()
+
+    AssistantDirector(persistence, default_stories()).render(context_for(state), view)
+
+    lines = [item.text for item in view.turns[0].content if hasattr(item, "text")]
+    assert lines == [
+        "Hello.",
+        "I have important news for you.",
+        "Bob invited you to a new shared goal.",
+    ]
 
 
 def test_one_selection_advances_and_renders_the_next_stable_round() -> None:
