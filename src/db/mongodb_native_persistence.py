@@ -826,9 +826,28 @@ class MongoNativePersistence:
 
     def list_friends(self, user_id: str) -> list[dict[str, Any]]:
         def load_friends() -> list[dict[str, Any]]:
-            friendships = self._strip_many(self._friendships_collection().find({"user_ids": user_id, "active": True}))
-            friend_ids = [next(uid for uid in friendship["user_ids"] if uid != user_id) for friendship in friendships]
-            friends = list(self.users_by_ids(friend_ids).values())
+            friends = [
+                _normalise_user_profile(friend)
+                for friend in self._strip_many(
+                    self._friendships_collection().aggregate(
+                        [
+                            {"$match": {"user_ids": user_id, "active": True}},
+                            {
+                                "$lookup": {
+                                    "from": "users_inventory",
+                                    "localField": "user_ids",
+                                    "foreignField": "_id",
+                                    "as": "friend",
+                                }
+                            },
+                            {"$unwind": "$friend"},
+                            {"$match": {"friend._id": {"$ne": user_id}}},
+                            {"$replaceWith": "$friend"},
+                        ]
+                    )
+                )
+                if "user_id" in friend
+            ]
             return sorted(friends, key=lambda user: (user.get("name", ""), user.get("email", "")))
 
         return self._read_cached(("friends", user_id), load_friends)

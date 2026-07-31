@@ -30,8 +30,9 @@ class CountingJsonPersistence(JsonPersistence):
 
 
 class FakeMongoNativeCollection:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, database=None) -> None:
         self.name = name
+        self.database = database
         self.documents = {}
         self.calls = []
         self.indexes = []
@@ -51,6 +52,40 @@ class FakeMongoNativeCollection:
         query = query or {}
         self.calls.append(("find", copy.deepcopy(query)))
         return [copy.deepcopy(document) for document in self.documents.values() if self._matches(document, query)]
+
+    def aggregate(self, pipeline: list[dict]):
+        self.calls.append(("aggregate", copy.deepcopy(pipeline)))
+        documents = [copy.deepcopy(document) for document in self.documents.values()]
+        for stage in pipeline:
+            operator, value = next(iter(stage.items()))
+            if operator == "$match":
+                documents = [document for document in documents if self._matches(document, value)]
+            elif operator == "$lookup":
+                foreign_collection = self.database[value["from"]]
+                local_field = value["localField"]
+                foreign_field = value["foreignField"]
+                as_field = value["as"]
+                for document in documents:
+                    local_value = self._get_path(document, local_field)
+                    local_values = set(local_value) if isinstance(local_value, list) else {local_value}
+                    document[as_field] = [
+                        copy.deepcopy(candidate)
+                        for candidate in foreign_collection.documents.values()
+                        if self._get_path(candidate, foreign_field) in local_values
+                    ]
+            elif operator == "$unwind":
+                path = value.removeprefix("$")
+                documents = [
+                    {**document, path: item}
+                    for document in documents
+                    for item in self._get_path(document, path) or []
+                ]
+            elif operator == "$replaceWith":
+                path = value.removeprefix("$")
+                documents = [copy.deepcopy(self._get_path(document, path)) for document in documents]
+            else:
+                raise AssertionError(f"Unsupported aggregation stage: {operator}")
+        return documents
 
     def count_documents(self, query: dict) -> int:
         self.calls.append(("count_documents", copy.deepcopy(query)))
@@ -135,7 +170,7 @@ class FakeMongoNativeDatabase:
 
     def __getitem__(self, name: str) -> FakeMongoNativeCollection:
         if name not in self.collections:
-            self.collections[name] = FakeMongoNativeCollection(name)
+            self.collections[name] = FakeMongoNativeCollection(name, self)
         return self.collections[name]
 
 
@@ -1487,6 +1522,45 @@ def test_mongodb_native_migrates_legacy_app_store_once() -> None:
     migration_writes = [call for call in database["migrations"].calls if call[0] == "replace_one"]
     assert len(migration_writes) == 1
     assert again.get_user("alice")["name"] == "Alice"
+
+
+def test_mongodb_native_list_friends_uses_one_cached_lookup_aggregation() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database, cache_ttl_seconds=5)
+    persistence.upsert_user("alice", "alice@example.com", "Alice")
+    persistence.upsert_user("bob", "bob@example.com", "Bob")
+    persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    database["friendships"].documents.update(
+        {
+            "friendship_alice_bob": {
+                "_id": "friendship_alice_bob",
+                "id": "friendship_alice_bob",
+                "user_ids": ["alice", "bob"],
+                "active": True,
+            },
+            "friendship_alice_charlie": {
+                "_id": "friendship_alice_charlie",
+                "id": "friendship_alice_charlie",
+                "user_ids": ["alice", "charlie"],
+                "active": False,
+            },
+            "friendship_alice_missing": {
+                "_id": "friendship_alice_missing",
+                "id": "friendship_alice_missing",
+                "user_ids": ["alice", "missing"],
+                "active": True,
+            },
+        }
+    )
+    for collection in database.collections.values():
+        collection.calls.clear()
+
+    assert [friend["user_id"] for friend in persistence.list_friends("alice")] == ["bob"]
+    assert [friend["user_id"] for friend in persistence.list_friends("alice")] == ["bob"]
+
+    aggregate_calls = [call for call in database["friendships"].calls if call[0] == "aggregate"]
+    assert len(aggregate_calls) == 1
+    assert not [call for call in database["users_inventory"].calls if call[0] == "find"]
 
 
 def test_mongodb_native_goal_progress_uses_targeted_updates() -> None:
