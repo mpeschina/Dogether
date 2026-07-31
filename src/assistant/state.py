@@ -8,6 +8,9 @@ from typing import Any, Mapping
 
 
 ASSISTANT_STATE_SCHEMA_VERSION = 2
+# Session-only, authoritative story state.  It retains the active story,
+# scene, status, and events so an unfinished flow can resume; it deliberately
+# does not contain the UI's buttons or input configuration.
 TRANSIENT_ASSISTANT_STATE_SESSION_KEY = "assistant.transient_state"
 
 

@@ -24,6 +24,9 @@ TYPING_DELAY_MIN = 0.6
 TYPING_DELAY_MAX = 2.5
 CHOICE_FADE_IN_DURATION_MS = 1000
 TRANSCRIPT_KEY = "assistant.transcript"
+# The UI configuration for the one control currently displayed.  Its story
+# and scene intentionally overlap with ``assistant.transient_state`` so a
+# submitted choice can be tied to the exact turn that rendered it.
 ACTIVE_CONTROL_KEY = "assistant.active_control"
 PENDING_SELECTION_KEY = "assistant.pending_selection"
 CONTROL_ROUND_KEY = "assistant.control_round"
