@@ -15,6 +15,25 @@ from src.db.persistence import Persistence
 from src.push.storage import PushStorage
 
 
+# Choose one of these palette values for the Assistant badge. Set the active
+# color to ``None`` to inherit Streamlit's configured primary color instead.
+ASSISTANT_COLORS = {
+    "sky_blue": "#2E90FA",
+    "light_ash": "#667085",
+    "sidebar_secondaryColor": "#5C7492",
+    "reddish_pink": "#F0447A",
+    "violet": "#7F56D9",
+    "emerald": "#12B76A",
+    "amber": "#F79009",
+}
+ASSISTANT_ICON_BACKGROUND_COLOR: str | None = ASSISTANT_COLORS["sidebar_secondaryColor"]
+ASSISTANT_ICON_FOREGROUND_COLOR = "#FFFFFF"
+ASSISTANT_BADGE_SIZE_MULTIPLIER: float = 1.0
+ASSISTANT_ICON_SIZE_MULTIPLIER: float = 1.0
+ASSISTANT_BADGE_BASE_SIZE_REM = 3.5
+ASSISTANT_ICON_BASE_SIZE_REM = 1.6
+
+
 
 """Explanation of the RPG Assistant: 
 
@@ -64,9 +83,20 @@ def render_assistant(
 
     clear_transcript_for_new_help_visit(st.session_state, previous_page_key)
     _render_styles()
+    icon_background = ASSISTANT_ICON_BACKGROUND_COLOR or str(
+        st.get_option("theme.primaryColor") or "#1F2937"
+    )
+    badge_size = ASSISTANT_BADGE_BASE_SIZE_REM * ASSISTANT_BADGE_SIZE_MULTIPLIER
+    icon_size = ASSISTANT_ICON_BASE_SIZE_REM * ASSISTANT_ICON_SIZE_MULTIPLIER
     st.markdown(
         "<div class='assistant-page-heading'>"
-        "<span class='assistant-page-icon' aria-hidden='true'>✨</span>"
+        "<span class='assistant-page-icon' aria-hidden='true' "
+        f"style='--assistant-page-icon-background: {icon_background}; "
+        f"--assistant-page-icon-color: {ASSISTANT_ICON_FOREGROUND_COLOR}; "
+        f"--assistant-page-badge-size: {badge_size}rem; "
+        f"--assistant-page-glyph-size: {icon_size}rem;'>"
+        "<span class='material-symbols-rounded'>support_agent</span>"
+        "</span>"
         "<span>Assistant</span>"
         "</div>",
         unsafe_allow_html=True,
@@ -156,13 +186,29 @@ def _render_styles() -> None:
           }
           .assistant-page-icon {
             align-items: center;
-            background: #f2f4f7;
-            border-radius: 50%;
+            background: var(--assistant-page-icon-background);
+            border-radius: 0.65rem;
+            color: var(--assistant-page-icon-color);
             display: inline-flex;
-            font-size: 1.1rem;
-            height: 2.25rem;
+            font-size: var(--assistant-page-glyph-size);
+            height: var(--assistant-page-badge-size);
             justify-content: center;
-            width: 2.25rem;
+            width: var(--assistant-page-badge-size);
+          }
+          .assistant-page-icon .material-symbols-rounded {
+            font-family: 'Material Symbols Rounded';
+            font-size: var(--assistant-page-glyph-size);
+            font-weight: normal;
+            font-style: normal;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+            font-feature-settings: 'liga';
           }
           .assistant-status, .assistant-choice-label {
             color: #98a2b3;
