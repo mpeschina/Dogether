@@ -131,6 +131,7 @@ class AssistantTurn:
     assistant_leaves: bool = False  # Whether the assistant leaves the chat.
     allow_interaction_after_leaving: bool = False  # Keep controls available after the departure status.
     destination: str | None = None  # Page to open next.
+    destination_delay: float = 0  # Seconds to wait before opening the destination.
     completed: bool = False  # Whether to save state durably.
     continue_flow: bool = False  # Whether to advance again immediately.
     advance_sequences: tuple[str, ...] = ()  # Sequences to increment.

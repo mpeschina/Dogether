@@ -45,6 +45,7 @@ from src.assistant.stories.information import (
 from src.assistant.stories.night import (
     INITIAL_STATUS as NIGHT_INITIAL_STATUS,
     NIGHT_AFTER_LEAVING_SCENE,
+    NIGHT_COMPLETED_COUNT_KEY,
     NIGHT_EVENT_ID,
     NIGHT_GOOD_NIGHT_SCENE,
     NIGHT_STORY_ID,
@@ -1265,7 +1266,10 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
     ] * NIGHT_PROGRESS_BAR_COUNT
     assert final.assistant_leaves
     assert final.allow_interaction_after_leaving
-    assert not final.completed
+    assert final.completed
+    assert apply_turn(state, final).events[NIGHT_EVENT_ID] == {
+        NIGHT_COMPLETED_COUNT_KEY: 1
+    }
     assert [choice.label for choice in final.choices] == [
         "Ähm, yes, ok. Sorry ...",
         "Good Night",
@@ -1290,6 +1294,7 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
         selection(NIGHT_STORY_ID, NIGHT_GOOD_NIGHT_SCENE, "leave_quietly"),
     )
     assert exit_turn.destination == "goals"
+    assert exit_turn.destination_delay == 3
     assert exit_turn.completed
     assert "assistant.story_session" not in session
 

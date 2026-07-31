@@ -147,6 +147,8 @@ class StreamlitAssistantView:
                     st.session_state[ASSISTANT_LEFT_THIS_VISIT_KEY] = True
 
         if turn.destination:
+            if turn.destination_delay > 0:
+                time.sleep(turn.destination_delay)
             st.session_state["assistant.destination"] = turn.destination
         if turn.has_control:
             self._set_control(turn)

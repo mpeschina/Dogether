@@ -20,10 +20,12 @@ NIGHT_EVENT_ID: Final = "night.interruption"
 NIGHT_AFTER_LEAVING_SCENE: Final = "night.after_leaving"
 NIGHT_GOOD_NIGHT_SCENE: Final = "night.good_night"
 NIGHT_CLICKS_KEY: Final = "clicks"
+NIGHT_COMPLETED_COUNT_KEY: Final = "completed_count"
 INITIAL_STATUS: Final = "It seems to be empty here"
 STATUS_CLICK_COUNT: Final = 6
 PROGRESS_BAR_CLICK_COUNT: Final = 30
 PROGRESS_BAR_COUNT: Final = 3
+EXIT_DELAY_SECONDS: Final = 3
 
 
 class NightStory(AssistantStory):
@@ -64,6 +66,9 @@ class NightStory(AssistantStory):
         if progress_clicks < PROGRESS_BAR_CLICK_COUNT * PROGRESS_BAR_COUNT:
             return self._send_turn(context, clicks, progress=progress)
 
+        completed_count = _non_negative_int(
+            context.state.events.get(NIGHT_EVENT_ID, {}).get(NIGHT_COMPLETED_COUNT_KEY)
+        ) + 1
         return AssistantTurn(
             story_id=self.story_id,
             scene_id=NIGHT_AFTER_LEAVING_SCENE,
@@ -86,6 +91,10 @@ class NightStory(AssistantStory):
                     "not_angry", "But hey, no reason to get angry at me!"
                 ),
             ),
+            event_updates={
+                NIGHT_EVENT_ID: {NIGHT_COMPLETED_COUNT_KEY: completed_count}
+            },
+            completed=True,
             state_status="paused",
         )
 
@@ -109,6 +118,7 @@ class NightStory(AssistantStory):
             story_id=self.story_id,
             scene_id=NIGHT_GOOD_NIGHT_SCENE,
             destination="goals",
+            destination_delay=EXIT_DELAY_SECONDS,
             completed=True,
             state_status="completed",
         )
