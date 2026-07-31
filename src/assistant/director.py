@@ -25,6 +25,10 @@ from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
 from src.assistant.stories.special_examples import SPECIAL_STORY_ID
 from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID
 from src.assistant.stories.weekly_summary import WEEKLY_SUMMARY_STORY_ID
+from src.assistant.stories.weekly_summary_ready import (
+    WEEKLY_SUMMARY_READY_STORY_ID,
+    weekly_summary_ready_event,
+)
 from src.assistant.stories.tutorial import (
     EXPLANATION_SCENES,
     READY_NODE,
@@ -136,6 +140,8 @@ class AssistantDirector:
             return self.stories.get(selection.story_id)
 
         state = context.state
+        if weekly_summary_ready_event(state):
+            return self.stories.get(WEEKLY_SUMMARY_READY_STORY_ID)
         if pending_goal_invitations(state):
             return self.stories.get(INFORMATION_STORY_ID)
         if state.mode is AssistantMode.SPECIAL:

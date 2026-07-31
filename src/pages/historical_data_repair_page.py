@@ -6,6 +6,7 @@ import random
 import streamlit as st
 
 from src.db.persistence import Persistence
+from src.viewport_component import emit_toast
 from src.db.persistence_helpers import (
     _next_period_start,
     _now,
@@ -218,9 +219,11 @@ def render_historical_data_repair(
             for period_start, (current, target, original_current) in values.items()
             if current != original_current
         }
-        if changed_values and not st.session_state.get(CHANGES_TOAST_SHOWN_SESSION_KEY):
-            st.toast("Changes have to be saved before they are effective.")
-            st.session_state[CHANGES_TOAST_SHOWN_SESSION_KEY] = True
+        if changed_values:
+            emit_toast(
+                "Changes have to be saved before they are effective.",
+                key=CHANGES_TOAST_SHOWN_SESSION_KEY,
+            )
         submitted = st.button(
             "Save",
             type="primary",

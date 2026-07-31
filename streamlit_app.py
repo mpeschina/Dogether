@@ -25,6 +25,13 @@ from src.pages.friends_page import render_friends
 from src.pages.goals_page import render_goals
 from src.pages.health_data_import_page import render_health_data_import
 from src.pages.assistant_page import render_assistant
+from src.assistant.stories.weekly_summary_ready import (
+    WEEKLY_SUMMARY_READY_TOAST,
+    WEEKLY_SUMMARY_READY_TOAST_ICON,
+    refresh_weekly_summary_ready_event,
+    weekly_summary_ready_toast_key,
+)
+from src.viewport_component import clear_toast, emit_toast, flush_toasts
 from src.pages.login_page import login_screen
 from src.pages.main_page import render_main
 from src.pages.push_notifications_page import render_push_notifications
@@ -102,6 +109,18 @@ except Exception as error:
     st.error(f"Could not load Dogether: {error}")
     st.stop()
 
+weekly_ready_state = refresh_weekly_summary_ready_event(
+    persistence, current_user, user_id, now=app_now
+)
+weekly_ready_toast_key = weekly_summary_ready_toast_key(user_id, weekly_ready_state)
+if weekly_ready_toast_key:
+    emit_toast(
+        WEEKLY_SUMMARY_READY_TOAST,
+        key=weekly_ready_toast_key,
+        icon=WEEKLY_SUMMARY_READY_TOAST_ICON,
+        duration="long",
+    )
+
 
 handle_health_data_import(
     persistence,
@@ -137,7 +156,7 @@ def mark_current_page(page_key: str) -> None:
     if page_key == "friends" and previous_page_key != "friends":
         st.session_state.pop("show_invite_friend_form", None)
     if page_key == "historical_data_repair" and previous_page_key != "historical_data_repair":
-        st.session_state.pop(CHANGES_TOAST_SHOWN_SESSION_KEY, None)
+        clear_toast(CHANGES_TOAST_SHOWN_SESSION_KEY)
         st.session_state.pop(READY_SESSION_KEY, None)
         st.session_state.pop(READY_OPTION_SESSION_KEY, None)
         st.session_state.pop(READY_STAGE_SESSION_KEY, None)
@@ -286,3 +305,4 @@ if incoming_friend_requests:
 
 page.run()
 switch_to_assistant_destination()
+flush_toasts()

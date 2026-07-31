@@ -7,6 +7,7 @@ import random
 from typing import Final
 
 from src.assistant.core import AssistantCard, AssistantChoice, AssistantContext, AssistantLine, AssistantSelection, AssistantStory, AssistantTurn
+from src.assistant.state import AssistantState
 from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _datetime, _momentum_halves, _now, _week_start
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _shared_insights, _used_existing_insights
 from src.db.persistence_helpers import APP_ZONE
@@ -37,6 +38,20 @@ def _weekly_summary_unlock_at(context: AssistantContext) -> datetime | None:
     else:
         created_at = created_at.astimezone(APP_ZONE)
     return created_at + timedelta(days=7)
+
+
+def weekly_summary_is_available(current_user: dict, now: datetime) -> bool:
+    """Whether the account has completed the first-week wait for analysis."""
+    context = AssistantContext(
+        user_id="",
+        current_user=current_user,
+        state=AssistantState(),
+        session_state={},
+        current_page_key="assistant",
+        now=now,
+    )
+    unlock_at = _weekly_summary_unlock_at(context)
+    return unlock_at is None or _now(context) >= unlock_at
 
 
 class WeeklySummaryStory(AssistantStory):
