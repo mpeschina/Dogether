@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from itertools import combinations
 from typing import Any
@@ -7,26 +8,65 @@ from typing import Any
 from src.db.persistence import Persistence
 
 
-def friend_suggestion_candidates(
+def _pair(first_user_id: str, second_user_id: str) -> tuple[str, str]:
+    return tuple(sorted((first_user_id, second_user_id)))
+
+
+@dataclass(frozen=True)
+class FriendSuggestionData:
+    """The complete, page-level data set used to calculate friend suggestions."""
+
+    user_id: str
+    friends: list[dict[str, Any]]
+    goals: list[dict[str, Any]]
+    dismissed_pairs: set[tuple[str, str]]
+    connected_pairs: set[tuple[str, str]]
+    suggestions_by_pair: dict[tuple[str, str], list[dict[str, Any]]]
+
+
+def load_friend_suggestion_data(
     persistence: Persistence,
     user_id: str,
     now: datetime | None = None,
-) -> list[dict[str, Any]]:
+) -> FriendSuggestionData:
+    """Load relationship and suggestion records once for the Friends page."""
     friends = persistence.list_friends(user_id)
-    friend_ids = {friend["user_id"] for friend in friends}
+    scoped_user_ids = [user_id, *(friend["user_id"] for friend in friends)]
+    friendships = persistence.list_active_friendships_for_users(scoped_user_ids)
+    suggestions = persistence.list_friend_suggestions_for_users(scoped_user_ids)
+
+    connected_pairs = {
+        _pair(friendship["user_ids"][0], friendship["user_ids"][1])
+        for friendship in friendships
+        if len(friendship.get("user_ids", [])) == 2
+    }
+    suggestions_by_pair: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for suggestion in suggestions:
+        suggested_user_ids = suggestion.get("suggested_user_ids", [])
+        if len(suggested_user_ids) != 2:
+            continue
+        suggestions_by_pair.setdefault(_pair(*suggested_user_ids), []).append(suggestion)
+
+    return FriendSuggestionData(
+        user_id=user_id,
+        friends=friends,
+        goals=persistence.list_goals_for_user(user_id, now=now),
+        dismissed_pairs={tuple(pair) for pair in persistence.dismissed_friend_suggestion_pairs(user_id)},
+        connected_pairs=connected_pairs,
+        suggestions_by_pair=suggestions_by_pair,
+    )
+
+
+def friend_suggestion_candidates(data: FriendSuggestionData) -> list[dict[str, Any]]:
+    friend_ids = {friend["user_id"] for friend in data.friends}
     if len(friend_ids) < 2:
         return []
 
-    friend_by_id = {friend["user_id"]: friend for friend in friends}
-    friend_friend_ids: dict[str, set[str]] = {}
-    dismissed_pairs = {
-        tuple(pair)
-        for pair in persistence.dismissed_friend_suggestion_pairs(user_id)
-    }
+    friend_by_id = {friend["user_id"]: friend for friend in data.friends}
     candidates = []
     seen_pairs: set[tuple[str, str]] = set()
 
-    for goal in persistence.list_goals_for_user(user_id, now=now):
+    for goal in data.goals:
         goal_id = goal["id"]
         active_friend_participants = sorted(
             participant_id
@@ -34,25 +74,19 @@ def friend_suggestion_candidates(
             if participant_id in friend_ids and not participant.get("left_at")
         )
         for first_user_id, second_user_id in combinations(active_friend_participants, 2):
-            pair = tuple(sorted([first_user_id, second_user_id]))
-            if pair in seen_pairs or pair in dismissed_pairs:
+            pair = _pair(first_user_id, second_user_id)
+            if pair in seen_pairs or pair in data.dismissed_pairs:
                 continue
             seen_pairs.add(pair)
-
-            if first_user_id not in friend_friend_ids:
-                friend_friend_ids[first_user_id] = {
-                    friend["user_id"]
-                    for friend in persistence.list_friends(first_user_id)
-                }
-            if second_user_id in friend_friend_ids[first_user_id]:
+            if pair in data.connected_pairs:
                 continue
 
-            pair_suggestions = persistence.list_friend_suggestions_for_pair(first_user_id, second_user_id)
+            pair_suggestions = data.suggestions_by_pair.get(pair, [])
             if any(suggestion.get("status") == "pending" for suggestion in pair_suggestions):
                 continue
             if any(
                 suggestion.get("status") == "declined"
-                and suggestion.get("suggested_by_user_id") == user_id
+                and suggestion.get("suggested_by_user_id") == data.user_id
                 and suggestion.get("source_goal_id") == goal_id
                 for suggestion in pair_suggestions
             ):
@@ -70,46 +104,29 @@ def friend_suggestion_candidates(
     return candidates
 
 
-def manual_friend_suggestion_options(
-    persistence: Persistence,
-    user_id: str,
-) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
-    friends = persistence.list_friends(user_id)
-    friend_ids = {friend["user_id"] for friend in friends}
-    if len(friend_ids) < 2:
+def manual_friend_suggestion_options(data: FriendSuggestionData) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    friends = data.friends
+    if len(friends) < 2:
         return friends, {}
 
-    eligible_by_first_user_id: dict[str, list[dict[str, Any]]] = {}
-    for first_friend in friends:
+    eligible_by_first_user_id: dict[str, list[dict[str, Any]]] = {friend["user_id"]: [] for friend in friends}
+    for first_friend, second_friend in combinations(friends, 2):
         first_user_id = first_friend["user_id"]
-        connected_to_first = {
-            friend["user_id"]
-            for friend in persistence.list_friends(first_user_id)
-        }
-        eligible_second_friends = []
-
-        for second_friend in friends:
-            second_user_id = second_friend["user_id"]
-            if second_user_id == first_user_id:
-                continue
-            if second_user_id in connected_to_first:
-                continue
-
-            pair_suggestions = persistence.list_friend_suggestions_for_pair(first_user_id, second_user_id)
-            if any(suggestion.get("status") == "pending" for suggestion in pair_suggestions):
-                continue
-            if any(
-                suggestion.get("status") == "declined"
-                and suggestion.get("suggested_by_user_id") == user_id
-                and suggestion.get("source_goal_id") is None
-                for suggestion in pair_suggestions
-            ):
-                continue
-
-            eligible_second_friends.append(second_friend)
-
-        eligible_by_first_user_id[first_user_id] = eligible_second_friends
+        second_user_id = second_friend["user_id"]
+        pair = _pair(first_user_id, second_user_id)
+        if pair in data.connected_pairs:
+            continue
+        pair_suggestions = data.suggestions_by_pair.get(pair, [])
+        if any(suggestion.get("status") == "pending" for suggestion in pair_suggestions):
+            continue
+        if any(
+            suggestion.get("status") == "declined"
+            and suggestion.get("suggested_by_user_id") == data.user_id
+            and suggestion.get("source_goal_id") is None
+            for suggestion in pair_suggestions
+        ):
+            continue
+        eligible_by_first_user_id[first_user_id].append(second_friend)
+        eligible_by_first_user_id[second_user_id].append(first_friend)
 
     return friends, eligible_by_first_user_id
-
-

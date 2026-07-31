@@ -572,6 +572,18 @@ class DocumentPersistence:
             ]
         return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
 
+    def list_friend_suggestions_for_users(self, user_ids: list[str]) -> list[dict[str, Any]]:
+        user_id_set = set(user_ids)
+        if not user_id_set:
+            return []
+        with self._lock:
+            suggestions = [
+                suggestion
+                for suggestion in self._read()["friend_suggestions"].values()
+                if user_id_set.intersection(suggestion.get("suggested_user_ids", []))
+            ]
+        return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
     def respond_friend_suggestion(
         self,
         suggestion_id: str,
@@ -627,6 +639,18 @@ class DocumentPersistence:
                 user = data["users"].get(friend_id, {"user_id": friend_id, "email": "", "name": friend_id})
                 friends.append(user)
         return sorted(friends, key=lambda user: (user.get("name", ""), user.get("email", "")))
+
+    def list_active_friendships_for_users(self, user_ids: list[str]) -> list[dict[str, Any]]:
+        user_id_set = set(user_ids)
+        if not user_id_set:
+            return []
+        with self._lock:
+            friendships = [
+                friendship
+                for friendship in self._read()["friendships"].values()
+                if friendship.get("active") and user_id_set.intersection(friendship.get("user_ids", []))
+            ]
+        return sorted(friendships, key=lambda friendship: friendship["id"])
 
     def remove_friend(self, user_id: str, friend_id: str, now: datetime | None = None) -> None:
         with self._lock:

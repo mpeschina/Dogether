@@ -7,7 +7,11 @@ from typing import Any
 import streamlit as st
 
 from src.db.persistence import Persistence
-from src.friends.suggestions import friend_suggestion_candidates, manual_friend_suggestion_options
+from src.friends.suggestions import (
+    friend_suggestion_candidates,
+    load_friend_suggestion_data,
+    manual_friend_suggestion_options,
+)
 from src.friends.share_links import (
     create_friend_share_link,
     pop_friend_share_message,
@@ -198,8 +202,26 @@ def render_friends(
 
     render_friend_share_created()
 
+    suggestion_data = load_friend_suggestion_data(persistence, user_id, now=now)
+    suggestion_users = persistence.users_by_ids(
+        [
+            suggested_user_id
+            for suggestions in suggestion_data.suggestions_by_pair.values()
+            for suggestion in suggestions
+            for suggested_user_id in [suggestion["suggested_by_user_id"], *suggestion["suggested_user_ids"]]
+        ]
+    )
+    suggestion_users.update({friend["user_id"]: friend for friend in suggestion_data.friends})
+    suggestion_users[user_id] = current_user
+
     incoming = persistence.incoming_friend_invites(current_user["email"], user_id)
-    incoming_suggestions = persistence.incoming_friend_suggestions(user_id)
+    incoming_suggestions = [
+        suggestion
+        for suggestions in suggestion_data.suggestions_by_pair.values()
+        for suggestion in suggestions
+        if suggestion.get("status") == "pending"
+        and suggestion.get("responses", {}).get(user_id) == "pending"
+    ]
     if incoming or incoming_suggestions:
         st.subheader("Pending friend invites")
         for invite in incoming:
@@ -235,15 +257,14 @@ def render_friends(
                     st.rerun()
 
         for suggestion in incoming_suggestions:
-            users = persistence.users_by_ids([suggestion["suggested_by_user_id"], *suggestion["suggested_user_ids"]])
-            suggester = users.get(suggestion["suggested_by_user_id"], {})
+            suggester = suggestion_users.get(suggestion["suggested_by_user_id"], {})
             suggester_name = str(suggester.get("name") or suggester.get("email") or "A friend")
             other_user_id = next(
                 candidate_id
                 for candidate_id in suggestion["suggested_user_ids"]
                 if candidate_id != user_id
             )
-            other_user = users.get(other_user_id, {})
+            other_user = suggestion_users.get(other_user_id, {})
             other_name = str(other_user.get("name") or other_user.get("email") or "another friend")
 
             with st.container(border=True):
@@ -283,8 +304,8 @@ def render_friends(
     #
     # Friend Suggestion Section
     #
-    friends_for_manual_suggestions, manual_options = manual_friend_suggestion_options(persistence, user_id)
-    suggestion_candidates = friend_suggestion_candidates(persistence, user_id, now=now)
+    friends_for_manual_suggestions, manual_options = manual_friend_suggestion_options(suggestion_data)
+    suggestion_candidates = friend_suggestion_candidates(suggestion_data)
     st.subheader("Help your Friends to stay connected!")
     if suggestion_candidates:
         if len(suggestion_candidates) > 3:
@@ -363,7 +384,7 @@ def render_friends(
     #
     # Expandable Friendlist Section
     #
-    friends = persistence.list_friends(user_id)
+    friends = suggestion_data.friends
     pending_removals = set(st.session_state.get("friends_pending_removals", []))
     pending_removals &= {friend["user_id"] for friend in friends}
     st.session_state["friends_pending_removals"] = sorted(pending_removals)
@@ -397,8 +418,14 @@ def render_friends(
     #
     outgoing = persistence.outgoing_friend_invites(user_id)
     outgoing_suggestions = [
-        *persistence.outgoing_friend_suggestions(user_id),
-        *persistence.accepted_pending_friend_suggestions(user_id),
+        suggestion
+        for suggestions in suggestion_data.suggestions_by_pair.values()
+        for suggestion in suggestions
+        if suggestion.get("status") == "pending"
+        and (
+            suggestion.get("suggested_by_user_id") == user_id
+            or suggestion.get("responses", {}).get(user_id) == "accepted"
+        )
     ]
     outgoing_suggestions = sorted(outgoing_suggestions, key=lambda suggestion: suggestion["created_at"])
     if outgoing or outgoing_suggestions:
@@ -407,8 +434,7 @@ def render_friends(
             recipient = persistence.find_user_by_email(invite["to_email"])
             st.write(f"To {_friend_name_with_email(recipient, invite['to_email'])}")
         for suggestion in outgoing_suggestions:
-            users = persistence.users_by_ids([suggestion["suggested_by_user_id"], *suggestion["suggested_user_ids"]])
-            suggester_user = users.get(suggestion["suggested_by_user_id"])
+            suggester_user = suggestion_users.get(suggestion["suggested_by_user_id"])
             suggester = _friend_display_name(suggester_user) if suggester_user else suggestion["suggested_by_user_id"]
             suggested_user_ids = [
                 suggested_user_id
@@ -418,13 +444,13 @@ def render_friends(
             if len(suggested_user_ids) == 1:
                 suggested_user_id = suggested_user_ids[0]
                 recipient = _friend_name_with_email(
-                    users.get(suggested_user_id),
+                    suggestion_users.get(suggested_user_id),
                     suggested_user_id,
                     note=f"suggested by {suggester}",
                 )
             else:
                 recipient = " and ".join(
-                    _friend_name_with_email(users.get(suggested_user_id), suggested_user_id)
+                    _friend_name_with_email(suggestion_users.get(suggested_user_id), suggested_user_id)
                     for suggested_user_id in suggested_user_ids
                 )
                 recipient = f"{recipient} (suggested by {suggester})"

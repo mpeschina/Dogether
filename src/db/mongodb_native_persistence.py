@@ -775,6 +775,19 @@ class MongoNativePersistence:
 
         return self._read_cached(("friend_suggestions_for_pair", suggested_user_ids), load_suggestions)
 
+    def list_friend_suggestions_for_users(self, user_ids: list[str]) -> list[dict[str, Any]]:
+        unique_ids = tuple(sorted(set(user_ids)))
+        if not unique_ids:
+            return []
+
+        def load_suggestions() -> list[dict[str, Any]]:
+            suggestions = self._strip_many(
+                self._friend_suggestions_collection().find({"suggested_user_ids": {"$in": list(unique_ids)}})
+            )
+            return sorted(suggestions, key=lambda suggestion: suggestion["created_at"])
+
+        return self._read_cached(("friend_suggestions_for_users", unique_ids), load_suggestions)
+
     def respond_friend_suggestion(self, suggestion_id: str, user_id: str, approve: bool, now: datetime | None = None) -> dict[str, Any]:
         suggestion = self._strip_id(self._friend_suggestions_collection().find_one({"_id": suggestion_id}))
         if not suggestion or suggestion.get("status") != "pending":
@@ -819,6 +832,19 @@ class MongoNativePersistence:
             return sorted(friends, key=lambda user: (user.get("name", ""), user.get("email", "")))
 
         return self._read_cached(("friends", user_id), load_friends)
+
+    def list_active_friendships_for_users(self, user_ids: list[str]) -> list[dict[str, Any]]:
+        unique_ids = tuple(sorted(set(user_ids)))
+        if not unique_ids:
+            return []
+
+        def load_friendships() -> list[dict[str, Any]]:
+            friendships = self._strip_many(
+                self._friendships_collection().find({"user_ids": {"$in": list(unique_ids)}, "active": True})
+            )
+            return sorted(friendships, key=lambda friendship: friendship["id"])
+
+        return self._read_cached(("active_friendships_for_users", unique_ids), load_friendships)
 
     def remove_friend(self, user_id: str, friend_id: str, now: datetime | None = None) -> None:
         friendship_id = _friendship_id(user_id, friend_id)

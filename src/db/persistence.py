@@ -103,6 +103,10 @@ class Persistence(Protocol):
 
     def list_friend_suggestions_for_pair(self, first_user_id: str, second_user_id: str) -> list[dict[str, Any]]: ...
 
+    def list_active_friendships_for_users(self, user_ids: list[str]) -> list[dict[str, Any]]: ...
+
+    def list_friend_suggestions_for_users(self, user_ids: list[str]) -> list[dict[str, Any]]: ...
+
     def respond_friend_suggestion(
         self,
         suggestion_id: str,
