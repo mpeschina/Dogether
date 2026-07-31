@@ -56,6 +56,9 @@ except Exception as error:
     st.error(f"Could not load Dogether: {error}")
     st.stop()
 
+if debug.enabled:
+    print("Server freshly Started")
+
 
 debug_user = debug.current_debug_user()
 debug_login = debug.debug_login_enabled

@@ -115,10 +115,10 @@ class StandardStory(AssistantStory):
             if selection is None:
                 return standard_menu_turn()
             if selection.choice_id == "help":
-                return AssistantTurn(
-                    story_id=self.story_id, scene_id=STANDARD_HELP_SCENE,
+                return replace(
+                    standard_help_turn(),
                     state_story=self.story_id, state_scene=STANDARD_HELP_SCENE,
-                    state_status="active", continue_flow=True,
+                    state_status="active",
                 )
             if selection.choice_id == "weekly_summary":
                 from src.assistant.stories.weekly_summary import WeeklySummaryStory

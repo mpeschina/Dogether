@@ -562,9 +562,9 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
         STANDARD_MENU_SCENE,
         selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "help", "Help me with the app"),
     )
-    assert help_menu.continue_flow is True
-    menu = story.advance(context, STANDARD_HELP_SCENE, None)
-    assert len(menu.choices) == 4
+    assert help_menu.continue_flow is False
+    assert help_menu.state_scene == STANDARD_HELP_SCENE
+    assert len(help_menu.choices) == 4
 
     start = story.advance(
         context,
@@ -574,6 +574,37 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
     updated = apply_turn(state, start)
     assert updated.scene == FRIENDS_EXPLANATION_NODE
     assert updated.knowledge["tutorial.friends.seen"] is True
+
+
+def test_help_selection_does_not_repeat_the_greeting() -> None:
+    persistence = RecordingPersistence()
+    stories = {
+        AssistantMode.NORMAL: StandardStory(),
+        "greetings": GreetingsStory(random_source=StubRandom(0.1)),
+    }
+    director = AssistantDirector(persistence, stories)
+    state = AssistantState(
+        story=STANDARD_STORY_ID,
+        scene=READY_NODE,
+        status="completed",
+    )
+
+    initial_view = RecordingView()
+    state = director.render(
+        context_for(state, session_state={}, previous_page_key="goals"),
+        initial_view,
+    )
+    help_view = RecordingView(
+        selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "help", "Help me with the app")
+    )
+    state = director.render(context_for(state, session_state={}), help_view)
+
+    all_turns = (*initial_view.turns, *help_view.turns)
+    assert sum(turn.story_id == GREETINGS_STORY_ID for turn in all_turns) == 1
+    assert len(help_view.turns) == 1
+    assert help_view.turns[0].scene_id == STANDARD_HELP_SCENE
+    assert len(help_view.turns[0].choices) == 4
+    assert state.scene == STANDARD_HELP_SCENE
 
 
 def test_standard_help_selection_restarts_at_menu_after_leaving_assistant() -> None:
