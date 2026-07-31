@@ -71,7 +71,7 @@ def render_assistant(
         "</div>",
         unsafe_allow_html=True,
     )
-    st.caption("your friendly helper")
+    st.caption("Your friendly helper")
 
     state = transient_assistant_state_for_user(st.session_state, user_id)
     if state is None:
