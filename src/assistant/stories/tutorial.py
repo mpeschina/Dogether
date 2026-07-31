@@ -45,6 +45,7 @@ READY_NODE: Final = "ready"
 FRIENDS_EVENT_ID: Final = "friends_check"
 GOALS_EVENT_ID: Final = "goals_check"
 PUSH_EVENT_ID: Final = "push_check"
+PROFILE_ANALYSIS_KNOWLEDGE_KEY: Final = "tutorial.profile_analysis.completed"
 
 
 def _lines(*items: str | tuple[str, float]) -> tuple[AssistantLine, ...]:
@@ -445,6 +446,7 @@ class InitialTutorialStory(AssistantStory):
         return _complete(
             READY_NODE,
             assistant_leaves=True,
+            knowledge_updates={PROFILE_ANALYSIS_KNOWLEDGE_KEY: True},
         )
 
     def _tour(self, selection: AssistantSelection | None) -> AssistantTurn:

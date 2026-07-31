@@ -15,10 +15,13 @@ from src.assistant.core import (
 from src.assistant.stories.tutorial import (
     EXPLANATION_SCENES,
     FRIENDS_EXPLANATION_NODE,
+    FRIENDS_NODE,
     GOALS_EXPLANATION_NODE,
+    PROFILE_ANALYSIS_KNOWLEDGE_KEY,
     PUSH_EXPLANATION_NODE,
     READY_NODE,
     STANDARD_STORY_ID,
+    TUTORIAL_STORY_ID,
     explanation_turn,
 )
 
@@ -66,15 +69,21 @@ def standard_help_turn(
     *,
     lines: tuple[AssistantLine, ...] = (),
     knowledge_updates=None,
+    profile_analysis_completed: bool = False,
 ) -> AssistantTurn:
+    choices = (
+        tuple(
+            AssistantChoice(id=choice_id, label=label)
+            for choice_id, label, _, _ in TUTORIAL_OPTIONS
+        )
+        if profile_analysis_completed
+        else (AssistantChoice("analyse_profile", "Analyse my Profile"),)
+    )
     return AssistantTurn(
         story_id=STANDARD_STORY_ID,
         scene_id=STANDARD_HELP_SCENE,
         lines=lines,
-        choices=tuple(
-            AssistantChoice(id=choice_id, label=label)
-            for choice_id, label, _, _ in TUTORIAL_OPTIONS
-        ),
+        choices=choices,
         choice_label="",
         knowledge_updates=knowledge_updates or {},
     )
@@ -116,7 +125,13 @@ class StandardStory(AssistantStory):
                 return standard_menu_turn()
             if selection.choice_id == "help":
                 return replace(
-                    standard_help_turn(),
+                    standard_help_turn(
+                        profile_analysis_completed=bool(
+                            context.state.knowledge.get(
+                                PROFILE_ANALYSIS_KNOWLEDGE_KEY, False
+                            )
+                        )
+                    ),
                     state_story=self.story_id, state_scene=STANDARD_HELP_SCENE,
                     state_status="active",
                 )
@@ -126,20 +141,37 @@ class StandardStory(AssistantStory):
             return standard_menu_turn()
 
         if selection is None:
-            return standard_help_turn()
+            return standard_help_turn(
+                profile_analysis_completed=bool(
+                    context.state.knowledge.get(
+                        PROFILE_ANALYSIS_KNOWLEDGE_KEY, False
+                    )
+                )
+            )
+
+        if selection.choice_id == "analyse_profile":
+            return AssistantTurn(
+                story_id=TUTORIAL_STORY_ID,
+                scene_id=FRIENDS_NODE,
+                state_story=TUTORIAL_STORY_ID,
+                state_scene=FRIENDS_NODE,
+                state_status="active",
+                continue_flow=True,
+            )
 
         selected = next(
             (item for item in TUTORIAL_OPTIONS if item[0] == selection.choice_id),
             None,
         )
         if selected is None:
-            return standard_help_turn()
+            return standard_help_turn(profile_analysis_completed=True)
 
         _, _, knowledge_key, tutorial_scene = selected
         if tutorial_scene is None:
             return standard_help_turn(
                 lines=(AssistantLine("That tutorial is coming soon."),),
                 knowledge_updates={knowledge_key: True},
+                profile_analysis_completed=True,
             )
         return AssistantTurn(
             story_id=self.story_id,

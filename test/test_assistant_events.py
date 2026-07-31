@@ -66,6 +66,7 @@ from src.assistant.stories.tutorial import (
     PUSH_EXPLANATION_NODE,
     PUSH_EVENT_ID,
     PUSH_NODE,
+    PROFILE_ANALYSIS_KNOWLEDGE_KEY,
     READY_NODE,
     RESUME_NODE,
     STANDARD_STORY_ID,
@@ -564,16 +565,47 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
     )
     assert help_menu.continue_flow is False
     assert help_menu.state_scene == STANDARD_HELP_SCENE
-    assert len(help_menu.choices) == 4
+    assert [choice.label for choice in help_menu.choices] == ["Analyse my Profile"]
+
+    completed_help = story.advance(
+        context_for(
+            AssistantState(
+                story=STANDARD_STORY_ID,
+                scene=READY_NODE,
+                status="completed",
+                knowledge={PROFILE_ANALYSIS_KNOWLEDGE_KEY: True},
+            )
+        ),
+        STANDARD_MENU_SCENE,
+        selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "help"),
+    )
+    assert len(completed_help.choices) == 4
 
     start = story.advance(
         context,
         STANDARD_HELP_SCENE,
-        selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "friends", "How do I add friends?"),
+        selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "analyse_profile", "Analyse my Profile"),
     )
     updated = apply_turn(state, start)
-    assert updated.scene == FRIENDS_EXPLANATION_NODE
-    assert updated.knowledge["tutorial.friends.seen"] is True
+    assert updated.story == TUTORIAL_STORY_ID
+    assert updated.scene == FRIENDS_NODE
+
+
+def test_completing_profile_analysis_unlocks_the_help_tutorial_menu() -> None:
+    story = InitialTutorialStory()
+    completed = story.advance(
+        context_for(
+            AssistantState(
+                story=TUTORIAL_STORY_ID,
+                scene=ANALYSIS_COMPLETE_NODE,
+                status="active",
+            )
+        ),
+        ANALYSIS_COMPLETE_NODE,
+        selection(TUTORIAL_STORY_ID, ANALYSIS_COMPLETE_NODE, "finish", "Thanks!"),
+    )
+
+    assert completed.knowledge_updates == {PROFILE_ANALYSIS_KNOWLEDGE_KEY: True}
 
 
 def test_help_selection_does_not_repeat_the_greeting() -> None:
@@ -587,6 +619,7 @@ def test_help_selection_does_not_repeat_the_greeting() -> None:
         story=STANDARD_STORY_ID,
         scene=READY_NODE,
         status="completed",
+        knowledge={PROFILE_ANALYSIS_KNOWLEDGE_KEY: True},
     )
 
     initial_view = RecordingView()
