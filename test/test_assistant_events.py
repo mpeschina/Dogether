@@ -78,6 +78,7 @@ from src.assistant.stories.tutorial import (
     READY_NODE,
     RESUME_NODE,
     STANDARD_STORY_ID,
+    TOUR_NODE,
     TUTORIAL_STORY_ID,
     WELCOME_NODE,
     InitialTutorialStory,
@@ -340,6 +341,22 @@ def test_unknown_tutorial_choice_reprompts_current_scene() -> None:
     assert turn.scene_id == WELCOME_NODE
     assert turn.state_scene == WELCOME_NODE
     assert [choice.id for choice in turn.choices] == ["analyse_profile", "tour", "decline"]
+
+
+def test_finishing_tour_returns_to_the_remaining_welcome_options() -> None:
+    story = InitialTutorialStory()
+    context = context_for(AssistantState(story=TUTORIAL_STORY_ID, scene=TOUR_NODE))
+
+    turn = story.advance(
+        context,
+        TOUR_NODE,
+        selection(TUTORIAL_STORY_ID, TOUR_NODE, "finish", "Got it"),
+    )
+
+    assert turn.scene_id == WELCOME_NODE
+    assert turn.state_scene == WELCOME_NODE
+    assert [choice.id for choice in turn.choices] == ["analyse_profile", "decline"]
+    assert [choice.label for choice in turn.choices] == ["Analyse my profile", "Exit"]
 
 
 def test_choices_require_non_empty_unique_ids() -> None:

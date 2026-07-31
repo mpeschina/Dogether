@@ -465,10 +465,14 @@ class InitialTutorialStory(AssistantStory):
                 ),
                 choices=choices,
             )
-        return _complete(
-            READY_NODE,
-            lines=_lines("Enjoy. 👋"),
-            assistant_leaves=True,
+        return _scene(
+            self.story_id,
+            WELCOME_NODE,
+            lines=_lines("Anything else I can help with?"),
+            choices=_choices(
+                ("analyse_profile", "Analyse my profile"),
+                ("decline", "Exit"),
+            ),
         )
 
 
