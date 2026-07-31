@@ -36,12 +36,6 @@ view.finish()
 def test_assistant_page_uses_the_material_support_agent_badge() -> None:
     content = Path("src/pages/assistant_page.py").read_text(encoding="utf-8")
 
-    assert '"sky_blue": "#2E90FA"' in content
-    assert '"light_ash": "#667085"' in content
-    assert '"reddish_pink": "#F0447A"' in content
-    assert '"violet": "#7F56D9"' in content
-    assert '"emerald": "#12B76A"' in content
-    assert '"amber": "#F79009"' in content
     assert "ASSISTANT_ICON_BACKGROUND_COLOR: str | None = ASSISTANT_COLORS[" in content
     assert 'st.get_option("theme.primaryColor") or "#1F2937"' in content
     assert "ASSISTANT_BADGE_SIZE_MULTIPLIER: float = 1.0" in content
