@@ -6,7 +6,6 @@ import random
 import streamlit as st
 
 from src.db.persistence import Persistence
-from src.viewport_component import emit_toast
 from src.db.persistence_helpers import (
     _next_period_start,
     _now,
@@ -22,7 +21,6 @@ LOOKBACK_PERIODS = 14
 READY_SESSION_KEY = "historical_data_repair_ready"
 READY_OPTION_SESSION_KEY = "historical_data_repair_ready_option"
 READY_STAGE_SESSION_KEY = "historical_data_repair_ready_stage"
-CHANGES_TOAST_SHOWN_SESSION_KEY = "historical_data_repair_changes_toast_shown"
 def editable_period_starts(
     goal: dict,
     now: datetime | None = None,
@@ -220,9 +218,8 @@ def render_historical_data_repair(
             if current != original_current
         }
         if changed_values:
-            emit_toast(
+            st.toast(
                 "Changes have to be saved before they are effective.",
-                key=CHANGES_TOAST_SHOWN_SESSION_KEY,
             )
         submitted = st.button(
             "Save",

@@ -596,8 +596,9 @@ def test_data_import_availability_matches_viewport_platforms() -> None:
 def test_main_page_uses_viewport_render_paths() -> None:
     content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
 
-    assert "from src.viewport_component import viewport_info" in content
-    assert "viewport = viewport_info(require_ready=False)" in content
+    assert "from src.viewport_component import viewport_info" not in content
+    assert "viewport = viewport_info(require_ready=False)" not in content
+    assert "viewport: dict | None = None" in content
     assert 'key="main_viewport_info"' not in content
     assert "pixel_threshold=20" not in content
     assert "debounce_ms=500" not in content
@@ -631,10 +632,12 @@ def test_main_page_gates_apple_steps_import_by_viewport_device() -> None:
 
 
 def test_main_page_reads_viewport_before_loading_data() -> None:
-    content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
+    content = Path("streamlit_app.py").read_text(encoding="utf-8")
 
-    assert content.index("viewport = viewport_info(require_ready=False)") < content.index("persistence.account_stats")
-    assert "viewport = viewport_info(require_ready=False)" in content
+    assert "from src.app_notifications import flush_startup_notifications, queue_user_notification" in content
+    assert "from src.viewport_component import viewport_info" in content
+    assert content.index("viewport = viewport_info(require_ready=False)") < content.index("flush_startup_notifications(viewport_ready=isinstance(viewport, dict))")
+    assert content.index("flush_startup_notifications(viewport_ready=isinstance(viewport, dict))") < content.index("render_main(")
 
 
 def test_main_page_goal_actions_use_fragment_scoped_reruns() -> None:

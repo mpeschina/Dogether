@@ -82,6 +82,9 @@ def test_viewport_component_wrapper_exposes_resize_options() -> None:
     assert "first call usually returns ``None``" in content
     assert "session keys themselves" in content
     assert "single early call" in content
+    assert "TOAST_VIEWPORT_COMPONENT_KEY" not in content
+    assert "flush_toasts" not in content
+    assert "emit_toast" not in content
 
 
 class _StopCalled(Exception):
@@ -92,17 +95,12 @@ class _FakeStreamlit:
     def __init__(self) -> None:
         self.session_state = {}
         self.info_messages = []
-        self.toast_messages = []
 
     def info(self, message: str) -> None:
         self.info_messages.append(message)
 
     def stop(self) -> None:
         raise _StopCalled
-
-    def toast(self, body, *, icon=None, duration="short") -> None:
-        self.toast_messages.append((body, icon, duration))
-
 
 def test_default_fallback_viewport_is_pc_widescreen() -> None:
     fallback = viewport_component._fallback_viewport()
@@ -244,44 +242,3 @@ def test_viewport_info_real_payload_overwrites_fallback_and_resets_wait(
     assert viewport == real_viewport
     assert fake_st.session_state["viewport_info:custom_component:cache"] == real_viewport
     assert "viewport_info:custom_component:wait_started_at" not in fake_st.session_state
-
-
-def test_toasts_are_queued_until_viewport_is_ready_then_deduplicated(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_st = _FakeStreamlit()
-    monkeypatch.setattr(viewport_component, "st", fake_st)
-    monkeypatch.setattr(viewport_component, "_component_func", lambda **kwargs: None)
-
-    assert viewport_component.emit_toast("Weekly analysis ready", key="weekly:alice", duration="long")
-    assert not viewport_component.emit_toast("Weekly analysis ready", key="weekly:alice", duration="long")
-    assert viewport_component.flush_toasts() == 0
-    assert fake_st.toast_messages == []
-
-    component_calls = []
-    monkeypatch.setattr(
-        viewport_component,
-        "_component_func",
-        lambda **kwargs: component_calls.append(kwargs) or {"renderPath": "widescreen"},
-    )
-    assert viewport_component.flush_toasts() == 1
-    assert fake_st.toast_messages == [("Weekly analysis ready", None, "long")]
-    assert component_calls[0]["key"] == "viewport_toast:custom_component"
-    assert not viewport_component.emit_toast("Weekly analysis ready", key="weekly:alice")
-
-
-def test_unkeyed_toasts_repeat_and_clearing_a_key_allows_it_again(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_st = _FakeStreamlit()
-    monkeypatch.setattr(viewport_component, "st", fake_st)
-    monkeypatch.setattr(viewport_component, "_component_func", lambda **kwargs: {"renderPath": "widescreen"})
-
-    assert viewport_component.emit_toast("Saved")
-    assert viewport_component.emit_toast("Saved")
-    assert viewport_component.flush_toasts() == 2
-    assert fake_st.toast_messages == [("Saved", None, "short"), ("Saved", None, "short")]
-    assert viewport_component.emit_toast("Warning", key="repair")
-    assert viewport_component.flush_toasts() == 1
-    viewport_component.clear_toast("repair")
-    assert viewport_component.emit_toast("Warning", key="repair")

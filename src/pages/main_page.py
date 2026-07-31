@@ -35,7 +35,6 @@ from src.assistant.stories.information import (
     clear_goal_invitation_news,
     pending_goal_invitations,
 )
-from src.viewport_component import viewport_info
 
 
 BALLOON_CHANCE = 0.10
@@ -664,6 +663,7 @@ def render_main(
     push_storage: PushStorage | None = None,
     push_settings: dict[str, str] | None = None,
     now: datetime | None = None,
+    viewport: dict | None = None,
 ) -> None:
     st.markdown(
         f"""
@@ -692,8 +692,6 @@ def render_main(
         """,
         unsafe_allow_html=True,
     )
-
-    viewport = viewport_info(require_ready=False) # ensure mobile first, correct on re-run, when necessary
 
     stats = persistence.account_stats(user_id, now=now)
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=90)

@@ -21,10 +21,6 @@ if _BUILD_DIR.exists():
 DEFAULT_VIEWPORT_COMPONENT_KEY = "viewport_info:custom_component"
 DEFAULT_VIEWPORT_CACHE_KEY = f"{DEFAULT_VIEWPORT_COMPONENT_KEY}:cache"
 DEFAULT_VIEWPORT_WAIT_START_KEY = f"{DEFAULT_VIEWPORT_COMPONENT_KEY}:wait_started_at"
-TOAST_VIEWPORT_COMPONENT_KEY = "viewport_toast:custom_component"
-TOAST_VIEWPORT_CACHE_KEY = f"{TOAST_VIEWPORT_COMPONENT_KEY}:cache"
-TOAST_QUEUE_SESSION_KEY = "viewport_toast:queue"
-TOAST_SHOWN_KEYS_SESSION_KEY = "viewport_toast:shown_keys"
 DEFAULT_RESIZE_PIXEL_THRESHOLD = 20
 DEFAULT_RESIZE_DEBOUNCE_MS = 500
 DEFAULT_LOADING_MESSAGE = None # could be "Loading layout..."
@@ -73,88 +69,6 @@ def _fallback_timeout_reached(
     if fallback_timeout_seconds is None:
         return False
     return now - wait_started_at >= max(0.0, float(fallback_timeout_seconds))
-
-
-def emit_toast(
-    body: str,
-    *,
-    key: str | None = None,
-    icon: str | None = None,
-    duration: str | int = "short",
-) -> bool:
-    """Queue a toast until viewport initialization has completed.
-
-    A stable ``key`` makes a notification appear at most once per browser
-    session. Omit it for repeatable action feedback.
-    """
-    if key is not None and not key:
-        raise ValueError("Toast keys must be non-empty when provided.")
-    queue = st.session_state.setdefault(TOAST_QUEUE_SESSION_KEY, [])
-    shown = st.session_state.setdefault(TOAST_SHOWN_KEYS_SESSION_KEY, set())
-    if not isinstance(queue, list) or not isinstance(shown, set):
-        raise RuntimeError("Viewport toast session state has an invalid shape.")
-    if key is not None and (
-        key in shown or any(item.get("key") == key for item in queue if isinstance(item, dict))
-    ):
-        return False
-    queue.append({"body": body, "key": key, "icon": icon, "duration": duration})
-    return True
-
-
-def clear_toast(key: str) -> None:
-    """Allow a keyed notification to be queued again during this session."""
-    queue = st.session_state.get(TOAST_QUEUE_SESSION_KEY, [])
-    if isinstance(queue, list):
-        st.session_state[TOAST_QUEUE_SESSION_KEY] = [
-            item for item in queue if not isinstance(item, dict) or item.get("key") != key
-        ]
-    shown = st.session_state.get(TOAST_SHOWN_KEYS_SESSION_KEY)
-    if isinstance(shown, set):
-        shown.discard(key)
-
-
-def flush_toasts() -> int:
-    """Render queued toasts once the browser viewport has reported in."""
-    queue = st.session_state.get(TOAST_QUEUE_SESSION_KEY, [])
-    if not isinstance(queue, list) or not queue:
-        return 0
-    if not _toast_viewport_is_ready():
-        return 0
-    shown = st.session_state.setdefault(TOAST_SHOWN_KEYS_SESSION_KEY, set())
-    if not isinstance(shown, set):
-        raise RuntimeError("Viewport toast session state has an invalid shape.")
-    emitted = 0
-    for item in queue:
-        if not isinstance(item, dict):
-            continue
-        body = item.get("body")
-        if not isinstance(body, str):
-            continue
-        st.toast(body, icon=item.get("icon"), duration=item.get("duration", "short"))
-        key = item.get("key")
-        if isinstance(key, str):
-            shown.add(key)
-        emitted += 1
-    st.session_state[TOAST_QUEUE_SESSION_KEY] = []
-    return emitted
-
-
-def _toast_viewport_is_ready() -> bool:
-    """Use a dedicated component instance to avoid duplicating a page's key."""
-    cached_viewport = st.session_state.get(TOAST_VIEWPORT_CACHE_KEY)
-    if _component_func is None:
-        return False
-    viewport = _component_func(
-        pixel_threshold=DEFAULT_RESIZE_PIXEL_THRESHOLD,
-        debounce_ms=DEFAULT_RESIZE_DEBOUNCE_MS,
-        cached_viewport=cached_viewport if isinstance(cached_viewport, dict) else None,
-        key=TOAST_VIEWPORT_COMPONENT_KEY,
-        default=cached_viewport if isinstance(cached_viewport, dict) else None,
-    )
-    if not isinstance(viewport, dict):
-        return False
-    st.session_state[TOAST_VIEWPORT_CACHE_KEY] = viewport
-    return True
 
 
 def viewport_info(
