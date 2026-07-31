@@ -278,7 +278,14 @@ def test_information_story_preempts_other_stories_and_clears_combined_news() -> 
     )
     director = AssistantDirector(persistence, default_stories())
     initial = RecordingView()
-    paused = director.render(context_for(state, session_state=session), initial)
+    paused = director.render(
+        context_for(
+            state,
+            session_state=session,
+            now=datetime(2026, 7, 27, 12, tzinfo=APP_ZONE),
+        ),
+        initial,
+    )
 
     assert initial.turns[0].story_id == INFORMATION_STORY_ID
     assert [item.text for item in initial.turns[0].content if hasattr(item, "text")][3:6] == [
@@ -299,7 +306,14 @@ def test_information_story_preempts_other_stories_and_clears_combined_news() -> 
     assert persistence.saved_states[-1]["stars"] == 0
 
     acknowledged = RecordingView(selection(INFORMATION_STORY_ID, "goal_invitations", "acknowledge"))
-    completed = director.render(context_for(paused, session_state=session), acknowledged)
+    completed = director.render(
+        context_for(
+            paused,
+            session_state=session,
+            now=datetime(2026, 7, 27, 12, tzinfo=APP_ZONE),
+        ),
+        acknowledged,
+    )
     assert acknowledged.turns[0].assistant_leaves is True
     assert GOAL_INVITATION_EVENT_ID not in completed.events
     assert completed.story == STANDARD_STORY_ID
@@ -343,7 +357,10 @@ def test_information_story_does_not_repeat_goal_notification_unlock_intro() -> N
     )
     view = RecordingView()
 
-    AssistantDirector(persistence, default_stories()).render(context_for(state), view)
+    AssistantDirector(persistence, default_stories()).render(
+        context_for(state, now=datetime(2026, 7, 27, 12, tzinfo=APP_ZONE)),
+        view,
+    )
 
     lines = [item.text for item in view.turns[0].content if hasattr(item, "text")]
     assert lines == [
@@ -1195,12 +1212,12 @@ def test_night_event_is_selected_only_during_berlin_night(now, expected) -> None
     assert story is None if expected is None else story.story_id == expected
 
 
-def test_night_event_does_not_preempt_onboarding_or_information() -> None:
+def test_night_event_does_not_preempt_fresh_onboarding_but_preempts_information() -> None:
     director = AssistantDirector(RecordingPersistence(), default_stories())
     night = datetime(2026, 7, 27, 1, tzinfo=APP_ZONE)
 
     fresh = AssistantState()
-    assert director._story_for(context_for(fresh, now=night), None).story_id == TUTORIAL_STORY_ID
+    assert director.story_dispatch(context_for(fresh, now=night), None).story_id == TUTORIAL_STORY_ID
 
     information = AssistantState(
         story=STANDARD_STORY_ID,
@@ -1212,7 +1229,7 @@ def test_night_event_does_not_preempt_onboarding_or_information() -> None:
             }
         },
     )
-    assert director._story_for(context_for(information, now=night), None).story_id == INFORMATION_STORY_ID
+    assert director.story_dispatch(context_for(information, now=night), None).story_id == NIGHT_STORY_ID
 
 
 def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:

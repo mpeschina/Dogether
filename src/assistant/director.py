@@ -79,7 +79,7 @@ class AssistantDirector:
 
         for _ in range(MAX_AUTOMATIC_TURNS):
             effective_context = self._context_with_state(context, state)
-            story = self._story_for(
+            story = self.story_dispatch(
                 effective_context,
                 selection,
                 skip_greeting=greeting_has_played,
@@ -131,7 +131,7 @@ class AssistantDirector:
             )
         return effective
 
-    def _story_for(
+    def story_dispatch(
         self,
         context: AssistantContext,
         selection: AssistantSelection | None,
@@ -142,13 +142,13 @@ class AssistantDirector:
             return self.stories.get(selection.story_id)
 
         state = context.state
-        if weekly_summary_ready_event(state):
-            return self.stories.get(WEEKLY_SUMMARY_READY_STORY_ID)
-        if pending_goal_invitations(state):
-            return self.stories.get(INFORMATION_STORY_ID)
+        # high priority interrupt rules
+        if self._super_important_issue_story(context) is not None:
+            return self._super_important_issue_story(context)
         if state.mode is AssistantMode.SPECIAL:
             return self.stories.get(SPECIAL_STORY_ID)
 
+        # resume and continue rules to dispatch to a currently running story
         if state.story == TUTORIAL_STORY_ID and state.scene not in {None, READY_NODE}:
             return self.stories.get(TUTORIAL_STORY_ID)
         if state.story == PUSH_REMINDER_STORY_ID:
@@ -158,10 +158,15 @@ class AssistantDirector:
         if state.story == STANDARD_STORY_ID and state.scene in EXPLANATION_SCENES:
             return self.stories.get(STANDARD_STORY_ID)
 
+        # normal dispatcher
         if self._is_fully_fresh(state):
             return self.stories.get(TUTORIAL_STORY_ID)
         if self._important_issue_story(context) is not None:
             return self._important_issue_story(context)
+        if weekly_summary_ready_event(state):
+            return self.stories.get(WEEKLY_SUMMARY_READY_STORY_ID)
+        if pending_goal_invitations(state):
+            return self.stories.get(INFORMATION_STORY_ID)
         if self._unseen_tutorial_story(context) is not None:
             return self._unseen_tutorial_story(context)
         if self._push_prompt_is_eligible(context):
@@ -204,6 +209,9 @@ class AssistantDirector:
             and state.story is None
             and state.scene is None
         )
+
+    def _super_important_issue_story(self, context: AssistantContext):
+            return None
 
     def _important_issue_story(self, context: AssistantContext):
         # return self.stories.get(NIGHT_STORY_ID) ##### just for debugging this event, keep this line

@@ -4,6 +4,7 @@ from src.assistant.core import AssistantContext, AssistantSelection
 from src.assistant.director import AssistantDirector
 from src.assistant.state import AssistantState
 from src.assistant.stories import default_stories
+from src.assistant.stories.tutorial import READY_NODE, STANDARD_STORY_ID
 from src.assistant.stories.weekly_summary import SUMMARY_SCENE, WEEK_SELECTION_EVENT_ID
 from src.assistant.stories.weekly_summary_ready import (
     WEEKLY_SUMMARY_READY_EVENT_ID,
@@ -115,9 +116,21 @@ def test_ready_story_acknowledges_then_opens_last_final_week_summary() -> None:
     assert shown.event_updates[WEEK_SELECTION_EVENT_ID] == {"start": "2026-07-20", "partial": False}
 
 
-def test_ready_story_has_priority_when_assistant_opens() -> None:
-    state = AssistantState(events={WEEKLY_SUMMARY_READY_EVENT_ID: {"week_start": "2026-07-20", "acknowledged": False}})
-    context = AssistantContext(user_id="alice", current_user={}, state=state, session_state={}, current_page_key="assistant")
+def test_ready_story_has_priority_when_an_onboarded_assistant_opens() -> None:
+    state = AssistantState(
+        story=STANDARD_STORY_ID,
+        scene=READY_NODE,
+        status="completed",
+        events={WEEKLY_SUMMARY_READY_EVENT_ID: {"week_start": "2026-07-20", "acknowledged": False}},
+    )
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=state,
+        session_state={},
+        current_page_key="assistant",
+        now=_now("2026-07-27T12:00:00"),
+    )
     view = RecordingView()
 
     AssistantDirector(RecordingPersistence(), default_stories()).render(context, view)
