@@ -75,14 +75,14 @@ def should_render_site_break_for_goal_hit(
     previous_participant: dict,
     updated_participant: dict,
 ) -> bool:
-    """Return whether a newly completed goal was overfulfilled threefold."""
+    """Return whether progress newly crosses the three-times-target threshold."""
     if previous_participant.get("skipped") or updated_participant.get("skipped"):
         return False
     previous_current = max(0, int(previous_participant.get("current", 0) or 0))
     previous_target = max(1, int(previous_participant.get("target", 1) or 1))
     current = max(0, int(updated_participant.get("current", 0) or 0))
     target = max(1, int(updated_participant.get("target", 1) or 1))
-    return previous_current < previous_target and current >= 3 * target
+    return previous_current < 3 * previous_target and current >= 3 * target
 
 
 def should_render_balloons_for_goal_hit(
@@ -109,10 +109,18 @@ def queue_balloons_for_goal_hit(previous_participant: dict, updated_goal: dict, 
         st.session_state[BALLOON_GOAL_ID_SESSION_KEY] = updated_goal.get("id")
 
 
-def queue_site_break_for_goal_hit(previous_participant: dict, updated_goal: dict, user_id: str) -> bool:
+def queue_site_break_for_goal_hit(
+    persistence: Persistence,
+    previous_participant: dict,
+    updated_goal: dict,
+    user_id: str,
+    now: datetime | None,
+) -> bool:
     """Queue the one-time main-page interruption for an extreme completion."""
     updated_participant = updated_goal.get("participants", {}).get(user_id, {})
     if not should_render_site_break_for_goal_hit(previous_participant, updated_participant):
+        return False
+    if not persistence.claim_site_break_effect(user_id, now=now):
         return False
     st.session_state[SITE_BREAK_GOAL_ID_SESSION_KEY] = updated_goal.get("id")
     return True
@@ -392,7 +400,7 @@ def render_goal_actions(
             now=now,
         )
         queue_balloons_for_goal_hit(participant, updated_goal, user_id)
-        if queue_site_break_for_goal_hit(participant, updated_goal, user_id):
+        if queue_site_break_for_goal_hit(persistence, participant, updated_goal, user_id, now):
             st.rerun(scope="app")
         st.rerun(scope="fragment")
     if not skipped:
@@ -429,7 +437,7 @@ def render_goal_actions(
                     now=now,
                 )
                 queue_balloons_for_goal_hit(participant, updated_goal, user_id)
-                if queue_site_break_for_goal_hit(participant, updated_goal, user_id):
+                if queue_site_break_for_goal_hit(persistence, participant, updated_goal, user_id, now):
                     st.rerun(scope="app")
                 st.rerun(scope="fragment")
 

@@ -302,6 +302,17 @@ def test_assistant_state_persists_in_json_user_profile_and_resets(tmp_path: Path
     assert AssistantState.from_profile(reset_profile or {}) == AssistantState.reset()
 
 
+def test_site_break_effect_can_only_be_claimed_once_per_json_user_per_day(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    persistence = JsonPersistence(path)
+    persistence.upsert_user("alice", "alice@example.com", "Alice")
+
+    assert persistence.claim_site_break_effect("alice", now=at("2026-06-01T09:00:00"))
+    assert not persistence.claim_site_break_effect("alice", now=at("2026-06-01T10:00:00"))
+    assert persistence.claim_site_break_effect("alice", now=at("2026-06-02T09:00:00"))
+    assert JsonPersistence(path).get_user("alice")["site_break_effect_day"] == "2026-06-02"
+
+
 def test_purge_account_resets_profile_and_removes_all_json_references(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice, bob = users_and_friendship(persistence)

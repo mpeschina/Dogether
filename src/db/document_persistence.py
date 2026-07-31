@@ -185,6 +185,23 @@ class DocumentPersistence:
     ) -> dict[str, Any]:
         return self.save_assistant_state(user_id, AssistantState.reset().to_dict(), now=now)
 
+    def claim_site_break_effect(self, user_id: str, now: datetime | None = None) -> bool:
+        """Atomically reserve the user's one site-break effect for today."""
+        today = _now(now).date().isoformat()
+        with self._lock:
+            data = self._read()
+            user = data["users"].get(user_id)
+            if not user:
+                raise ValueError("User not found.")
+            previous_day = user.get("site_break_effect_day")
+            legacy_shown_at = str(user.get("site_break_effect_shown_at") or "")
+            if previous_day == today or legacy_shown_at.startswith(today):
+                return False
+            user["site_break_effect_day"] = today
+            user["updated_at"] = _iso(now)
+            self._write(data)
+            return True
+
     def users_by_ids(self, user_ids: list[str]) -> dict[str, dict[str, Any]]:
         with self._lock:
             users = self._read()["users"]

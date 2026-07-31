@@ -429,6 +429,24 @@ class MongoNativePersistence:
     ) -> dict[str, Any]:
         return self.save_assistant_state(user_id, AssistantState.reset().to_dict(), now=now)
 
+    def claim_site_break_effect(self, user_id: str, now: datetime | None = None) -> bool:
+        """Atomically reserve the user's one site-break effect for today."""
+        today = _now(now).date().isoformat()
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError("User not found.")
+        legacy_shown_at = str(user.get("site_break_effect_shown_at") or "")
+        if user.get("site_break_effect_day") == today or legacy_shown_at.startswith(today):
+            return False
+        result = self._users_inventory_collection().update_one(
+            {"_id": user_id, "site_break_effect_day": {"$ne": today}},
+            {"$set": {"site_break_effect_day": today, "updated_at": _iso(now)}},
+        )
+        if result is not None and not getattr(result, "modified_count", 0):
+            return False
+        self._cache_clear()
+        return True
+
     def ensure_friend_share_code(self, user_id: str, now: datetime | None = None) -> str:
         user = self.get_user(user_id)
         if not user:
