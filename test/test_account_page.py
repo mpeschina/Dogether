@@ -13,6 +13,7 @@ from src.pages.account_page import (
     assistant_transient_debug_info,
     clear_greeting_session,
     greeting_debug_info,
+    reset_assistant_session_state,
 )
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -107,3 +108,23 @@ def test_assistant_transient_debug_info_shows_all_assistant_owned_session_values
         ASSISTANT_STORY_SESSION_KEY: {"greetings": {"selection": "cowboy"}},
         "help_assistant_dummy_input": "",
     }
+
+
+def test_reset_assistant_session_state_clears_all_assistant_state_and_story_sessions() -> None:
+    session_state = {
+        "assistant.transient_state": {
+            "user_id": "user-1",
+            "assistant_state": {"story": "weekly_summary"},
+        },
+        "assistant.transcript": [("card", {"title": "Weekly completion"})],
+        "assistant_choice_3_0": False,
+        "assistant_mode_user-1": "normal",
+        "assistant_send_input_4": "Hello",
+        ASSISTANT_STORY_SESSION_KEY: {"greetings": {"selection": "cowboy"}},
+        "help_assistant_dummy_input": "",
+        "unrelated": "kept",
+    }
+
+    reset_assistant_session_state(session_state, "user-1")
+
+    assert session_state == {"unrelated": "kept"}

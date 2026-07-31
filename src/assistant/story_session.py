@@ -73,3 +73,8 @@ def story_session(
     session_state: MutableMapping[str, object], story_id: str
 ) -> StorySession:
     return StorySession(session_state, story_id)
+
+
+def clear_story_sessions(session_state: MutableMapping[str, object]) -> None:
+    """Remove all session-only state owned by assistant stories."""
+    session_state.pop(ASSISTANT_STORY_SESSION_KEY, None)

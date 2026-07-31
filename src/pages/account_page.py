@@ -9,7 +9,7 @@ from typing import Any
 import streamlit as st
 
 from src.assistant.state import AssistantMode, AssistantState, clear_transient_assistant_state
-from src.assistant.story_session import story_session
+from src.assistant.story_session import clear_story_sessions, story_session
 from src.assistant.stories.greetings import (
     GREETING_PENDING_KEY,
     GREETING_RANDOMIZED_AT_KEY,
@@ -98,8 +98,7 @@ def render_assistant_settings(
     if st.button("Reset assistant", key=f"reset_assistant_{user_id}"):
         reset_state = persistence.reset_assistant_state(user_id, now=now)
         current_user["assistant_state"] = reset_state
-        clear_transient_assistant_state(st.session_state, user_id)
-        st.session_state.pop(widget_key, None)
+        reset_assistant_session_state(st.session_state, user_id)
         st.rerun()
 
     if st.button("Clear greeting session", key=f"clear_greeting_session_{user_id}"):
@@ -162,6 +161,17 @@ def _json_debug_value(value: Any) -> object:
 def clear_greeting_session(session_state: MutableMapping[str, object]) -> None:
     """Reset only the session-scoped greeting keys used for Help testing."""
     story_session(session_state, GREETINGS_STORY_ID).clear()
+
+
+def reset_assistant_session_state(
+    session_state: MutableMapping[str, object], user_id: str
+) -> None:
+    """Clear every session-scoped assistant value for a fresh assistant reset."""
+    clear_transient_assistant_state(session_state, user_id)
+    clear_story_sessions(session_state)
+    for key in list(session_state):
+        if _is_assistant_transient_key(key):
+            session_state.pop(key, None)
 
 
 def render_activity_diagram(
