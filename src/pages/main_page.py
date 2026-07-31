@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from html import escape
 from random import random
+from time import sleep
 
 import streamlit as st
 
@@ -39,6 +40,49 @@ from src.viewport_component import viewport_info
 
 BALLOON_CHANCE = 0.10
 BALLOON_GOAL_ID_SESSION_KEY = "balloon_goal_id"
+SITE_BREAK_GOAL_ID_SESSION_KEY = "site_break_goal_id"
+SITE_BREAK_CSS = """.goal--too-motivated {
+  --coffee-consumed: 47;
+  --reasonable-expectations: none;
+  animation: celebrate-until-the-server-asks-for-a-nap 1s linear infinite;
+}
+
+.achievement-gremlin::after {
+  content: \"Please stop being so productive\";
+  font-style: italic;
+}
+
+.progress-bar--has-left-the-chat {
+  width: 300%;
+  overflow: visible;
+  filter: drop-shadow(0 0 1rem var(--unearned-confidence, gold));
+}
+
+.server-therapist {
+  display: flex;
+  justify-content: center;
+  /* asks the browser to take five deep breaths */
+  gap: calc(var(--coffee-consumed) * 1px);
+}
+
+@keyframes celebrate-until-the-server-asks-for-a-nap {
+  from { transform: rotate(-1deg); }
+  to { transform: rotate(1deg); }
+}"""
+
+
+def should_render_site_break_for_goal_hit(
+    previous_participant: dict,
+    updated_participant: dict,
+) -> bool:
+    """Return whether a newly completed goal was overfulfilled threefold."""
+    if previous_participant.get("skipped") or updated_participant.get("skipped"):
+        return False
+    previous_current = max(0, int(previous_participant.get("current", 0) or 0))
+    previous_target = max(1, int(previous_participant.get("target", 1) or 1))
+    current = max(0, int(updated_participant.get("current", 0) or 0))
+    target = max(1, int(updated_participant.get("target", 1) or 1))
+    return previous_current < previous_target and current >= 3 * target
 
 
 def should_render_balloons_for_goal_hit(
@@ -63,6 +107,77 @@ def queue_balloons_for_goal_hit(previous_participant: dict, updated_goal: dict, 
     updated_participant = updated_goal.get("participants", {}).get(user_id, {})
     if should_render_balloons_for_goal_hit(previous_participant, updated_participant):
         st.session_state[BALLOON_GOAL_ID_SESSION_KEY] = updated_goal.get("id")
+
+
+def queue_site_break_for_goal_hit(previous_participant: dict, updated_goal: dict, user_id: str) -> bool:
+    """Queue the one-time main-page interruption for an extreme completion."""
+    updated_participant = updated_goal.get("participants", {}).get(user_id, {})
+    if not should_render_site_break_for_goal_hit(previous_participant, updated_participant):
+        return False
+    st.session_state[SITE_BREAK_GOAL_ID_SESSION_KEY] = updated_goal.get("id")
+    return True
+
+
+class AchievementGremlinError(RuntimeError):
+    """Raised when motivation becomes legally unreasonable."""
+
+
+class ProductivityOverflowError(RuntimeError):
+    """Raised when goal completion escapes its intended container."""
+
+
+def _inspect_suspiciously_high_completion_rate() -> None:
+    _ask_progress_bar_to_return_to_its_container()
+
+
+def _ask_progress_bar_to_return_to_its_container() -> None:
+    _calculate_percentage_using_normal_human_mathematics()
+
+
+def _calculate_percentage_using_normal_human_mathematics() -> None:
+    _consult_reasonable_expectations()
+
+
+def _consult_reasonable_expectations() -> None:
+    _discover_reasonable_expectations_are_missing()
+
+
+def _discover_reasonable_expectations_are_missing() -> None:
+    _offer_server_emotional_support()
+
+
+def _offer_server_emotional_support() -> None:
+    _ask_user_to_complete_slightly_fewer_things()
+
+
+def _ask_user_to_complete_slightly_fewer_things() -> None:
+    _wake_achievement_gremlin()
+
+
+def _wake_achievement_gremlin() -> None:
+    raise AchievementGremlinError(
+        "Achievement gremlin reports dangerously impressive behavior."
+    )
+
+
+def render_site_break_error() -> None:
+    """Render a real, deliberately oversized Streamlit exception panel."""
+    try:
+        _inspect_suspiciously_high_completion_rate()
+    except AchievementGremlinError as error:
+        st.exception(error)
+
+
+def render_site_break_toasts() -> None:
+    """Let the assistant react after the deliberately oversized error."""
+    sleep(7)
+    st.toast(
+        "You hit your goal so hard that you break the app!",
+        icon=":material/support_agent:",
+        duration="long",
+    )
+    sleep(5)
+    st.toast("Try to reload, maybe", icon=":material/support_agent:", duration="long")
 
 
 def ordered_active_participant_ids(goal: dict, current_user_id: str) -> list[str]:
@@ -277,6 +392,8 @@ def render_goal_actions(
             now=now,
         )
         queue_balloons_for_goal_hit(participant, updated_goal, user_id)
+        if queue_site_break_for_goal_hit(participant, updated_goal, user_id):
+            st.rerun(scope="app")
         st.rerun(scope="fragment")
     if not skipped:
         with actions.popover("", icon=":material/edit:", help="Edit progress", use_container_width=True):
@@ -312,6 +429,8 @@ def render_goal_actions(
                     now=now,
                 )
                 queue_balloons_for_goal_hit(participant, updated_goal, user_id)
+                if queue_site_break_for_goal_hit(participant, updated_goal, user_id):
+                    st.rerun(scope="app")
                 st.rerun(scope="fragment")
 
 
@@ -418,11 +537,11 @@ def render_goal_card(
     push_settings: dict[str, str] | None = None,
     now: datetime | None = None,
     viewport: dict | None = None,
-) -> None:
+) -> bool:
     goal = _current_goal_for_user(persistence, goal_id, user_id, now=now)
     if goal is None or user_id not in goal.get("participants", {}):
         st.info("This goal is no longer available.")
-        return
+        return False
     if st.session_state.get(BALLOON_GOAL_ID_SESSION_KEY) == goal_id:
         st.session_state.pop(BALLOON_GOAL_ID_SESSION_KEY)
         st.balloons()
@@ -450,6 +569,12 @@ def render_goal_card(
             ),
             unsafe_allow_html=True,
         )
+        if st.session_state.get(SITE_BREAK_GOAL_ID_SESSION_KEY) == goal_id:
+            st.session_state.pop(SITE_BREAK_GOAL_ID_SESSION_KEY)
+            st.markdown(f"```css\n{SITE_BREAK_CSS}\n```")
+            render_site_break_error()
+            render_site_break_toasts()
+            return True
         if render_path == "mobile_portrait" and user_id in goal.get("participants", {}):
             render_goal_actions(
                 persistence,
@@ -503,6 +628,7 @@ def render_goal_card(
                         now,
                         viewport,
                     )
+    return False
 
 
 def render_main(
@@ -565,7 +691,7 @@ def render_main(
         return
 
     for goal in goals:
-        render_goal_card(
+        site_break_rendered = render_goal_card(
             persistence,
             goal["id"],
             user_id,
@@ -574,3 +700,5 @@ def render_main(
             now,
             viewport,
         )
+        if site_break_rendered:
+            return

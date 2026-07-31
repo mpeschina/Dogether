@@ -34,6 +34,7 @@ from src.pages.main_page import (
     participant_reaction_summary,
     ordered_active_participant_ids,
     should_render_balloons_for_goal_hit,
+    should_render_site_break_for_goal_hit,
     visible_participant_ids,
     truncate_participant_name,
 )
@@ -179,6 +180,15 @@ def test_balloons_are_only_eligible_for_a_new_completion_over_double_target() ->
     assert not should_render_balloons_for_goal_hit(previous, {"current": 20, "target": 10}, random_value=0.01)
     assert not should_render_balloons_for_goal_hit(previous, {"current": 21, "target": 10}, random_value=0.10)
     assert not should_render_balloons_for_goal_hit({"current": 10, "target": 10}, {"current": 21, "target": 10}, random_value=0.01)
+
+
+def test_site_break_requires_a_new_unskipped_completion_at_least_three_times_target() -> None:
+    previous = {"current": 9, "target": 10, "skipped": False}
+
+    assert should_render_site_break_for_goal_hit(previous, {"current": 30, "target": 10, "skipped": False})
+    assert not should_render_site_break_for_goal_hit(previous, {"current": 29, "target": 10, "skipped": False})
+    assert not should_render_site_break_for_goal_hit({"current": 10, "target": 10}, {"current": 30, "target": 10})
+    assert not should_render_site_break_for_goal_hit(previous, {"current": 30, "target": 10, "skipped": True})
 
 
 def test_participant_name_with_progress_keeps_progress_inline_and_escaped() -> None:
@@ -617,7 +627,29 @@ def test_main_page_goal_actions_use_fragment_scoped_reruns() -> None:
     content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
 
     assert 'st.rerun(scope="fragment")' in content
+    assert 'st.rerun(scope="app")' in content
     assert "st.rerun()" not in content
+
+
+def test_main_page_site_break_stops_after_the_goal_header() -> None:
+    content = Path("src/pages/main_page.py").read_text(encoding="utf-8")
+
+    assert "SITE_BREAK_GOAL_ID_SESSION_KEY" in content
+    assert "should_render_site_break_for_goal_hit" in content
+    assert "def render_site_break_error" in content
+    assert "st.exception(error)" in content
+    assert "def _inspect_suspiciously_high_completion_rate" in content
+    assert "def _wake_achievement_gremlin" in content
+    assert "raise AchievementGremlinError" in content
+    assert "Achievement gremlin reports dangerously impressive behavior." in content
+    assert ".goal--too-motivated" in content
+    assert 'st.markdown(f"```css\\n{SITE_BREAK_CSS}\\n```' in content
+    assert "def render_site_break_toasts" in content
+    assert 'icon=":material/support_agent:"' in content
+    assert "sleep(7)" in content
+    assert "sleep(5)" in content
+    assert "Try to reload, maybe" in content
+    assert "if site_break_rendered:\n            return" in content
 
 
 def test_participant_goal_is_completed_requires_completed_unskipped_progress() -> None:
