@@ -280,23 +280,20 @@ class StreamlitAssistantView:
             with st.container(
                 key=f"assistant-send-bar-{round_id}"
             ):
-                with st.form(
-                    f"assistant_send_{round_id}",
-                    clear_on_submit=True,
-                ):
-                    st.text_input(
-                        "Message the assistant",
-                        label_visibility="collapsed",
-                        placeholder=placeholder,
-                        key=input_key,
-                    )
-                    st.form_submit_button(
-                        "Send",
-                        type="primary",
-                        use_container_width=True,
-                        on_click=self._queue_selection,
-                        args=(control, "send", "Send", input_key),
-                    )
+                st.text_input(
+                    "Message the assistant",
+                    label_visibility="collapsed",
+                    placeholder=placeholder,
+                    key=input_key,
+                )
+                st.button(
+                    "Send",
+                    type="primary",
+                    use_container_width=True,
+                    key=f"assistant_send_button_{round_id}",
+                    on_click=self._queue_selection,
+                    args=(control, "send", "Send", input_key),
+                )
 
     def _queue_selection(
         self,
@@ -497,9 +494,6 @@ class StreamlitAssistantView:
                 const choiceBar = parentDocument.querySelector(
                   '[class*="st-key-assistant-choice-bar-"]'
                 );
-                const sendBar = parentDocument.querySelector(
-                  '[class*="st-key-assistant-send-bar-"]'
-                );
                 const chatInput = parentDocument.querySelector(
                   '[data-testid="stChatInput"]'
                 );
@@ -509,17 +503,6 @@ class StreamlitAssistantView:
                   choiceBar.style.width = `${bounds.width}px`;
                   choiceBar.style.bottom = `calc(${parentWindow.innerHeight - bounds.top}px + 0.5rem)`;
                   choiceBar.style.transform = 'none';
-                }
-                if (sendBar) {
-                  const main = parentDocument.querySelector(
-                    '[data-testid="stMainBlockContainer"]'
-                  );
-                  if (main) {
-                    const bounds = main.getBoundingClientRect();
-                    sendBar.style.left = `${bounds.left}px`;
-                    sendBar.style.width = `${bounds.width}px`;
-                    sendBar.style.transform = 'none';
-                  }
                 }
               };
               const scrollToBottom = () => {

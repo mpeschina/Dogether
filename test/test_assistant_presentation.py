@@ -135,6 +135,16 @@ def test_send_control_is_restored_without_recording_player_bubbles() -> None:
     ]
 
 
+def test_send_control_does_not_use_a_form_that_can_emit_a_missing_submit_warning() -> None:
+    content = Path("src/assistant/presentation.py").read_text(encoding="utf-8")
+
+    send_control = content[
+        content.index("    def _render_send_control"):content.index("    def _queue_selection")
+    ]
+    assert "st.form(" not in send_control
+    assert "st.button(" in send_control
+
+
 def test_live_statuses_are_removed_when_assistant_speaks() -> None:
     app_source = """
 import streamlit as st
@@ -270,6 +280,12 @@ def test_weekly_chart_history_bars_are_slightly_darker_than_the_secondary_theme_
         "color-mix(in srgb, var(--secondary-background-color, #f1f5f9) 92%, #1f2937)"
         in rendered[0]
     )
+
+
+def test_send_control_uses_its_stable_css_position_without_delayed_repositioning() -> None:
+    content = Path("src/assistant/presentation.py").read_text(encoding="utf-8")
+
+    assert "const sendBar" not in content
 
 
 def test_recent_activity_markup_replaces_only_the_recent_row(monkeypatch) -> None:
