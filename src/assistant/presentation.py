@@ -17,6 +17,7 @@ from src.assistant.core import (
     ProgressEntry,
 )
 from src.assistant.stories.information import clear_information_session
+from src.assistant.stories.night import clear_night_session
 from src.pages.common_helpers import mini_activity_styles
 
 
@@ -54,6 +55,7 @@ def clear_transcript_for_new_help_visit(
     session_state.pop(CONTROL_ROUND_KEY, None)
     session_state.pop(ASSISTANT_LEFT_THIS_VISIT_KEY, None)
     clear_information_session(session_state)
+    clear_night_session(session_state)
     for key in LEGACY_EXPLANATION_STEP_KEYS:
         session_state.pop(key, None)
 
@@ -172,14 +174,19 @@ class StreamlitAssistantView:
         if line.typing_delay is not None:
             self._typing_indicator(line.typing_delay)
         if line.text:
-            self._transcript.append(("assistant", line.text))
+            kind = "assistant" if line.font_scale == 1 else "assistant_small"
+            self._transcript.append((kind, line.text))
             placeholder = st.empty()
             response = ""
             for part in response_generator(line.text):
                 response += part
-                self._render_assistant_message(response, placeholder=placeholder)
+                self._render_assistant_message(
+                    response, placeholder=placeholder, font_scale=line.font_scale
+                )
             if not response:
-                self._render_assistant_message(line.text, placeholder=placeholder)
+                self._render_assistant_message(
+                    line.text, placeholder=placeholder, font_scale=line.font_scale
+                )
         if line.wait_after > 0:
             time.sleep(line.wait_after)
 
@@ -337,8 +344,10 @@ class StreamlitAssistantView:
         self._render_transcript_entry(kind, content)
 
     def _render_transcript_entry(self, kind: str, content: Any) -> None:
-        if kind in {"assistant", "say"}:
-            self._render_assistant_message(str(content))
+        if kind in {"assistant", "say", "assistant_small"}:
+            self._render_assistant_message(
+                str(content), font_scale=0.5 if kind == "assistant_small" else 1
+            )
         elif kind in {"user", "user_choice"}:
             self._render_user_choice(str(content))
         elif kind in {"progress", "live_progress"} and isinstance(content, dict):
@@ -353,12 +362,12 @@ class StreamlitAssistantView:
 
     @staticmethod
     def _render_assistant_message(
-        message: str, *, placeholder: Any | None = None
+        message: str, *, placeholder: Any | None = None, font_scale: float = 1
     ) -> None:
         target = st if placeholder is None else placeholder
         safe_message = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escape(message))
         target.markdown(
-            f"<div class='assistant-message'><p>{safe_message.replace(chr(10), '<br>')}</p></div>",
+            f"<div class='assistant-message' style='font-size:{font_scale}em'><p>{safe_message.replace(chr(10), '<br>')}</p></div>",
             unsafe_allow_html=True,
         )
 

@@ -42,6 +42,14 @@ from src.assistant.stories.information import (
     GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY,
     _goal_fact_cards,
 )
+from src.assistant.stories.night import (
+    NIGHT_EVENT_ID,
+    NIGHT_STORY_ID,
+    PROGRESS_BAR_CLICK_COUNT as NIGHT_PROGRESS_BAR_CLICK_COUNT,
+    PROGRESS_BAR_COUNT as NIGHT_PROGRESS_BAR_COUNT,
+    STATUS_CLICK_COUNT as NIGHT_STATUS_CLICK_COUNT,
+    NightStory,
+)
 from src.assistant.stories.special_examples import (
     BUTTON_TEST_EVENT_ID,
     CLICK_CHALLENGE_EVENT_ID,
@@ -89,6 +97,7 @@ from src.assistant.stories.tutorial import (
     WELCOME_NODE,
     InitialTutorialStory,
 )
+from src.db.persistence_helpers import APP_ZONE
 
 
 class RecordingPersistence:
@@ -1162,6 +1171,94 @@ def test_special_click_challenge_uses_live_statuses_and_reveals_bars_sequentiall
     assert [entry.text for entry in final.progress] == [
         f"{PROGRESS_BAR_CLICK_COUNT} / {PROGRESS_BAR_CLICK_COUNT}"
     ] * PROGRESS_BAR_COUNT
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    (
+        (datetime(2026, 7, 27, 0, 0, tzinfo=APP_ZONE), NIGHT_STORY_ID),
+        (datetime(2026, 7, 27, 5, 59, tzinfo=APP_ZONE), NIGHT_STORY_ID),
+        (datetime(2026, 7, 27, 6, 0, tzinfo=APP_ZONE), None),
+        (datetime(2026, 7, 27, 23, 59, tzinfo=APP_ZONE), None),
+    ),
+)
+def test_night_event_is_selected_only_during_berlin_night(now, expected) -> None:
+    director = AssistantDirector(RecordingPersistence(), default_stories())
+    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
+
+    story = director._important_issue_story(context_for(state, now=now))
+
+    assert story is None if expected is None else story.story_id == expected
+
+
+def test_night_event_does_not_preempt_onboarding_or_information() -> None:
+    director = AssistantDirector(RecordingPersistence(), default_stories())
+    night = datetime(2026, 7, 27, 1, tzinfo=APP_ZONE)
+
+    fresh = AssistantState()
+    assert director._story_for(context_for(fresh, now=night), None).story_id == TUTORIAL_STORY_ID
+
+    information = AssistantState(
+        story=STANDARD_STORY_ID,
+        scene=READY_NODE,
+        status="completed",
+        events={
+            GOAL_INVITATION_EVENT_ID: {
+                "invitations": [{"goal_id": "one", "inviter_name": "Bob"}]
+            }
+        },
+    )
+    assert director._story_for(context_for(information, now=night), None).story_id == INFORMATION_STORY_ID
+
+
+def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
+    story = NightStory()
+    state = AssistantState()
+    session = {}
+
+    for clicks in range(1, NIGHT_STATUS_CLICK_COUNT + 1):
+        turn = story.advance(
+            context_for(state, session_state=session),
+            NIGHT_EVENT_ID,
+            selection(NIGHT_STORY_ID, NIGHT_EVENT_ID, "send", "Send"),
+        )
+        assert turn.statuses == (f"{clicks}x",)
+        assert turn.progress == ()
+        state = apply_turn(state, turn)
+
+    first_bar = story.advance(
+        context_for(state, session_state=session),
+        NIGHT_EVENT_ID,
+        selection(NIGHT_STORY_ID, NIGHT_EVENT_ID, "send", "Send"),
+    )
+    assert [entry.text for entry in first_bar.progress] == [
+        f"1 / {NIGHT_PROGRESS_BAR_CLICK_COUNT}"
+    ]
+
+    session["assistant.story_session"][NIGHT_STORY_ID]["clicks"] = (
+        NIGHT_STATUS_CLICK_COUNT
+        + NIGHT_PROGRESS_BAR_CLICK_COUNT * NIGHT_PROGRESS_BAR_COUNT
+        - 1
+    )
+    final = story.advance(
+        context_for(state, session_state=session),
+        NIGHT_EVENT_ID,
+        selection(NIGHT_STORY_ID, NIGHT_EVENT_ID, "send", "Send"),
+    )
+    assert [line.text for line in final.lines] == [
+        "Man, I am sleeping its super late!",
+        "(hm, did you already tell me your gender?)",
+        "Anyhow, I need to sleep and so do you.",
+        "Dont disturb me during the night!!!!",
+    ]
+    assert final.lines[1].font_scale == 0.5
+    assert [entry.text for entry in final.progress] == [
+        f"{NIGHT_PROGRESS_BAR_CLICK_COUNT} / {NIGHT_PROGRESS_BAR_CLICK_COUNT}"
+    ] * NIGHT_PROGRESS_BAR_COUNT
+    assert final.assistant_leaves
+    assert final.completed
+    assert NIGHT_EVENT_ID not in apply_turn(state, final).events
+    assert "assistant.story_session" not in session
 
 
 def test_mode_switch_preserves_achievements_but_restarts_conversation() -> None:

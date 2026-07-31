@@ -11,7 +11,7 @@ from src.assistant.state import AssistantState
 
 ControlKind = Literal["choices", "send"]
 TranscriptKind = Literal[
-    "assistant", "user", "status", "progress", "live_status", "live_progress"
+    "assistant", "assistant_small", "user", "status", "progress", "live_status", "live_progress"
 ]
 
 
@@ -52,6 +52,7 @@ class AssistantLine:
     typing_delay: float | None = None
     wait_before: float = 0
     wait_after: float = 0
+    font_scale: float = 1
 
 
 @dataclass(frozen=True)

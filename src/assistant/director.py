@@ -21,6 +21,7 @@ from src.assistant.state import (
 from src.assistant.presentation import ASSISTANT_LEFT_THIS_VISIT_KEY, StreamlitAssistantView
 from src.assistant.stories.greetings import GREETINGS_STORY_ID
 from src.assistant.stories.information import INFORMATION_STORY_ID, pending_goal_invitations
+from src.assistant.stories.night import NIGHT_STORY_ID
 from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
 from src.assistant.stories.special_examples import SPECIAL_STORY_ID
 from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID
@@ -35,6 +36,7 @@ from src.assistant.stories.tutorial import (
     STANDARD_STORY_ID,
     TUTORIAL_STORY_ID,
 )
+from src.db.persistence_helpers import APP_ZONE
 
 
 MAX_AUTOMATIC_TURNS = 24
@@ -203,9 +205,13 @@ class AssistantDirector:
             and state.scene is None
         )
 
-    @staticmethod
-    def _important_issue_story(context: AssistantContext):
-        del context
+    def _important_issue_story(self, context: AssistantContext):
+        return self.stories.get(NIGHT_STORY_ID) #just for debugging this event
+        now = context.now or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        if 0 <= now.astimezone(APP_ZONE).hour < 6:
+            return self.stories.get(NIGHT_STORY_ID)
         return None
 
     @staticmethod

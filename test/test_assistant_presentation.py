@@ -171,6 +171,23 @@ view.finish()
     ]
 
 
+def test_small_assistant_line_is_rendered_at_half_size_and_persists_in_history(monkeypatch) -> None:
+    from src.assistant.core import AssistantLine
+
+    rendered: list[str] = []
+    monkeypatch.setattr(presentation.st, "empty", lambda: presentation.st)
+    monkeypatch.setattr(presentation.st, "markdown", lambda body, **_: rendered.append(body))
+    monkeypatch.setattr(presentation, "response_generator", lambda _: iter(("Small ",)))
+
+    view = object.__new__(presentation.StreamlitAssistantView)
+    view._transcript = []
+    view._present_line(AssistantLine("Small", font_scale=0.5))
+    view._render_transcript_entry("assistant_small", "Small")
+
+    assert view._transcript == [("assistant_small", "Small")]
+    assert all("font-size:0.5em" in body for body in rendered)
+
+
 def test_send_control_records_submitted_message_and_uses_turn_placeholder() -> None:
     app_source = """
 import src.assistant.presentation as presentation
