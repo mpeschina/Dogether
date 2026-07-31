@@ -19,6 +19,7 @@ from src.assistant.state import (
     TRANSIENT_ASSISTANT_STATE_SESSION_KEY,
     AssistantMode,
     AssistantState,
+    grant_stars,
     transient_assistant_state_for_user,
 )
 from src.assistant.story_session import story_session
@@ -264,16 +265,22 @@ def test_information_story_preempts_other_stories_and_clears_combined_news() -> 
     paused = director.render(context_for(state, session_state=session), initial)
 
     assert initial.turns[0].story_id == INFORMATION_STORY_ID
-    assert [item.text for item in initial.turns[0].content if hasattr(item, "text")][:3] == [
+    assert [item.text for item in initial.turns[0].content if hasattr(item, "text")][3:6] == [
         "You have your 3rd shared Goal!",
         "I got one STAR reward for it, thank you so much.",
         "This enables me to inform you on new goal invites, from now on.",
     ]
-    assert [item.text for item in initial.turns[0].content if hasattr(item, "text")][-1] == "Bob and Charlie invited you to 2 new shared goals."
+    assert [item.text for item in initial.turns[0].content if hasattr(item, "text")][:3] == [
+        "Hello.",
+        "I have important news for you.",
+        "Bob and Charlie invited you to 2 new shared goals.",
+    ]
     assert len(initial.turns[0].content) == 8
     assert paused.story == INFORMATION_STORY_ID
+    assert paused.stars == 0
     assert paused.knowledge[GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY] is True
     assert persistence.saved_states[-1]["knowledge"][GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY] is True
+    assert persistence.saved_states[-1]["stars"] == 0
 
     acknowledged = RecordingView(selection(INFORMATION_STORY_ID, "goal_invitations", "acknowledge"))
     completed = director.render(context_for(paused, session_state=session), acknowledged)
@@ -281,6 +288,7 @@ def test_information_story_preempts_other_stories_and_clears_combined_news() -> 
     assert GOAL_INVITATION_EVENT_ID not in completed.events
     assert completed.story == STANDARD_STORY_ID
     assert story_session(session, INFORMATION_STORY_ID).get(INFORMATION_COMPLETE_KEY) is True
+    assert completed.stars == 0
 
 
 def test_information_card_hides_a_single_friend_participant() -> None:
@@ -292,6 +300,16 @@ def test_information_card_hides_a_single_friend_participant() -> None:
         }
     ])[0]
     assert "Friends already participating" not in dict(card.rows)
+
+
+def test_grant_stars_returns_updated_assistant_state() -> None:
+    state = AssistantState(stars=2)
+
+    granted = grant_stars(state)
+
+    assert state.stars == 2
+    assert granted.stars == 3
+    assert grant_stars(granted, 0).stars == 3
 
 
 def test_information_story_does_not_repeat_goal_notification_unlock_intro() -> None:

@@ -75,6 +75,7 @@ def _announce_goal_invitations(
     recipients = sorted({user_id for user_id in recipient_user_ids if user_id != inviter_user_id})
     eligible_recipients = []
     age_unlocked_recipient_ids = []
+    star_reward_recipient_ids = []
     for recipient_user_id in recipients:
         profile = persistence.get_user(recipient_user_id) or {}
         reached_goal_threshold = (
@@ -85,6 +86,8 @@ def _announce_goal_invitations(
         if not (reached_goal_threshold or reached_account_age_threshold):
             continue
         eligible_recipients.append(recipient_user_id)
+        if reached_goal_threshold:
+            star_reward_recipient_ids.append(recipient_user_id)
         if reached_account_age_threshold and not reached_goal_threshold:
             age_unlocked_recipient_ids.append(recipient_user_id)
 
@@ -97,6 +100,7 @@ def _announce_goal_invitations(
         goal=goal,
         inviter_name=inviter_name,
         mark_notifications_unlocked_recipient_ids=age_unlocked_recipient_ids,
+        award_star_recipient_ids=star_reward_recipient_ids,
         now=now,
     )
     if not push_storage or not push_configured(push_settings):

@@ -26,6 +26,7 @@ class AssistantState:
     sequences: dict[str, int] = field(default_factory=dict)
     knowledge: dict[str, bool] = field(default_factory=dict)
     events: dict[str, dict[str, Any]] = field(default_factory=dict)
+    stars: int = 0
     story: str | None = None
     scene: str | None = None
     status: str = "new"
@@ -47,6 +48,7 @@ class AssistantState:
         sequences = _normalise_sequences(value.get("sequences"))
         knowledge = _normalise_knowledge(value.get("knowledge"))
         events = _normalise_events(value.get("events"))
+        stars = _non_negative_int(value.get("stars"))
         version = _non_negative_int(value.get("schema_version"))
 
         if version < ASSISTANT_STATE_SCHEMA_VERSION:
@@ -66,6 +68,7 @@ class AssistantState:
             sequences=sequences,
             knowledge=knowledge,
             events=events,
+            stars=stars,
             story=story,
             scene=scene,
             status=status,
@@ -102,6 +105,7 @@ class AssistantState:
             "sequences": copy.deepcopy(self.sequences),
             "knowledge": copy.deepcopy(self.knowledge),
             "events": copy.deepcopy(self.events),
+            "stars": self.stars,
             "story": self.story,
             "scene": self.scene,
             "status": self.status,
@@ -113,6 +117,11 @@ class AssistantState:
     @classmethod
     def reset(cls) -> "AssistantState":
         return cls()
+
+
+def grant_stars(state: AssistantState, amount: int = 1) -> AssistantState:
+    """Return Assistant state with a non-negative STAR grant applied."""
+    return replace(state, stars=state.stars + max(0, int(amount)))
 
 
 def transient_assistant_state_for_user(

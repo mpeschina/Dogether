@@ -20,6 +20,7 @@ from src.push.notifications import (
 from src.assistant.state import AssistantState
 from src.assistant.stories.information import (
     GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY,
+    GOAL_INVITATION_STAR_REWARD_GRANTED_KNOWLEDGE_KEY,
     pending_goal_invitations,
 )
 
@@ -82,9 +83,13 @@ def test_goal_participant_additions_send_assistant_push_and_persist_news(monkeyp
     assert bob_news[0]["goal_id"] == goal["id"]
     assert bob_news[0]["goal_name"] == "Walk"
     assert bob_news[0]["friend_participant_count"] == "1"
+    bob_state = AssistantState.from_profile(persistence.get_user("bob") or {})
+    assert bob_state.stars == 1
+    assert bob_state.knowledge[GOAL_INVITATION_STAR_REWARD_GRANTED_KNOWLEDGE_KEY] is True
     charlie_news = pending_goal_invitations(AssistantState.from_profile(persistence.get_user("charlie") or {}))
     assert charlie_news[0]["goal_id"] == goal["id"]
     assert charlie_news[0]["friend_participant_count"] == "1"
+    assert AssistantState.from_profile(persistence.get_user("charlie") or {}).stars == 1
 
 
 def test_goal_invites_are_suppressed_until_the_recipient_has_three_active_goals(monkeypatch, tmp_path: Path) -> None:

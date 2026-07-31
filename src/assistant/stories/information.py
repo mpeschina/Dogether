@@ -15,7 +15,7 @@ from src.assistant.core import (
     AssistantStory,
     AssistantTurn,
 )
-from src.assistant.state import AssistantState
+from src.assistant.state import AssistantState, grant_stars
 from src.assistant.story_session import story_session
 from src.assistant.stories.tutorial import READY_NODE, STANDARD_STORY_ID
 
@@ -24,6 +24,7 @@ INFORMATION_STORY_ID = "information"
 GOAL_INVITATION_EVENT_ID = "information.goal_invitations"
 INFORMATION_COMPLETE_KEY = "complete"
 GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY = "information.goal_invitation_notifications_unlocked"
+GOAL_INVITATION_STAR_REWARD_GRANTED_KNOWLEDGE_KEY = "information.goal_invitation_star_reward_granted"
 
 
 def pending_goal_invitations(state: AssistantState | Mapping[str, Any]) -> list[dict[str, str]]:
@@ -54,10 +55,12 @@ def record_goal_invitation_news(
     goal: Mapping[str, Any],
     inviter_name: str,
     mark_notifications_unlocked_recipient_ids: list[str] | None = None,
+    award_star_recipient_ids: list[str] | None = None,
     now: datetime | None = None,
 ) -> None:
     """Append one durable Assistant news item for each newly added participant."""
     mark_notifications_unlocked_for = set(mark_notifications_unlocked_recipient_ids or [])
+    award_star_for = set(award_star_recipient_ids or [])
     for recipient_user_id in sorted(set(recipient_user_ids)):
         profile = persistence.get_user(recipient_user_id)
         if not profile:
@@ -65,11 +68,18 @@ def record_goal_invitation_news(
         state = AssistantState.from_profile(profile)
         events = copy.deepcopy(state.events)
         knowledge = copy.deepcopy(state.knowledge)
-        if recipient_user_id in mark_notifications_unlocked_for:
-            knowledge[GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY] = True
         invitations = pending_goal_invitations(state)
         if any(item["goal_id"] == str(goal["id"]) for item in invitations):
             continue
+        updated_state = state
+        if recipient_user_id in mark_notifications_unlocked_for:
+            knowledge[GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY] = True
+        if (
+            recipient_user_id in award_star_for
+            and not knowledge.get(GOAL_INVITATION_STAR_REWARD_GRANTED_KNOWLEDGE_KEY, False)
+        ):
+            updated_state = grant_stars(state)
+            knowledge[GOAL_INVITATION_STAR_REWARD_GRANTED_KNOWLEDGE_KEY] = True
         friend_ids = {friend.get("user_id") for friend in persistence.list_friends(recipient_user_id)}
         participants = set(goal.get("participants", {}))
         friend_participant_count = len((participants - {recipient_user_id}) & friend_ids)
@@ -89,13 +99,14 @@ def record_goal_invitation_news(
         persistence.save_assistant_state(
             recipient_user_id,
             AssistantState(
-                mode=state.mode,
-                sequences=state.sequences,
+                mode=updated_state.mode,
+                sequences=updated_state.sequences,
                 knowledge=knowledge,
                 events=events,
-                story=state.story,
-                scene=state.scene,
-                status=state.status,
+                stars=updated_state.stars,
+                story=updated_state.story,
+                scene=updated_state.scene,
+                status=updated_state.status,
             ).to_dict(),
             now=now,
         )
@@ -117,6 +128,7 @@ def clear_goal_invitation_news(persistence: Any, user_id: str, *, now: datetime 
             sequences=state.sequences,
             knowledge=state.knowledge,
             events=events,
+            stars=state.stars,
             story=state.story,
             scene=state.scene,
             status=state.status,
@@ -177,10 +189,10 @@ class InformationStory(AssistantStory):
             story_id=self.story_id,
             scene_id="goal_invitations",
             content=(
-                *unlock_intro,
                 AssistantLine("Hello."),
                 AssistantLine("I have important news for you.", typing_delay=0.7),
                 AssistantLine(invitation_text, typing_delay=2.7),
+                *unlock_intro,
                 *(_goal_fact_cards(invitations)),
             ),
             choices=(AssistantChoice("acknowledge", "Got it"),),
