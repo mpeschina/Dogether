@@ -135,6 +135,8 @@ def render_assistant(
     view = StreamlitAssistantView()
     director = AssistantDirector(persistence, default_stories())
     director.render(context, view)
+    if st.session_state.get("assistant.destination"):
+        st.rerun()
     if information_completed(st.session_state):
         if st.button("Go Main Page", type="primary", use_container_width=True):
             st.session_state["assistant.destination"] = "goals"
