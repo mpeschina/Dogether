@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from math import ceil
 import random
 from typing import Final
 
 from src.assistant.core import AssistantCard, AssistantChoice, AssistantContext, AssistantLine, AssistantSelection, AssistantStory, AssistantTurn
-from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _momentum_halves, _now, _week_start
+from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _datetime, _momentum_halves, _now, _week_start
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _shared_insights, _used_existing_insights
 from src.db.persistence_helpers import APP_ZONE
 from src.pages.common_helpers import compact_goal_activity_html
@@ -16,7 +17,27 @@ WEEK_SELECTION_EVENT_ID: Final = "weekly_summary.selection"
 SELECT_SCENE: Final = "weekly.select"
 SUMMARY_SCENE: Final = "weekly.summary"
 DETAILS_SCENE: Final = "weekly.details"
+UNAVAILABLE_PREFACE_SCENE: Final = "weekly.unavailable_preface"
+UNAVAILABLE_HINT_SCENE: Final = "weekly.unavailable_hint"
 WEEK_TO_WEEK_CHART_WEEKS: Final = 20
+WEEKLY_SUMMARY_UNAVAILABLE_MESSAGE: Final = "Currently Unavailable"
+
+
+def _weekly_summary_unlock_at(context: AssistantContext) -> datetime | None:
+    """Return the precise time a new account has completed its first week.
+
+    Older account records and lightweight test contexts may not have a creation
+    timestamp, so they remain eligible for the established summary behavior.
+    """
+    created_at = _datetime(context.current_user.get("created_at"))
+    if created_at is None:
+        return None
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=APP_ZONE)
+    else:
+        created_at = created_at.astimezone(APP_ZONE)
+    return created_at + timedelta(days=7)
+
 
 class WeeklySummaryStory(AssistantStory):
     story_id = WEEKLY_SUMMARY_STORY_ID
@@ -36,6 +57,41 @@ class WeeklySummaryStory(AssistantStory):
 
     def advance(self, context: AssistantContext, scene_id: str | None, selection: AssistantSelection | None) -> AssistantTurn:
         scene = scene_id or self.entry_scene(context)
+        unlock_at = _weekly_summary_unlock_at(context)
+        if unlock_at is not None and _now(context) < unlock_at:
+            if scene == UNAVAILABLE_PREFACE_SCENE:
+                return AssistantTurn(
+                    self.story_id,
+                    scene,
+                    lines=(AssistantLine("I give you a small hint", wait_before=1, typing_delay=3),),
+                    state_story=self.story_id,
+                    state_scene=UNAVAILABLE_HINT_SCENE,
+                    state_status="active",
+                    continue_flow=True,
+                )
+            if scene == UNAVAILABLE_HINT_SCENE:
+                remaining_seconds = max(0, (unlock_at - _now(context)).total_seconds())
+                remaining_hours = ceil(remaining_seconds / 3600)
+                hint = f"It is unlocked in {remaining_hours} hours"
+                return AssistantTurn(
+                    self.story_id,
+                    scene,
+                    lines=(AssistantLine(hint, typing_delay=1.5),),
+                    completed=True,
+                    state_story=self.story_id,
+                    state_scene=scene,
+                    state_status="completed",
+                )
+            return AssistantTurn(
+                self.story_id,
+                scene,
+                statuses=(WEEKLY_SUMMARY_UNAVAILABLE_MESSAGE,),
+                keep_statuses_in_history=True,
+                state_story=self.story_id,
+                state_scene=UNAVAILABLE_PREFACE_SCENE,
+                state_status="active",
+                continue_flow=True,
+            )
         now = _now(context)
         if scene == SELECT_SCENE:
             if selection is None or selection.choice_id not in {"this", "last"}:

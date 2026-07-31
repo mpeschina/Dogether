@@ -5,7 +5,10 @@ from src.assistant.state import AssistantState
 from src.assistant.stories.weekly_summary import (
     SELECT_SCENE,
     SUMMARY_SCENE,
+    UNAVAILABLE_PREFACE_SCENE,
+    UNAVAILABLE_HINT_SCENE,
     WEEK_TO_WEEK_CHART_WEEKS,
+    WEEKLY_SUMMARY_UNAVAILABLE_MESSAGE,
     WEEKLY_SUMMARY_STORY_ID,
     WeeklySummaryStory,
     _streak_content,
@@ -46,6 +49,27 @@ def test_monday_automatically_analyses_last_week() -> None:
     assert turn.lines[0].text == "Let’s look at last week."
     assert turn.cards[0].title == "WEEKLY COMPLETION"
     assert turn.event_updates["weekly_summary.selection"]["partial"] is False
+
+
+def test_summary_is_unavailable_until_the_account_has_a_closed_week() -> None:
+    context = _context(datetime(2026, 7, 27, tzinfo=timezone.utc))
+    context.current_user["created_at"] = "2026-07-21T10:00:00+00:00"
+
+    turn = WeeklySummaryStory().advance(context, SELECT_SCENE, None)
+
+    assert turn.statuses == (WEEKLY_SUMMARY_UNAVAILABLE_MESSAGE,)
+    assert turn.keep_statuses_in_history
+    assert not turn.lines
+    assert not turn.choices
+
+    preface = WeeklySummaryStory().advance(context, UNAVAILABLE_PREFACE_SCENE, None)
+
+    assert preface.lines == (AssistantLine("small hint from me:", wait_before=2),)
+
+    hint = WeeklySummaryStory().advance(context, UNAVAILABLE_HINT_SCENE, None)
+
+    assert hint.lines == (AssistantLine("Hint: it unlocks in 34 hours", typing_delay=4),)
+    assert hint.completed
 
 
 def test_thursday_offers_this_or_last_week_and_marks_current_week_partial() -> None:
