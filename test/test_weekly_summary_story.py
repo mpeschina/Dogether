@@ -58,7 +58,7 @@ def test_thursday_offers_this_or_last_week_and_marks_current_week_partial() -> N
         AssistantSelection(WEEKLY_SUMMARY_STORY_ID, SELECT_SCENE, "this", "This week"),
     )
 
-    assert [choice.label for choice in prompt.choices] == ["This week", "Last week"]
+    assert [choice.id for choice in prompt.choices] == ["this", "last"]
     assert turn.lines[0].text == "This week is still moving."
     assert turn.cards[0].title == "COMPLETION SO FAR"
 
@@ -71,7 +71,7 @@ def test_week_selection_uses_the_apps_local_weekday() -> None:
     prompt = story.advance(context, SELECT_SCENE, None)
 
     assert prompt.scene_id == SELECT_SCENE
-    assert [choice.label for choice in prompt.choices] == ["This week", "Last week"]
+    assert [choice.id for choice in prompt.choices] == ["this", "last"]
 
 
 def test_completed_weekly_summary_prompts_for_a_week_again() -> None:
@@ -88,7 +88,7 @@ def test_completed_weekly_summary_prompts_for_a_week_again() -> None:
     prompt = WeeklySummaryStory().advance(context, None, None)
 
     assert prompt.scene_id == SELECT_SCENE
-    assert [choice.label for choice in prompt.choices] == ["This week", "Last week"]
+    assert [choice.id for choice in prompt.choices] == ["this", "last"]
 
 
 def test_active_weekly_summary_resumes_without_showing_week_picker() -> None:
