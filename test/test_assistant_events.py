@@ -44,6 +44,12 @@ from src.assistant.stories.special_examples import (
     STATUS_CLICK_COUNT,
     SpecialExampleStory,
 )
+from src.assistant.stories.smalltalk import (
+    SMALLTALK_CLICKED_AT_SESSION_KEY,
+    SMALLTALK_OPENERS,
+    SMALLTALK_OPENER_SELECTED_AT_SESSION_KEY,
+    SmalltalkStory,
+)
 from src.assistant.stories.standard import (
     PUSH_PROMPT_EVENT_ID,
     STANDARD_HELP_SCENE,
@@ -545,7 +551,7 @@ def test_profile_analysis_resumes_after_goal_and_notification_explanations() -> 
 
 
 def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
-    story = StandardStory()
+    story = StandardStory(smalltalk_story=SmalltalkStory(random_source=StubRandom(0, 0)))
     state = AssistantState(
         story=STANDARD_STORY_ID,
         scene=READY_NODE,
@@ -555,6 +561,7 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
     menu = story.advance(context, STANDARD_MENU_SCENE, None)
     assert [choice.label for choice in menu.choices] == [
         "Help me with the app",
+        SMALLTALK_OPENERS[0],
         "Analyse my progress",
     ]
 
@@ -589,6 +596,90 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
     updated = apply_turn(state, start)
     assert updated.story == TUTORIAL_STORY_ID
     assert updated.scene == FRIENDS_NODE
+
+
+def test_smalltalk_menu_choice_is_owned_by_smalltalk_story_and_returns_to_standard_menu() -> None:
+    assert SMALLTALK_OPENERS
+    assert len(set(SMALLTALK_OPENERS)) == len(SMALLTALK_OPENERS)
+
+    smalltalk = SmalltalkStory(random_source=StubRandom(0, 1))
+    story = StandardStory(smalltalk_story=smalltalk)
+    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
+    context = context_for(state)
+    menu = story.advance(context, STANDARD_MENU_SCENE, None)
+
+    assert menu.choices[1].id == "smalltalk"
+    assert menu.choices[1].label == SMALLTALK_OPENERS[1]
+
+    placeholder = story.advance(
+        context,
+        STANDARD_MENU_SCENE,
+        selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "smalltalk", menu.choices[1].label),
+    )
+    assert [line.text for line in placeholder.lines] == [
+        "Excellent opener.",
+        "Smalltalk is currently unavailable.",
+    ]
+    assert [choice.id for choice in placeholder.choices] == ["help", "weekly_summary"]
+    assert placeholder.story_id == STANDARD_STORY_ID
+    assert placeholder.scene_id == STANDARD_MENU_SCENE
+    returned_state = apply_turn(state, placeholder)
+    assert returned_state.story == STANDARD_STORY_ID
+    assert returned_state.scene == STANDARD_MENU_SCENE
+
+    ordinary_smalltalk = SmalltalkStory(random_source=StubRandom(0.1, 0))
+    ordinary = ordinary_smalltalk.advance(context, None, None)
+    assert [line.text for line in ordinary.lines] == [
+        "Smalltalk is currently unavailable.",
+    ]
+
+
+def test_smalltalk_opener_is_session_scoped_and_refreshes_after_three_hours() -> None:
+    random_source = StubRandom(0, 0)
+    smalltalk = SmalltalkStory(random_source=random_source)
+    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
+    session = {}
+    initial = context_for(
+        state,
+        session_state=session,
+        now=datetime(2026, 7, 26, 12, tzinfo=timezone.utc),
+    )
+
+    assert smalltalk.menu_choice(initial).label == SMALLTALK_OPENERS[0]
+    assert SMALLTALK_OPENER_SELECTED_AT_SESSION_KEY in session
+
+    random_source.choice_index = 1
+    within_interval = replace(initial, now=datetime(2026, 7, 26, 14, 59, tzinfo=timezone.utc))
+    assert smalltalk.menu_choice(within_interval).label == SMALLTALK_OPENERS[0]
+
+    at_refresh = replace(initial, now=datetime(2026, 7, 26, 15, tzinfo=timezone.utc))
+    assert smalltalk.menu_choice(at_refresh).label == SMALLTALK_OPENERS[1]
+
+
+def test_smalltalk_choice_is_hidden_for_one_hour_after_clicking() -> None:
+    random_source = StubRandom(0, 0)
+    smalltalk = SmalltalkStory(random_source=random_source)
+    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
+    session = {}
+    initial = context_for(
+        state,
+        session_state=session,
+        now=datetime(2026, 7, 26, 12, tzinfo=timezone.utc),
+    )
+
+    assert smalltalk.menu_choice(initial) is not None
+    smalltalk.advance(initial, None, None)
+    assert SMALLTALK_CLICKED_AT_SESSION_KEY in session
+    assert smalltalk.menu_choice(initial) is None
+
+    within_cooldown = replace(initial, now=datetime(2026, 7, 26, 12, 59, tzinfo=timezone.utc))
+    assert smalltalk.menu_choice(within_cooldown) is None
+
+    random_source.choice_index = 1
+    after_cooldown = replace(initial, now=datetime(2026, 7, 26, 13, tzinfo=timezone.utc))
+    choice = smalltalk.menu_choice(after_cooldown)
+    assert choice is not None
+    assert choice.label == SMALLTALK_OPENERS[1]
 
 
 def test_completing_profile_analysis_unlocks_the_help_tutorial_menu() -> None:

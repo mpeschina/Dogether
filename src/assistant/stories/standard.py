@@ -12,6 +12,7 @@ from src.assistant.core import (
     AssistantStory,
     AssistantTurn,
 )
+from src.assistant.stories.smalltalk import SmalltalkStory
 from src.assistant.stories.tutorial import (
     EXPLANATION_SCENES,
     FRIENDS_EXPLANATION_NODE,
@@ -49,6 +50,7 @@ TUTORIAL_OPTIONS: Final = (
 
 def standard_menu_turn(
     *,
+    smalltalk_choice: AssistantChoice | None,
     lines: tuple[AssistantLine, ...] = (),
     knowledge_updates=None,
 ) -> AssistantTurn:
@@ -56,9 +58,14 @@ def standard_menu_turn(
         story_id=STANDARD_STORY_ID,
         scene_id=STANDARD_MENU_SCENE,
         lines=lines,
-        choices=(
-            AssistantChoice("help", "Help me with the app"),
-            AssistantChoice("weekly_summary", "Analyse my progress"),
+        choices=tuple(
+            choice
+            for choice in (
+                AssistantChoice("help", "Help me with the app"),
+                smalltalk_choice,
+                AssistantChoice("weekly_summary", "Analyse my progress"),
+            )
+            if choice is not None
         ),
         choice_label="",
         knowledge_updates=knowledge_updates or {},
@@ -92,6 +99,22 @@ def standard_help_turn(
 class StandardStory(AssistantStory):
     story_id = STANDARD_STORY_ID
 
+    def __init__(self, *, smalltalk_story: SmalltalkStory | None = None) -> None:
+        self._smalltalk_story = smalltalk_story or SmalltalkStory()
+
+    def _menu_turn(
+        self,
+        context: AssistantContext,
+        *,
+        lines: tuple[AssistantLine, ...] = (),
+        knowledge_updates=None,
+    ) -> AssistantTurn:
+        return standard_menu_turn(
+            smalltalk_choice=self._smalltalk_story.menu_choice(context),
+            lines=lines,
+            knowledge_updates=knowledge_updates,
+        )
+
     def entry_scene(self, context: AssistantContext) -> str:
         # Only preserve an in-progress help scene during a rerun of Assistant.
         if (
@@ -112,7 +135,7 @@ class StandardStory(AssistantStory):
         if scene_id in EXPLANATION_SCENES:
             if context.previous_page_key != "assistant" and selection is None:
                 return replace(
-                    standard_menu_turn(),
+                    self._menu_turn(context),
                     state_story=self.story_id,
                     state_scene=READY_NODE,
                     state_status="completed",
@@ -122,7 +145,7 @@ class StandardStory(AssistantStory):
 
         if scene_id == STANDARD_MENU_SCENE:
             if selection is None:
-                return standard_menu_turn()
+                return self._menu_turn(context)
             if selection.choice_id == "help":
                 return replace(
                     standard_help_turn(
@@ -138,7 +161,14 @@ class StandardStory(AssistantStory):
             if selection.choice_id == "weekly_summary":
                 from src.assistant.stories.weekly_summary import WeeklySummaryStory
                 return WeeklySummaryStory().advance(context, None, None)
-            return standard_menu_turn()
+            if selection.choice_id == "smalltalk":
+                return replace(
+                    self._smalltalk_story.advance(context, None, selection),
+                    story_id=self.story_id,
+                    scene_id=STANDARD_MENU_SCENE,
+                    choices=self._menu_turn(context).choices,
+                )
+            return self._menu_turn(context)
 
         if selection is None:
             return standard_help_turn(
