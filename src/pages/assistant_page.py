@@ -18,15 +18,11 @@ from src.push.storage import PushStorage
 # Choose one of these palette values for the Assistant badge. Set the active
 # color to ``None`` to inherit Streamlit's configured primary color instead.
 ASSISTANT_COLORS = {
+    "light_ash": "#687B99",
     "sky_blue": "#2E90FA",
-    "light_ash": "#667085",
-    "sidebar_secondaryColor": "#5C7492",
     "reddish_pink": "#F0447A",
-    "violet": "#7F56D9",
-    "emerald": "#12B76A",
-    "amber": "#F79009",
 }
-ASSISTANT_ICON_BACKGROUND_COLOR: str | None = ASSISTANT_COLORS["sidebar_secondaryColor"]
+ASSISTANT_ICON_BACKGROUND_COLOR: str | None = ASSISTANT_COLORS["light_ash"]
 ASSISTANT_ICON_FOREGROUND_COLOR = "#FFFFFF"
 ASSISTANT_BADGE_SIZE_MULTIPLIER: float = 1.0
 ASSISTANT_ICON_SIZE_MULTIPLIER: float = 1.0
