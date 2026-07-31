@@ -576,6 +576,21 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
     assert updated.knowledge["tutorial.friends.seen"] is True
 
 
+def test_standard_help_selection_restarts_at_menu_after_leaving_assistant() -> None:
+    story = StandardStory()
+    selection_state = AssistantState(
+        story=STANDARD_STORY_ID,
+        scene=STANDARD_HELP_SCENE,
+        status="active",
+    )
+
+    assert story.entry_scene(context_for(selection_state)) == STANDARD_HELP_SCENE
+    assert (
+        story.entry_scene(context_for(selection_state, previous_page_key="goals"))
+        == STANDARD_MENU_SCENE
+    )
+
+
 def test_greetings_choose_a_randomized_greeting_once_per_hour_and_forward_to_menu() -> None:
     state = AssistantState(
         story=STANDARD_STORY_ID,

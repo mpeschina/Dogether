@@ -84,7 +84,12 @@ class StandardStory(AssistantStory):
     story_id = STANDARD_STORY_ID
 
     def entry_scene(self, context: AssistantContext) -> str:
-        if context.state.story == self.story_id and context.state.scene in (*EXPLANATION_SCENES, STANDARD_HELP_SCENE):
+        # Only preserve an in-progress help scene during a rerun of Assistant.
+        if (
+            context.previous_page_key == "assistant"
+            and context.state.story == self.story_id
+            and context.state.scene in (*EXPLANATION_SCENES, STANDARD_HELP_SCENE)
+        ):
             return context.state.scene or STANDARD_MENU_SCENE
         return STANDARD_MENU_SCENE
 
