@@ -194,7 +194,7 @@ def assistant_page() -> None:
 
 def debug_page() -> None:
     mark_current_page("debug")
-    render_debug(persistence, push_storage, configured_push)
+    render_debug(persistence, push_storage, configured_push, user_id=user_id, now=app_now)
 
 
 goals_page_entry = st.Page(main_page, title="Goals", default=True, icon=":material/dashboard:")

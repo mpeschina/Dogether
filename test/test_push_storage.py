@@ -85,6 +85,18 @@ def test_json_push_storage_allows_multiple_endpoints_per_user(tmp_path: Path) ->
     assert endpoints == {"https://push.example/one", "https://push.example/two"}
 
 
+def test_push_storage_deletes_all_subscriptions_for_one_user(tmp_path: Path) -> None:
+    storage = JsonPushStorage(tmp_path / "push_subscriptions.json")
+    storage.save_subscription("alice", "alice@example.com", subscription("https://push.example/one"))
+    storage.save_subscription("alice", "alice@example.com", subscription("https://push.example/two"))
+    storage.save_subscription("bob", "bob@example.com", subscription("https://push.example/three"))
+
+    storage.delete_subscriptions_for_user("alice")
+
+    assert storage.subscriptions_for_user("alice") == []
+    assert [record["endpoint"] for record in storage.subscriptions_for_user("bob")] == ["https://push.example/three"]
+
+
 def test_json_push_storage_rejects_invalid_subscription(tmp_path: Path) -> None:
     storage = JsonPushStorage(tmp_path / "push_subscriptions.json")
 
@@ -108,6 +120,18 @@ def test_mongo_push_storage_uses_endpoint_as_document_id() -> None:
     storage.delete_subscription("https://push.example/one")
 
     assert set(collection.documents) == {"https://push.example/two"}
+
+
+def test_mongo_push_storage_deletes_all_subscriptions_for_one_user() -> None:
+    collection = FakeMongoCollection()
+    storage = MongoPushStorage(mongo_collection=collection)
+    storage.save_subscription("alice", "alice@example.com", subscription("https://push.example/one"))
+    storage.save_subscription("alice", "alice@example.com", subscription("https://push.example/two"))
+    storage.save_subscription("bob", "bob@example.com", subscription("https://push.example/three"))
+
+    storage.delete_subscriptions_for_user("alice")
+
+    assert set(collection.documents) == {"https://push.example/three"}
 
 
 def test_mongo_push_storage_caches_subscriptions_and_invalidates_after_writes() -> None:

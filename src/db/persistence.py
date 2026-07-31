@@ -17,6 +17,8 @@ class Persistence(Protocol):
 
     def get_user(self, user_id: str) -> dict[str, Any] | None: ...
 
+    def purge_account(self, user_id: str, now: datetime | None = None) -> dict[str, Any]: ...
+
     def save_assistant_state(
         self,
         user_id: str,

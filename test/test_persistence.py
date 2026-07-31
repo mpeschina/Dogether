@@ -302,6 +302,43 @@ def test_assistant_state_persists_in_json_user_profile_and_resets(tmp_path: Path
     assert AssistantState.from_profile(reset_profile or {}) == AssistantState.reset()
 
 
+def test_purge_account_resets_profile_and_removes_all_json_references(tmp_path: Path) -> None:
+    persistence = JsonPersistence(tmp_path / "users.json")
+    alice, bob = users_and_friendship(persistence)
+    persistence.upsert_user("charlie", "charlie@example.com", "Charlie")
+    persistence.ensure_friend_share_code("alice")
+    persistence.save_assistant_state("alice", AssistantState(mode=AssistantMode.SPECIAL).to_dict())
+    persistence.create_friend_suggestion("alice", ["bob", "charlie"])
+    goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 2)
+    persistence.set_goal_completion_reaction(goal["id"], "bob", "alice", "🚀")
+    persistence.claim_goal_reaction_notification(goal["id"], "bob", "alice")
+    persistence.remove_friend("alice", "bob")
+    persistence.create_friend_invite("bob", bob["email"], alice["email"])
+
+    profile = persistence.purge_account("alice", now=at("2026-06-02T09:00:00"))
+    data = persistence.raw_data()
+    retained_goal = data["goals"][goal["id"]]
+
+    assert profile == {
+        "user_id": "alice",
+        "email": "alice@example.com",
+        "name": "Alice",
+        "created_at": "2026-06-02T07:00:00+00:00",
+        "last_seen_at": "2026-06-02T07:00:00+00:00",
+        "dismissed_friend_suggestion_pairs": [],
+    }
+    assert data["users"]["alice"] == profile
+    assert data["friend_invites"] == {}
+    assert data["friend_suggestions"] == {}
+    assert data["friendships"] == {}
+    assert "alice" not in data["user_stats"]
+    assert retained_goal["created_by"] == "bob"
+    assert retained_goal["participant_user_ids"] == ["bob"]
+    assert "alice" not in retained_goal["participants"]
+    assert retained_goal["participants"]["bob"].get("completion_reactions", {}) == {}
+    assert "reaction_notification_timestamps" not in data["users"]["bob"]
+
+
 def test_legacy_and_malformed_assistant_profiles_normalize_safely(tmp_path: Path) -> None:
     path = tmp_path / "users.json"
     path.write_text(
@@ -1510,6 +1547,26 @@ def test_mongodb_native_assistant_state_uses_targeted_write_without_read() -> No
         database["users_inventory"].documents["alice"]["assistant_state"]
         == state.to_dict()
     )
+
+
+def test_mongodb_native_purge_account_removes_references_and_transfers_goal_owner() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob")
+    invite = persistence.create_friend_invite("alice", alice["email"], bob["email"])
+    persistence.respond_friend_invite(invite["id"], "bob", bob["email"], approve=True)
+    goal = persistence.create_goal("alice", "Run", "daily", 1, ["bob"], 2)
+    persistence.set_goal_completion_reaction(goal["id"], "bob", "alice", "🚀")
+
+    profile = persistence.purge_account("alice", now=at("2026-06-02T09:00:00"))
+    raw = persistence.raw_data()
+
+    assert raw["users"]["alice"] == profile
+    assert raw["friendships"] == {}
+    assert raw["goals"][goal["id"]]["created_by"] == "bob"
+    assert "alice" not in raw["goals"][goal["id"]]["participants"]
+    assert raw["goals"][goal["id"]]["participants"]["bob"].get("completion_reactions", {}) == {}
 
 
 def test_mongodb_native_goal_reaction_notifications_use_targeted_update() -> None:

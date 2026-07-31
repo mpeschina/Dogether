@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 import streamlit as st
 
+from src.pages.account_page import reset_assistant_session_state
 from src.db.persistence import APP_ZONE, Persistence
 from src.push.sender import push_configured, send_push_to_user
 from src.push.storage import PushStorage
@@ -75,8 +76,14 @@ def render_debug(
     persistence: Persistence,
     push_storage: PushStorage | None = None,
     push_settings: Mapping[str, str] | None = None,
+    *,
+    user_id: str,
+    now: datetime | None = None,
 ) -> None:
     st.title("Debug")
+    flash = st.session_state.pop("debug_account_purge_flash", None)
+    if flash:
+        st.success(str(flash))
     offset_seconds = int(persistence.debug_time_offset_seconds())
     server_now = _server_now()
     effective_now = debug_now(persistence, True, server_now)
@@ -100,6 +107,70 @@ def render_debug(
     render_deployment_diagnostics()
     render_viewport_diagnostics()
     render_debug_push_notification(persistence, push_storage, push_settings or {})
+    render_account_purge(persistence, push_storage, user_id, now=now)
+
+
+def render_account_purge(
+    persistence: Persistence,
+    push_storage: PushStorage | None,
+    user_id: str,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Render a deliberately explicit, session-scoped account purge control."""
+    pending_key = "debug_account_purge_pending"
+    nonce_key = "debug_account_purge_nonce"
+    error_key = "debug_account_purge_error"
+
+    def show_confirmation() -> None:
+        st.session_state[pending_key] = True
+        st.session_state.pop(error_key, None)
+
+    def cancel_confirmation() -> None:
+        st.session_state.pop(pending_key, None)
+        st.session_state.pop(error_key, None)
+        st.session_state[nonce_key] = int(st.session_state.get(nonce_key, 0)) + 1
+
+    def submit_purge() -> None:
+        nonce = int(st.session_state.get(nonce_key, 0))
+        confirmation = str(st.session_state.get(f"debug_account_purge_confirmation_{nonce}", "")).strip()
+        if confirmation != "clear account":
+            st.session_state[error_key] = 'Enter exactly "clear account" to confirm the purge.'
+            return
+        if push_storage is None:
+            st.session_state[error_key] = "Push subscription storage is unavailable; account was not reset."
+            return
+        try:
+            push_storage.delete_subscriptions_for_user(user_id)
+            persistence.purge_account(user_id, now=now)
+        except Exception as error:
+            st.session_state[error_key] = f"Account purge failed: {error}"
+            return
+
+        debug_user_id = st.session_state.get("debug_user_id")
+        reset_assistant_session_state(st.session_state, user_id)
+        for key in list(st.session_state):
+            if key != "debug_user_id":
+                st.session_state.pop(key, None)
+        if debug_user_id:
+            st.session_state["debug_user_id"] = debug_user_id
+        st.session_state["debug_account_purge_flash"] = "Account reset to standard values."
+
+    st.divider()
+    st.subheader("Danger zone")
+    st.warning("This permanently clears this account's app data, shared-account links, and push subscriptions.")
+    if not st.session_state.get(pending_key):
+        st.button("Full purge account", type="primary", key="debug_account_purge_start", on_click=show_confirmation)
+        return
+
+    st.write('Type `clear account` to permanently reset the currently logged-in account.')
+    nonce = int(st.session_state.get(nonce_key, 0))
+    st.text_input("Confirmation", key=f"debug_account_purge_confirmation_{nonce}")
+    if error := st.session_state.get(error_key):
+        st.error(str(error))
+    submit_col, cancel_col = st.columns(2)
+    submit_col.button("Submit purge", type="primary", use_container_width=True, key="debug_account_purge_submit", on_click=submit_purge)
+    cancel_col.button("Cancel", use_container_width=True, key="debug_account_purge_cancel", on_click=cancel_confirmation)
 
 
 def render_deployment_diagnostics() -> None:

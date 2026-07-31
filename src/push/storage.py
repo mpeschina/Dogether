@@ -28,6 +28,8 @@ class PushStorage(Protocol):
 
     def delete_subscription(self, endpoint: str) -> None: ...
 
+    def delete_subscriptions_for_user(self, user_id: str) -> None: ...
+
     def subscriptions_for_user(self, user_id: str) -> list[dict[str, Any]]: ...
 
 
@@ -126,6 +128,10 @@ class JsonPushStorage:
             del data[endpoint]
             self._write(data)
 
+    def delete_subscriptions_for_user(self, user_id: str) -> None:
+        for record in self.subscriptions_for_user(user_id):
+            self.delete_subscription(record["endpoint"])
+
     def subscriptions_for_user(self, user_id: str) -> list[dict[str, Any]]:
         return [
             copy.deepcopy(record)
@@ -192,6 +198,10 @@ class MongoPushStorage:
     def delete_subscription(self, endpoint: str) -> None:
         self.collection.delete_one({"_id": endpoint})
         self._cache_clear()
+
+    def delete_subscriptions_for_user(self, user_id: str) -> None:
+        for record in self.subscriptions_for_user(user_id):
+            self.delete_subscription(record["endpoint"])
 
     def subscriptions_for_user(self, user_id: str) -> list[dict[str, Any]]:
         cache_key = ("subscriptions_for_user", user_id)

@@ -318,6 +318,91 @@ class MongoNativePersistence:
 
         return self._read_cached(("user", user_id), load_user)
 
+    def purge_account(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:
+        """Reset one account while removing every persisted reference to it."""
+        existing = self.get_user(user_id)
+        if not existing:
+            raise ValueError("User not found.")
+        now_iso = _iso(now)
+        email = normalize_email(existing.get("email", ""))
+        name = str(existing.get("name") or email).strip() or email
+
+        for document in self._friend_invites_collection().find({}):
+            invite = self._strip_id(document) or {}
+            if (
+                invite.get("from_user_id") == user_id
+                or invite.get("to_user_id") == user_id
+                or normalize_email(invite.get("to_email", "")) == email
+            ):
+                self._friend_invites_collection().delete_one({"_id": document["_id"]})
+        for document in self._friend_suggestions_collection().find({}):
+            suggestion = self._strip_id(document) or {}
+            if suggestion.get("suggested_by_user_id") == user_id or user_id in suggestion.get("suggested_user_ids", []):
+                self._friend_suggestions_collection().delete_one({"_id": document["_id"]})
+        for document in self._friendships_collection().find({}):
+            friendship = self._strip_id(document) or {}
+            if user_id in friendship.get("user_ids", []):
+                self._friendships_collection().delete_one({"_id": document["_id"]})
+
+        for document in self._goals_collection().find({}):
+            goal = self._strip_id(document) or {}
+            participants = goal.get("participants", {})
+            for participant in participants.values():
+                reactions = participant.get("completion_reactions", {})
+                if not isinstance(reactions, dict):
+                    continue
+                for period_key, period_reactions in list(reactions.items()):
+                    if isinstance(period_reactions, dict):
+                        period_reactions.pop(user_id, None)
+                        if not period_reactions:
+                            reactions.pop(period_key, None)
+            participants.pop(user_id, None)
+            goal["participant_user_ids"] = [
+                participant_id
+                for participant_id in goal.get("participant_user_ids", [])
+                if participant_id != user_id and participant_id in participants
+            ]
+            active_participants = sorted(
+                participant_id
+                for participant_id, participant in participants.items()
+                if isinstance(participant, dict) and not participant.get("left_at")
+            )
+            if not active_participants:
+                self._goals_collection().delete_one({"_id": document["_id"]})
+                continue
+            if goal.get("created_by") == user_id:
+                goal["created_by"] = min(
+                    active_participants,
+                    key=lambda participant_id: (
+                        str(participants[participant_id].get("joined_at") or goal.get("created_at") or ""),
+                        participant_id,
+                    ),
+                )
+            self._goals_collection().replace_one({"_id": document["_id"]}, {"_id": document["_id"], **goal}, upsert=True)
+
+        for document in self._users_inventory_collection().find({}):
+            user = self._strip_id(document) or {}
+            timestamps = user.get("reaction_notification_timestamps")
+            if isinstance(timestamps, dict) and user_id in timestamps:
+                timestamps.pop(user_id, None)
+                if timestamps:
+                    user["reaction_notification_timestamps"] = timestamps
+                else:
+                    user.pop("reaction_notification_timestamps", None)
+                self._users_inventory_collection().replace_one({"_id": document["_id"]}, {"_id": document["_id"], **user}, upsert=True)
+        self._user_stats_collection().delete_one({"_id": user_id})
+        profile = {
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "created_at": now_iso,
+            "last_seen_at": now_iso,
+            "dismissed_friend_suggestion_pairs": [],
+        }
+        self._users_inventory_collection().replace_one({"_id": user_id}, {"_id": user_id, **profile}, upsert=True)
+        self._cache_clear()
+        return copy.deepcopy(profile)
+
     def save_assistant_state(
         self,
         user_id: str,
@@ -760,6 +845,7 @@ class MongoNativePersistence:
                     "completion_notification_counts": {},
                     "skipped": False,
                     "period_outcomes": {},
+                    "joined_at": now_iso,
                     "left_at": None,
                 }
                 for participant_id in participant_ids
@@ -809,6 +895,7 @@ class MongoNativePersistence:
                 "completion_notification_counts": {},
                 "skipped": False,
                 "period_outcomes": {},
+                "joined_at": _iso(now_dt),
                 "left_at": None,
             }
             goal["participants"][participant_id] = participant

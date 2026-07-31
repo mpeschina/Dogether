@@ -77,6 +77,89 @@ class DocumentPersistence:
         with self._lock:
             return self._read()["users"].get(user_id)
 
+    def purge_account(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:
+        """Reset one account while removing every persisted reference to it."""
+        now_iso = _iso(now)
+        with self._lock:
+            data = self._read()
+            existing = data["users"].get(user_id)
+            if not existing:
+                raise ValueError("User not found.")
+
+            email = normalize_email(existing.get("email", ""))
+            name = str(existing.get("name") or email).strip() or email
+
+            for invite_id, invite in list(data["friend_invites"].items()):
+                if (
+                    invite.get("from_user_id") == user_id
+                    or invite.get("to_user_id") == user_id
+                    or normalize_email(invite.get("to_email", "")) == email
+                ):
+                    del data["friend_invites"][invite_id]
+            for suggestion_id, suggestion in list(data["friend_suggestions"].items()):
+                if (
+                    suggestion.get("suggested_by_user_id") == user_id
+                    or user_id in suggestion.get("suggested_user_ids", [])
+                ):
+                    del data["friend_suggestions"][suggestion_id]
+            for friendship_id, friendship in list(data["friendships"].items()):
+                if user_id in friendship.get("user_ids", []):
+                    del data["friendships"][friendship_id]
+
+            for goal_id, goal in list(data["goals"].items()):
+                participants = goal.get("participants", {})
+                for participant in participants.values():
+                    reactions = participant.get("completion_reactions", {})
+                    if not isinstance(reactions, dict):
+                        continue
+                    for period_key, period_reactions in list(reactions.items()):
+                        if isinstance(period_reactions, dict):
+                            period_reactions.pop(user_id, None)
+                            if not period_reactions:
+                                reactions.pop(period_key, None)
+
+                participants.pop(user_id, None)
+                goal["participant_user_ids"] = [
+                    participant_id
+                    for participant_id in goal.get("participant_user_ids", [])
+                    if participant_id != user_id and participant_id in participants
+                ]
+                active_participants = sorted(
+                    participant_id
+                    for participant_id, participant in participants.items()
+                    if isinstance(participant, dict) and not participant.get("left_at")
+                )
+                if not active_participants:
+                    del data["goals"][goal_id]
+                    continue
+                if goal.get("created_by") == user_id:
+                    goal["created_by"] = min(
+                        active_participants,
+                        key=lambda participant_id: (
+                            str(participants[participant_id].get("joined_at") or goal.get("created_at") or ""),
+                            participant_id,
+                        ),
+                    )
+
+            for user in data["users"].values():
+                timestamps = user.get("reaction_notification_timestamps")
+                if isinstance(timestamps, dict):
+                    timestamps.pop(user_id, None)
+                    if not timestamps:
+                        user.pop("reaction_notification_timestamps", None)
+            data["user_stats"].pop(user_id, None)
+            profile = {
+                "user_id": user_id,
+                "email": email,
+                "name": name,
+                "created_at": now_iso,
+                "last_seen_at": now_iso,
+                "dismissed_friend_suggestion_pairs": [],
+            }
+            data["users"][user_id] = profile
+            self._write(data)
+            return copy.deepcopy(profile)
+
     def save_assistant_state(
         self,
         user_id: str,
@@ -588,6 +671,7 @@ class DocumentPersistence:
                         "completion_notification_counts": {},
                         "skipped": False,
                         "period_outcomes": {},
+                        "joined_at": now_iso,
                         "left_at": None,
                     }
                     for participant_id in participant_ids
@@ -654,6 +738,7 @@ class DocumentPersistence:
                     "completion_notification_counts": {},
                     "skipped": False,
                     "period_outcomes": {},
+                    "joined_at": _iso(now_dt),
                     "left_at": None,
                 }
 
