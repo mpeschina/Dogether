@@ -97,6 +97,31 @@ def test_choice_round_replays_history_and_consumes_click_once() -> None:
     ]
 
 
+def test_choice_can_be_italic_and_skip_the_user_transcript() -> None:
+    app_source = """
+import src.assistant.presentation as presentation
+from src.assistant.core import AssistantChoice, AssistantLine, AssistantTurn
+
+view = presentation.StreamlitAssistantView()
+if view.selection is not None:
+    view.present(AssistantTurn(story_id='test', scene_id='done', lines=(AssistantLine('Done'),)))
+elif not view.waiting_for_input:
+    view.present(AssistantTurn(
+        story_id='test', scene_id='start',
+        choices=(AssistantChoice('speak', 'Speak'), AssistantChoice('act', 'say nothing', style='italic', record_selection=False)),
+    ))
+view.finish()
+"""
+    app = AppTest.from_string(app_source, default_timeout=10).run()
+
+    control = app.session_state.filtered_state["assistant.active_control"]
+    assert control["choices"][1]["style"] == "italic"
+    assert control["choices"][1]["record_selection"] is False
+
+    app.button[1].click().run()
+    assert app.session_state.filtered_state["assistant.transcript"] == [("assistant", "Done")]
+
+
 def test_send_control_is_restored_without_recording_player_bubbles() -> None:
     app = AppTest.from_string(SEND_APP, default_timeout=10).run()
     assert not app.exception

@@ -60,6 +60,8 @@ class AssistantChoice:
 
     id: str
     label: str
+    style: Literal["default", "italic"] = "default"
+    record_selection: bool = True
 
     def __post_init__(self) -> None:
         if not self.id:

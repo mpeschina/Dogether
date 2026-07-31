@@ -21,6 +21,9 @@ GREETING_SELECTION_KEY: Final = "selection"
 GREETING_PENDING_KEY: Final = "pending"
 GREETING_RANDOMIZED_AT_KEY: Final = "randomized_at"
 GREETING_SILENT_REPLY_KEY: Final = "silent_reply"
+MORNING_GREETING_EVENT_ID: Final = "morning_greeting"
+MORNING_GREETING_DISPLAYED_ON_KEY: Final = "last_displayed_on"
+MORNING_GREETING_REPLY_KEY: Final = "morning_reply"
 GREETING_INTERVAL: Final = timedelta(hours=1)
 # Set to ``None`` to restore normal greeting selection.
 DEBUG_GREETING_ID: str | None = None # "waiting_crack"
@@ -146,6 +149,38 @@ SILENT_GREETING_CHOICES: Final = (
     AssistantChoice("hi", "Hi."),
     AssistantChoice("hey", "Hey."),
 )
+MORNING_GREETING_CHOICES: Final = (
+    AssistantChoice("good_morning", "Good Morning"),
+    AssistantChoice("say_nothing", "say nothing", style="italic", record_selection=False),
+)
+MORNING_GREETING_REPLIES: Final = (
+    (
+        "Good morning.",
+    ),
+    (
+        "Thats well received, thank you.",
+        "I hope you have a great day!",
+        "How can I help you today?",
+    ),
+    (
+        "Good morning!",
+        "You’re early enough to surprise the goals.",
+        "I like our odds.",
+    ),
+    (
+        "Ah, a sunrise greeting.",
+        "Very civilized.",
+    ),
+    (
+        "Good morning.",
+        "The productivity council has noted your punctuality.",
+        "No pressure. Just possibilities.",
+    ),
+    (
+        "Good morning...",
+        "Its super early.",
+    ),
+)
 
 
 class GreetingsStory(AssistantStory):
@@ -162,6 +197,14 @@ class GreetingsStory(AssistantStory):
         pending = session.get(GREETING_PENDING_KEY)
         if isinstance(pending, str):
             return pending
+
+        if self._morning_greeting_is_eligible(context):
+            session.set(GREETING_SELECTION_KEY, "morning_greeting")
+            session.set(
+                MORNING_GREETING_REPLY_KEY,
+                self._random_source.choice(MORNING_GREETING_REPLIES),
+            )
+            return "morning_greeting"
 
         if not self._randomized_greeting_is_due(context):
             return "default"
@@ -186,6 +229,8 @@ class GreetingsStory(AssistantStory):
             return self._interactive_turn(context, greeting_id, selection)
         if greeting_id == "silent":
             return self._silent_turn(context, selection)
+        if greeting_id == "morning_greeting":
+            return self._morning_greeting_turn(context, selection)
         if greeting_id == "waiting_crack":
             return self._waiting_crack_turn(context, selection)
         if greeting_id == "malfunction":
@@ -210,6 +255,40 @@ class GreetingsStory(AssistantStory):
             story_id=self.story_id,
             scene_id=greeting_id,
             lines=lines,
+            continue_flow=True,
+        )
+
+    def _morning_greeting_turn(
+        self, context: AssistantContext, selection: AssistantSelection | None
+    ) -> AssistantTurn:
+        session = story_session(context.session_state, self.story_id)
+        if selection is None or selection.choice_id not in {choice.id for choice in MORNING_GREETING_CHOICES}:
+            return AssistantTurn(
+                story_id=self.story_id,
+                scene_id="morning_greeting",
+                choices=MORNING_GREETING_CHOICES,
+                event_updates={
+                    MORNING_GREETING_EVENT_ID: {
+                        MORNING_GREETING_DISPLAYED_ON_KEY: _now(context).date().isoformat()
+                    }
+                },
+                completed=True,
+            )
+
+        if selection.choice_id == "say_nothing":
+            return AssistantTurn(
+                story_id=self.story_id,
+                scene_id="morning_greeting",
+                continue_flow=True,
+            )
+
+        reply = session.pop(MORNING_GREETING_REPLY_KEY, MORNING_GREETING_REPLIES[0])
+        if not isinstance(reply, tuple):
+            reply = MORNING_GREETING_REPLIES[0]
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id="morning_greeting",
+            lines=tuple(AssistantLine(line) for line in reply),
             continue_flow=True,
         )
 
@@ -287,6 +366,14 @@ class GreetingsStory(AssistantStory):
         if roll < 0.9:
             return self._random_source.choice(INTERACTIVE_GREETING_IDS)
         return self._random_source.choice(RARE_GREETING_IDS)
+
+    @staticmethod
+    def _morning_greeting_is_eligible(context: AssistantContext) -> bool:
+        now = _now(context)
+        if not 6 <= now.hour < 9:
+            return False
+        event = context.state.events.get(MORNING_GREETING_EVENT_ID, {})
+        return event.get(MORNING_GREETING_DISPLAYED_ON_KEY) != now.date().isoformat()
 
     @staticmethod
     def _randomized_greeting_is_due(context: AssistantContext) -> bool:

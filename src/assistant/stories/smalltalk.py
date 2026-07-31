@@ -135,7 +135,6 @@ SMALLTALK_OPENERS: Final = (
     "What feels unfinished?",
     "What do you need to hear?",
     "What are you learning?",
-    "What should you release?",
     "What deserves more credit?",
     "What feels good lately?",
     "What should you protect?",

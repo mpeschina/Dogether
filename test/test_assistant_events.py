@@ -29,6 +29,9 @@ from src.assistant.stories.greetings import (
     GREETING_RANDOMIZED_AT_KEY,
     GREETING_SELECTION_KEY,
     GREETINGS_STORY_ID,
+    MORNING_GREETING_DISPLAYED_ON_KEY,
+    MORNING_GREETING_EVENT_ID,
+    MORNING_GREETING_REPLIES,
     GreetingsStory,
 )
 from src.assistant.stories.push_reminder import PushReminderStory
@@ -891,6 +894,103 @@ def test_greetings_choose_interactive_rare_variants_and_keep_them_pending() -> N
     assert [choice.label for choice in silent.choices] == ["Hello.", "Hi.", "Hey."]
     reply = rare.advance(rare_context, rare_scene, selection("greetings", rare_scene, "hello", "Hello."))
     assert [line.text for line in reply.lines][0] == "Oh! Hello."
+
+
+def test_morning_greeting_intercept_is_daily_durable_and_ignores_hourly_cadence() -> None:
+    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
+    session = {}
+    story = GreetingsStory(random_source=StubRandom(0.1, 2))
+    context = context_for(
+        state,
+        session_state=session,
+        now=datetime(2026, 7, 26, 6, tzinfo=timezone.utc),
+    )
+    story_session(session, GREETINGS_STORY_ID).set(
+        GREETING_RANDOMIZED_AT_KEY,
+        datetime(2026, 7, 26, 5, 59, tzinfo=timezone.utc).isoformat(),
+    )
+
+    scene = story.entry_scene(context)
+    assert scene == "morning_greeting"
+    assert story_session(session, GREETINGS_STORY_ID).get(GREETING_PENDING_KEY) is None
+    prompt = story.advance(context, scene, None)
+    assert prompt.lines == ()
+    assert [choice.label for choice in prompt.choices] == ["Good Morning", "say nothing"]
+    assert prompt.choices[1].style == "italic"
+    assert prompt.choices[1].record_selection is False
+    assert prompt.completed is True
+    assert prompt.event_updates == {
+        MORNING_GREETING_EVENT_ID: {MORNING_GREETING_DISPLAYED_ON_KEY: "2026-07-26"}
+    }
+
+    displayed_state = apply_turn(state, prompt)
+    later = replace(context, state=displayed_state, now=datetime(2026, 7, 26, 8, 59, tzinfo=timezone.utc))
+    assert story.entry_scene(later) != "morning_greeting"
+    assert story.entry_scene(replace(later, now=datetime(2026, 7, 26, 9, tzinfo=timezone.utc))) != "morning_greeting"
+    next_day = replace(later, now=datetime(2026, 7, 27, 6, tzinfo=timezone.utc))
+    assert story.entry_scene(next_day) == "morning_greeting"
+    next_day_prompt = story.advance(next_day, "morning_greeting", None)
+    replaced_state = apply_turn(displayed_state, next_day_prompt)
+    assert replaced_state.events == {
+        MORNING_GREETING_EVENT_ID: {MORNING_GREETING_DISPLAYED_ON_KEY: "2026-07-27"}
+    }
+
+
+def test_morning_greeting_prompt_is_saved_durably_when_displayed() -> None:
+    persistence = RecordingPersistence()
+    director = AssistantDirector(
+        persistence,
+        {AssistantMode.NORMAL: StandardStory(), GREETINGS_STORY_ID: GreetingsStory()},
+    )
+    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
+    view = RecordingView()
+
+    saved_state = director.render(
+        context_for(state, session_state={}, now=datetime(2026, 7, 26, 6, tzinfo=timezone.utc)),
+        view,
+    )
+
+    assert len(persistence.saved_states) == 1
+    assert saved_state.events == {
+        MORNING_GREETING_EVENT_ID: {MORNING_GREETING_DISPLAYED_ON_KEY: "2026-07-26"}
+    }
+
+
+def test_morning_greeting_selection_starts_normal_flow_and_uses_stable_reply() -> None:
+    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
+    session = {}
+    story = GreetingsStory(random_source=StubRandom(0.1, 1))
+    context = context_for(
+        state,
+        session_state=session,
+        now=datetime(2026, 7, 26, 6, tzinfo=timezone.utc),
+    )
+    scene = story.entry_scene(context)
+    prompt = story.advance(context, scene, None)
+    displayed_state = apply_turn(state, prompt)
+    selected_context = replace(context, state=displayed_state)
+
+    silent = story.advance(
+        selected_context,
+        scene,
+        selection(GREETINGS_STORY_ID, scene, "say_nothing", "say nothing"),
+    )
+    assert silent.lines == ()
+    assert silent.continue_flow is True
+
+    next_day_context = replace(
+        selected_context,
+        now=datetime(2026, 7, 27, 6, tzinfo=timezone.utc),
+    )
+    next_day_scene = story.entry_scene(next_day_context)
+    story.advance(next_day_context, next_day_scene, None)
+    response = story.advance(
+        next_day_context,
+        next_day_scene,
+        selection(GREETINGS_STORY_ID, next_day_scene, "good_morning", "Good Morning"),
+    )
+    assert tuple(line.text for line in response.lines) == MORNING_GREETING_REPLIES[1]
+    assert response.continue_flow is True
 
 
 def test_push_reminder_backoff_and_turn_updates() -> None:

@@ -210,7 +210,13 @@ class StreamlitAssistantView:
             "record_selection": turn.record_selection,
             "send_placeholder": turn.send_placeholder,
             "choices": [
-                {"id": choice.id, "label": choice.label} for choice in turn.choices
+                {
+                    "id": choice.id,
+                    "label": choice.label,
+                    "style": choice.style,
+                    "record_selection": choice.record_selection,
+                }
+                for choice in turn.choices
             ],
         }
         st.session_state[ACTIVE_CONTROL_KEY] = control
@@ -240,14 +246,23 @@ class StreamlitAssistantView:
                         continue
                     choice_id = str(raw_choice.get("id", ""))
                     choice_label = str(raw_choice.get("label", choice_id))
-                    column.button(
-                        choice_label,
-                        key=f"assistant_choice_{control.get('round_id')}_{index}",
-                        type="primary",
-                        use_container_width=True,
-                        on_click=self._queue_selection,
-                        args=(control, choice_id, choice_label),
-                    )
+                    choice_style = str(raw_choice.get("style", "default"))
+                    record_selection = raw_choice.get("record_selection")
+                    with column:
+                        with st.container(
+                            key=(
+                                "assistant-choice-option-"
+                                f"{control.get('round_id')}-{index}-{choice_style}"
+                            )
+                        ):
+                            st.button(
+                                choice_label,
+                                key=f"assistant_choice_{control.get('round_id')}_{index}",
+                                type="primary",
+                                use_container_width=True,
+                                on_click=self._queue_selection,
+                                args=(control, choice_id, choice_label, None, record_selection),
+                            )
 
     def _render_send_control(self, control: dict[str, Any]) -> None:
         self.input_rendered = True
@@ -282,6 +297,7 @@ class StreamlitAssistantView:
         choice_id: str,
         label: str,
         input_key: str | None = None,
+        record_selection: object | None = None,
     ) -> None:
         if input_key is not None:
             submitted = str(st.session_state.get(input_key, "")).strip()
@@ -295,7 +311,12 @@ class StreamlitAssistantView:
             "label": label,
             "control_kind": str(control.get("kind", "choices")),
         }
-        if bool(control.get("record_selection", True)):
+        should_record = (
+            record_selection
+            if isinstance(record_selection, bool)
+            else bool(control.get("record_selection", True))
+        )
+        if should_record:
             self._transcript.append(("user", label))
 
     @staticmethod
@@ -417,6 +438,9 @@ class StreamlitAssistantView:
               [class*="st-key-assistant-choice-bar-"] {
                 animation: assistant-choice-fade-in CHOICE_FADE_IN_DURATION_MS ease-out both;
                 bottom: 5.25rem;
+              }
+              [class*="st-key-assistant-choice-option-"][class*="-italic"] button {
+                font-style: italic;
               }
               [class*="st-key-assistant-send-bar-"] { bottom: 0.5rem; }
               @keyframes assistant-choice-fade-in {
