@@ -92,7 +92,7 @@ class NightStory(AssistantStory):
             lines=(
                 AssistantLine("Man, I am sleeping its super late!"),
                 AssistantLine(
-                    "(hm, did you already tell me your gender?)", font_scale=0.5
+                    "(hm, what does he want from me. oh, did my user already tell me its gender?)", font_scale=0.5
                 ),
                 AssistantLine("Anyhow, I need to sleep and so do you."),
                 AssistantLine("Dont disturb me during the night!!!!"),
