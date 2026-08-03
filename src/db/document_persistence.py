@@ -67,6 +67,7 @@ class DocumentPersistence:
                     "last_seen_at": existing.get("last_seen_at", now_iso),
                 }
             )
+            user.setdefault("debug_info", False)
             user.setdefault("dismissed_friend_suggestion_pairs", [])
             if existing != user:
                 data["users"][user_id] = user
@@ -154,6 +155,7 @@ class DocumentPersistence:
                 "name": name,
                 "created_at": now_iso,
                 "last_seen_at": now_iso,
+                "debug_info": False,
                 "dismissed_friend_suggestion_pairs": [],
             }
             data["users"][user_id] = profile

@@ -5,7 +5,7 @@ import calendar
 import secrets
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
 from src.assistant.state import AssistantState
@@ -93,6 +93,7 @@ def _normalise_friend_pair(value: Any) -> list[str] | None:
 
 def _normalise_user_profile(user: dict[str, Any]) -> dict[str, Any]:
     normalised = dict(user)
+    normalised["debug_info"] = normalised.get("debug_info") is True
     if "assistant_state" in normalised:
         normalised["assistant_state"] = AssistantState.from_value(
             normalised.get("assistant_state")
@@ -110,6 +111,11 @@ def _normalise_user_profile(user: dict[str, Any]) -> dict[str, Any]:
         dismissed_pairs.append(pair)
     normalised["dismissed_friend_suggestion_pairs"] = dismissed_pairs
     return normalised
+
+
+def debug_info_enabled(profile: Mapping[str, Any]) -> bool:
+    """Return whether a profile has explicitly been granted debug access."""
+    return profile.get("debug_info") is True
 
 
 def _now(now: datetime | None = None) -> datetime:

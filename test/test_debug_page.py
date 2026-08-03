@@ -44,6 +44,22 @@ class FakeStreamlit:
         return True
 
 
+class GuardStreamlit:
+    def __init__(self) -> None:
+        self.titles: list[str] = []
+
+    def title(self, body: str) -> None:
+        self.titles.append(body)
+
+
+def test_render_debug_requires_profile_debug_info(monkeypatch) -> None:
+    fake_st = GuardStreamlit()
+    monkeypatch.setattr(debug_page, "st", fake_st)
+
+    debug_page.render_debug(object(), current_user={"debug_info": False}, user_id="alice")
+    assert fake_st.titles == []
+
+
 class RecordingPersistence:
     def __init__(self) -> None:
         self.purged: list[tuple[str, object]] = []

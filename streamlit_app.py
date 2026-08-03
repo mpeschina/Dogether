@@ -4,6 +4,7 @@ import streamlit as st
 
 from src.data_imports.health_data_import import handle_health_data_import
 from src.db.persistence import Persistence, get_persistence, persistence_settings
+from src.db.persistence_helpers import debug_info_enabled
 from src.friends.alerts import pending_friend_request_alert_items
 from src.friends.share_links import (
     FRIEND_SHARE_MESSAGE_KEY,
@@ -62,9 +63,6 @@ try:
 except Exception as error:
     st.error(f"Could not load Dogether: {error}")
     st.stop()
-
-if debug.enabled:
-    print("Server freshly Started")
 
 
 debug_user = debug.current_debug_user()
@@ -222,7 +220,14 @@ def assistant_page() -> None:
 
 def debug_page() -> None:
     mark_current_page("debug")
-    render_debug(persistence, push_storage, configured_push, user_id=user_id, now=app_now)
+    render_debug(
+        persistence,
+        push_storage,
+        configured_push,
+        current_user=current_user,
+        user_id=user_id,
+        now=app_now,
+    )
 
 
 goals_page_entry = st.Page(main_page, title="Goals", default=True, icon=":material/dashboard:")
@@ -249,7 +254,7 @@ page_entries = [
     historical_data_repair_page_entry,
     account_page_entry,
 ]
-if debug.enabled:
+if debug_info_enabled(current_user):
     page_entries.append(debug_page_entry)
 
 assistant_destinations = {

@@ -9,16 +9,56 @@ from src.assistant.stories.greetings import (
 )
 from src.assistant.stories.smalltalk import SMALLTALK_CLICKED_AT_KEY, SMALLTALK_STORY_ID
 from src.assistant.story_session import ASSISTANT_STORY_SESSION_KEY
+from src.pages import account_page
 from src.pages.account_page import (
     activity_diagram_html,
     assistant_transient_debug_info,
     clear_greeting_session,
     clear_smalltalk_session,
+    debug_account_status,
     greeting_debug_info,
     reset_assistant_session_state,
 )
 
 BERLIN = ZoneInfo("Europe/Berlin")
+
+
+class AssistantSettingsStreamlit:
+    def __init__(self) -> None:
+        self.session_state: dict[str, object] = {}
+        self.subheaders: list[str] = []
+
+    def subheader(self, body: str) -> None:
+        self.subheaders.append(body)
+
+    def caption(self, _body: str) -> None:
+        pass
+
+    def json(self, _value: object) -> None:
+        pass
+
+    def radio(self, _label: str, options: list[str], **_kwargs: object) -> str:
+        return options[0]
+
+    def button(self, _label: str, **_kwargs: object) -> bool:
+        return False
+
+
+def test_debug_account_status_reflects_the_persisted_profile_flag() -> None:
+    assert debug_account_status({"debug_info": True}) == "Debug account: enabled"
+    assert debug_account_status({"debug_info": False}) == "Debug account: disabled"
+    assert debug_account_status({}) == "Debug account: disabled"
+
+
+def test_assistant_settings_requires_debug_info(monkeypatch) -> None:
+    fake_st = AssistantSettingsStreamlit()
+    monkeypatch.setattr(account_page, "st", fake_st)
+
+    account_page.render_assistant_settings(object(), {"debug_info": False}, "alice")
+    assert fake_st.subheaders == []
+
+    account_page.render_assistant_settings(object(), {"debug_info": True}, "alice")
+    assert fake_st.subheaders == ["Assistant (Prototype)"]
 
 
 def at(value: str) -> datetime:

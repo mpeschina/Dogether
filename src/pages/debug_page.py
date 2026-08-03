@@ -9,6 +9,7 @@ import streamlit as st
 
 from src.pages.account_page import reset_assistant_session_state
 from src.db.persistence import APP_ZONE, Persistence
+from src.db.persistence_helpers import debug_info_enabled
 from src.push.sender import push_configured, send_push_to_user
 from src.push.storage import PushStorage
 from src.viewport_component import viewport_info
@@ -77,9 +78,13 @@ def render_debug(
     push_storage: PushStorage | None = None,
     push_settings: Mapping[str, str] | None = None,
     *,
+    current_user: Mapping[str, Any],
     user_id: str,
     now: datetime | None = None,
 ) -> None:
+    if not debug_info_enabled(current_user):
+        return
+
     st.title("Debug")
     flash = st.session_state.pop("debug_account_purge_flash", None)
     if flash:

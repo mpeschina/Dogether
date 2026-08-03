@@ -18,6 +18,7 @@ from src.assistant.stories.greetings import (
 )
 from src.assistant.stories.smalltalk import SMALLTALK_STORY_ID
 from src.db.persistence import Persistence
+from src.db.persistence_helpers import debug_info_enabled
 from src.pages.common_helpers import (
     ACTIVITY_CELL_GAP,
     ACTIVITY_CELL_SIZE,
@@ -43,6 +44,7 @@ def render_account(
         st.subheader(current_user["name"])
     st.write("Email")
     st.subheader(current_user["email"])
+    st.caption(debug_account_status(current_user))
 
     stats = persistence.account_stats(user_id, now=now)
     cols = st.columns(4)
@@ -53,7 +55,12 @@ def render_account(
 
     st.subheader("Activity")
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=365)
-    render_assistant_settings(persistence, current_user, user_id, now=now)
+    if debug_info_enabled(current_user):
+        render_assistant_settings(persistence, current_user, user_id, now=now)
+
+
+def debug_account_status(current_user: Mapping[str, Any]) -> str:
+    return "Debug account: enabled" if debug_info_enabled(current_user) else "Debug account: disabled"
 
 
 def render_assistant_settings(
@@ -63,6 +70,9 @@ def render_assistant_settings(
     *,
     now: datetime | None = None,
 ) -> None:
+    if not debug_info_enabled(current_user):
+        return
+
     st.subheader("Assistant (Prototype)")
     st.caption(
         "Normal runs the guided onboarding and assistant events. "

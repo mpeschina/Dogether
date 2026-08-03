@@ -305,6 +305,34 @@ def test_user_profile_upsert_normalizes_email_and_preserves_activity_timestamp(t
     assert second["last_seen_at"] == first["last_seen_at"]
 
 
+def test_debug_info_defaults_false_and_preserves_direct_database_grants(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    persistence = JsonPersistence(path)
+
+    created = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    assert created["debug_info"] is False
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["users"]["alice"]["debug_info"] = True
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    updated = JsonPersistence(path).upsert_user("alice", "alice@example.com", "Alice")
+    assert updated["debug_info"] is True
+
+
+def test_mongodb_debug_info_defaults_false_and_preserves_direct_database_grants() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+
+    created = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    assert created["debug_info"] is False
+
+    database["users_inventory"].documents["alice"]["debug_info"] = True
+    persistence._cache_clear()
+    updated = persistence.upsert_user("alice", "alice@example.com", "Alice")
+    assert updated["debug_info"] is True
+
+
 def test_user_profile_upsert_skips_write_when_profile_is_unchanged(tmp_path: Path) -> None:
     persistence = CountingJsonPersistence(tmp_path / "users.json")
 
@@ -386,6 +414,7 @@ def test_purge_account_resets_profile_and_removes_all_json_references(tmp_path: 
         "name": "Alice",
         "created_at": "2026-06-02T07:00:00+00:00",
         "last_seen_at": "2026-06-02T07:00:00+00:00",
+        "debug_info": False,
         "dismissed_friend_suggestion_pairs": [],
     }
     assert data["users"]["alice"] == profile

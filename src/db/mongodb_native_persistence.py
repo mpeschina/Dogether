@@ -421,6 +421,7 @@ class MongoNativePersistence:
                 "last_seen_at": existing.get("last_seen_at", now_iso),
             }
         )
+        user.setdefault("debug_info", False)
         user.setdefault("dismissed_friend_suggestion_pairs", [])
         if user != existing:
             self._users_inventory_collection().update_one({"_id": user_id}, {"$set": user}, upsert=True)
@@ -513,6 +514,7 @@ class MongoNativePersistence:
             "name": name,
             "created_at": now_iso,
             "last_seen_at": now_iso,
+            "debug_info": False,
             "dismissed_friend_suggestion_pairs": [],
         }
         self._users_inventory_collection().replace_one({"_id": user_id}, {"_id": user_id, **profile}, upsert=True)
