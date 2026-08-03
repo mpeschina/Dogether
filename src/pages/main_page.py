@@ -123,7 +123,7 @@ def queue_site_break_for_goal_hit(
     user_id: str,
     now: datetime | None,
 ) -> bool:
-    """Claim today's chance and queue an extreme-completion interruption if it wins."""
+    """Queue an eligible extreme-completion interruption and claim it for today."""
     updated_participant = updated_goal.get("participants", {}).get(user_id, {})
     previous_current = max(0, int(previous_participant.get("current", 0) or 0))
     previous_target = max(1, int(previous_participant.get("target", 1) or 1))
@@ -137,9 +137,9 @@ def queue_site_break_for_goal_hit(
     )
     if not crossed_threshold:
         return False
-    if not persistence.claim_site_break_effect(user_id, now=now):
-        return False
     if not should_render_site_break_for_goal_hit(previous_participant, updated_participant):
+        return False
+    if not persistence.claim_site_break_effect(user_id, now=now):
         return False
     st.session_state[SITE_BREAK_GOAL_ID_SESSION_KEY] = updated_goal.get("id")
     return True

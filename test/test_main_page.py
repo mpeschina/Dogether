@@ -34,6 +34,7 @@ from src.pages.main_page import (
     participant_reaction_details,
     participant_reaction_summary,
     ordered_active_participant_ids,
+    queue_site_break_for_goal_hit,
     should_render_balloons_for_goal_hit,
     should_render_site_break_for_goal_hit,
     tutorial_has_never_started,
@@ -213,6 +214,26 @@ def test_site_break_requires_an_unskipped_crossing_at_least_two_times_target() -
     assert not should_render_site_break_for_goal_hit(
         previous, {"current": 20, "target": 10, "skipped": True}, random_value=0
     )
+
+
+def test_site_break_does_not_claim_the_daily_effect_when_it_will_not_render(monkeypatch) -> None:
+    class Persistence:
+        claim_calls = 0
+
+        def claim_site_break_effect(self, user_id: str, now=None) -> bool:
+            self.claim_calls += 1
+            return True
+
+    persistence = Persistence()
+    previous = {"current": 19, "target": 10, "skipped": False}
+    updated_goal = {
+        "id": "goal-1",
+        "participants": {"alice": {"current": 20, "target": 10, "skipped": False}},
+    }
+    monkeypatch.setattr("src.pages.main_page.should_render_site_break_for_goal_hit", lambda *_: False)
+
+    assert not queue_site_break_for_goal_hit(persistence, previous, updated_goal, "alice", now=None)
+    assert persistence.claim_calls == 0
 
 
 def test_participant_name_with_progress_keeps_progress_inline_and_escaped() -> None:

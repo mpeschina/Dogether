@@ -553,8 +553,7 @@ class MongoNativePersistence:
         user = self.get_user(user_id)
         if not user:
             raise ValueError("User not found.")
-        legacy_shown_at = str(user.get("site_break_effect_shown_at") or "")
-        if user.get("site_break_effect_day") == today or legacy_shown_at.startswith(today):
+        if user.get("site_break_effect_day") == today:
             return False
         result = self._users_inventory_collection().update_one(
             {"_id": user_id, "site_break_effect_day": {"$ne": today}},

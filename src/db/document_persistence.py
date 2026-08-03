@@ -196,8 +196,7 @@ class DocumentPersistence:
             if not user:
                 raise ValueError("User not found.")
             previous_day = user.get("site_break_effect_day")
-            legacy_shown_at = str(user.get("site_break_effect_shown_at") or "")
-            if previous_day == today or legacy_shown_at.startswith(today):
+            if previous_day == today:
                 return False
             user["site_break_effect_day"] = today
             user["updated_at"] = _iso(now)
