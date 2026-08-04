@@ -242,7 +242,8 @@ class StandardStory(AssistantStory):
                 return standard_advanced_turn(
                     lines=(
                         AssistantLine("What? I dont get anything what do you want from me", typing_delay=1.0),
-                        AssistantLine("Ähm, sorry. I mean. Äh.", typing_delay=0.5),
+                        AssistantLine("Ähm, sorry. I mean", typing_delay=0.5),
+                        AssistantLine("Äh", typing_delay=0.5),
                         AssistantLine("Please spell your wishes more clearly.", typing_delay=2.5),
                         AssistantLine("You can now try it again:", typing_delay=1),
                     )
