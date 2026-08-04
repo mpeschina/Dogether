@@ -677,6 +677,7 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
     )
     assert help_menu.continue_flow is False
     assert help_menu.state_scene == STANDARD_HELP_SCENE
+    assert len(help_menu.lines) == 1
     assert [choice.label for choice in help_menu.choices] == ["Analyse my Profile"]
 
     completed_help = story.advance(

@@ -207,6 +207,7 @@ class StandardStory(AssistantStory):
                             )
                         ),
                         stars=context.state.stars,
+                        lines=(AssistantLine("Sure"),),
                     ),
                     state_story=self.story_id, state_scene=STANDARD_HELP_SCENE,
                     state_status="active",
@@ -266,7 +267,9 @@ class StandardStory(AssistantStory):
             )
 
         if selection.choice_id == "advanced":
-            return standard_advanced_turn()
+            return standard_advanced_turn(
+                lines=(AssistantLine("Lets go advanced mode!"),)
+            )
 
         if selection.choice_id == "analyse_profile":
             return AssistantTurn(
