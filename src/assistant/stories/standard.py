@@ -30,9 +30,6 @@ from src.assistant.stories.tutorial import (
     TUTORIAL_STORY_ID,
     explanation_turn,
 )
-from src.assistant.stories.weekly_summary import WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY
-
-
 STANDARD_MENU_EVENT_ID: Final = "standard.tutorial_menu"
 STANDARD_MENU_SCENE: Final = "standard.menu"
 STANDARD_HELP_SCENE: Final = "standard.help"
@@ -84,7 +81,6 @@ def standard_help_turn(
     lines: tuple[AssistantLine, ...] = (),
     knowledge_updates=None,
     profile_analysis_completed: bool = False,
-    stars_explanation_unlocked: bool = False,
     stars: int = 0,
 ) -> AssistantTurn:
     choices = list(
@@ -97,8 +93,6 @@ def standard_help_turn(
     )
     if stars > 0:
         choices.append(AssistantChoice("advanced", "Whats the advanced stuff here?"))
-    if stars_explanation_unlocked:
-        choices.append(AssistantChoice("stars", "Explain STARs"))
     return AssistantTurn(
         story_id=STANDARD_STORY_ID,
         scene_id=STANDARD_HELP_SCENE,
@@ -212,11 +206,6 @@ class StandardStory(AssistantStory):
                                 PROFILE_ANALYSIS_KNOWLEDGE_KEY, False
                             )
                         ),
-                        stars_explanation_unlocked=bool(
-                            context.state.knowledge.get(
-                                WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY, False
-                            )
-                        ),
                         stars=context.state.stars,
                     ),
                     state_story=self.story_id, state_scene=STANDARD_HELP_SCENE,
@@ -263,11 +252,6 @@ class StandardStory(AssistantStory):
                         PROFILE_ANALYSIS_KNOWLEDGE_KEY, False
                     )
                 ),
-                stars_explanation_unlocked=bool(
-                    context.state.knowledge.get(
-                        WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY, False
-                    )
-                ),
                 stars=context.state.stars,
             )
 
@@ -280,19 +264,6 @@ class StandardStory(AssistantStory):
                 scene_id=FRIENDS_NODE,
                 state_story=TUTORIAL_STORY_ID,
                 state_scene=FRIENDS_NODE,
-                state_status="active",
-                continue_flow=True,
-            )
-
-        if selection.choice_id == "stars":
-            return AssistantTurn(
-                story_id=self.story_id,
-                scene_id=STAR_TUTORIAL_INTRO_SCENE,
-                event_updates={
-                    STAR_TUTORIAL_RETURN_EVENT_ID: {"scene": STANDARD_HELP_SCENE}
-                },
-                state_story=self.story_id,
-                state_scene=STAR_TUTORIAL_INTRO_SCENE,
                 state_status="active",
                 continue_flow=True,
             )

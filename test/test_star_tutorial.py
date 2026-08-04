@@ -66,13 +66,11 @@ def test_star_tutorial_progresses_and_returns_to_its_caller() -> None:
     assert complete.continue_flow
 
 
-def test_help_only_offers_star_explanation_after_a_weekly_reward() -> None:
+def test_help_does_not_offer_a_standalone_star_explanation() -> None:
     locked = standard_help_turn(profile_analysis_completed=False)
-    unlocked = standard_help_turn(
-        profile_analysis_completed=False, stars_explanation_unlocked=True
-    )
+    unlocked = standard_help_turn(profile_analysis_completed=False, stars=1)
     assert "stars" not in [choice.id for choice in locked.choices]
-    assert "stars" in [choice.id for choice in unlocked.choices]
+    assert "stars" not in [choice.id for choice in unlocked.choices]
 
 
 def test_advanced_tutorial_menu_requires_a_star() -> None:
