@@ -10,6 +10,7 @@ from src.friends.share_links import (
     capture_friend_share_code,
     friend_share_link,
     pop_friend_share_message,
+    render_friend_share_login_bridge,
 )
 
 
@@ -30,6 +31,28 @@ def test_friend_share_link_replaces_existing_query_string() -> None:
     link = friend_share_link("code 123", "https://example.com/friends?page=old")
 
     assert link == "https://example.com/friends?friend_share=code+123"
+
+
+def test_friend_share_login_bridge_preserves_only_logged_out_invites(monkeypatch) -> None:
+    rendered = []
+    monkeypatch.setattr("src.friends.share_links.st.html", lambda body, **kwargs: rendered.append((body, kwargs)))
+
+    render_friend_share_login_bridge(
+        {FRIEND_SHARE_QUERY_PARAM: "share_123"},
+        is_authenticated=False,
+    )
+    logged_out_html, logged_out_options = rendered.pop()
+    assert 'window.sessionStorage.setItem(storageKey, shareCode)' in logged_out_html
+    assert "const isAuthenticated = false" in logged_out_html
+    assert logged_out_options == {"unsafe_allow_javascript": True}
+
+    render_friend_share_login_bridge(
+        {FRIEND_SHARE_QUERY_PARAM: "share_123"},
+        is_authenticated=True,
+    )
+    logged_in_html, _ = rendered.pop()
+    assert 'window.sessionStorage.removeItem(storageKey)' in logged_in_html
+    assert "const isAuthenticated = true" in logged_in_html
 
 
 def test_share_link_applies_after_first_login(tmp_path: Path) -> None:

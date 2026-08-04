@@ -12,6 +12,7 @@ from src.friends.share_links import (
     PENDING_FRIEND_SHARE_CODE_KEY,
     apply_pending_friend_share,
     capture_friend_share_code,
+    render_friend_share_login_bridge,
 )
 from src.pages.account_page import render_account
 from src.pages.historical_data_repair_page import (
@@ -75,13 +76,18 @@ if "is_logged_in" not in st.user and not debug_login:
     )
     st.stop()
 
+is_authenticated = bool(debug_user or st.user.get("is_logged_in", False))
+render_friend_share_login_bridge(
+    st.query_params,
+    is_authenticated=is_authenticated,
+)
 capture_friend_share_code(st.query_params, st.session_state)
 
 
 #
 # Login 
 #
-if not debug_user and not st.user.get("is_logged_in", False):
+if not is_authenticated:
     login_screen(persistence, debug_login, now=app_now)
     st.stop()
 

@@ -13,6 +13,7 @@ from src.db.persistence import Persistence
 FRIEND_SHARE_QUERY_PARAM = "friend_share"
 PENDING_FRIEND_SHARE_CODE_KEY = "pending_friend_share_code"
 FRIEND_SHARE_MESSAGE_KEY = "friend_share_message"
+FRIEND_SHARE_BROWSER_STORAGE_KEY = "dogether.pending_friend_share_code"
 
 
 def capture_friend_share_code(
@@ -24,6 +25,51 @@ def capture_friend_share_code(
         return None
     session_state[PENDING_FRIEND_SHARE_CODE_KEY] = share_code
     return share_code
+
+
+def render_friend_share_login_bridge(
+    query_params: Any,
+    *,
+    is_authenticated: bool,
+) -> None:
+    """Keep a friend-share code across Streamlit's OAuth session reset.
+
+    ``st.login`` creates a new Streamlit session after the OAuth callback, so
+    session state alone cannot carry an invite code from the login screen to
+    the signed-in app. Browser session storage lasts for that redirect, while
+    remaining scoped to the current browser tab.
+    """
+    share_code = str(query_params.get(FRIEND_SHARE_QUERY_PARAM) or "").strip()
+    storage_key_json = json.dumps(FRIEND_SHARE_BROWSER_STORAGE_KEY)
+    share_code_json = json.dumps(share_code)
+    authenticated_json = json.dumps(is_authenticated)
+    query_param_json = json.dumps(FRIEND_SHARE_QUERY_PARAM)
+    st.html(
+        f"""
+        <script>
+            const storageKey = {storage_key_json};
+            const shareCode = {share_code_json};
+            const isAuthenticated = {authenticated_json};
+            const queryParam = {query_param_json};
+
+            if (shareCode) {{
+                if (isAuthenticated) {{
+                    window.sessionStorage.removeItem(storageKey);
+                }} else {{
+                    window.sessionStorage.setItem(storageKey, shareCode);
+                }}
+            }} else {{
+                const pendingCode = window.sessionStorage.getItem(storageKey);
+                if (pendingCode) {{
+                    const url = new URL(window.location.href);
+                    url.searchParams.set(queryParam, pendingCode);
+                    window.location.replace(url.toString());
+                }}
+            }}
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
 
 
 def apply_pending_friend_share(
