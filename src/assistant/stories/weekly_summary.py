@@ -11,6 +11,7 @@ from src.assistant.state import AssistantState, WEEKLY_STAR_EVENT_ID
 from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _datetime, _momentum_halves, _now, _week_start
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _shared_insights, _used_existing_insights
 from src.db.persistence_helpers import APP_ZONE
+from src.db.persistence_helpers import debug_info_enabled
 from src.pages.common_helpers import compact_goal_activity_html
 
 WEEKLY_SUMMARY_STORY_ID: Final = "weekly_summary"
@@ -41,6 +42,11 @@ def _weekly_star_evaluation(state: AssistantState, start: date, rate: float) -> 
     if awarded:
         result["last_claimed_week"] = week
     return result, int(awarded)
+
+
+def _debug_star_awards_enabled(context: AssistantContext) -> bool:
+    """Keep the source-level test switch restricted to debug profiles."""
+    return DEBUG_AWARD_STAR_EVERY_REPORT and debug_info_enabled(context.current_user)
 
 
 def _weekly_summary_unlock_at(context: AssistantContext) -> datetime | None:
@@ -171,7 +177,7 @@ class WeeklySummaryStory(AssistantStory):
             if (
                 context.state.story == self.story_id
                 and context.state.status == "active"
-                and (DEBUG_AWARD_STAR_EVERY_REPORT or not partial)
+                and (_debug_star_awards_enabled(context) or not partial)
                 and isinstance(weekly, dict)
                 and weekly.get("awarded")
                 and not weekly.get("acknowledged")
@@ -190,7 +196,8 @@ class WeeklySummaryStory(AssistantStory):
         result = _analyse(context, start, partial)
         event_updates: dict[str, dict[str, object]] = {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial}}
         stars_delta = 0
-        if DEBUG_AWARD_STAR_EVERY_REPORT:
+        debug_awards_enabled = _debug_star_awards_enabled(context)
+        if debug_awards_enabled:
             weekly_result = {
                 "evaluated_week": start.isoformat(),
                 "awarded": True,
@@ -211,7 +218,7 @@ class WeeklySummaryStory(AssistantStory):
             "content": content,
             "event_updates": event_updates,
             "stars_delta": stars_delta,
-            "completed": DEBUG_AWARD_STAR_EVERY_REPORT or not partial,
+            "completed": debug_awards_enabled or not partial,
             "state_story": self.story_id,
             "state_scene": SUMMARY_SCENE,
             "state_status": "active",
