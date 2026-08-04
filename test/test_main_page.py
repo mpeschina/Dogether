@@ -313,6 +313,28 @@ def test_participant_sparkline_renders_ten_day_inline_svg_with_progress_bar_fill
     assert completed_y > today_y
 
 
+def test_participant_sparkline_keeps_zero_at_the_chart_baseline() -> None:
+    participant = {
+        "current": 3,
+        "target": 10,
+        "period_outcomes": {
+            "2026-06-08": {"current": 2, "target": 10},
+            "2026-06-09": {"current": 4, "target": 10},
+        },
+    }
+
+    html = participant_sparkline_html(
+        _goal("daily", participant=participant),
+        participant,
+        now=_at("2026-06-10T12:00:00"),
+        days=3,
+    )
+    line_points = html.split("<polyline", 1)[1].split("points='", 1)[1].split("'", 1)[0].split()
+
+    first_y = float(line_points[0].split(",")[1])
+    assert first_y == 11.0
+
+
 def test_participant_sparkline_treats_allowed_x_per_week_skip_as_reached() -> None:
     participant = {
         "current": 0,

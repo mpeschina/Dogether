@@ -108,9 +108,9 @@ def participant_sparkline_html(
     if len(values) < 2:
         values = [*values, values[0] if values else 0.0]
 
-    min_v = min(values)
-    max_v = max(values)
-    span = max(max_v - min_v, 1e-9)
+    # Progress values are non-negative, so retain zero as the visual baseline
+    # rather than stretching each series to fill the chart vertically.
+    max_v = max(max(values), 1.0)
     width = PARTICIPANT_SPARKLINE_WIDTH
     height = PARTICIPANT_SPARKLINE_HEIGHT
     pad = PARTICIPANT_SPARKLINE_PAD
@@ -118,7 +118,7 @@ def participant_sparkline_html(
     points = []
     for index, value in enumerate(values):
         x = pad + index * (width - 2 * pad) / (len(values) - 1)
-        y = pad + (max_v - value) * (height - 2 * pad) / span
+        y = pad + (max_v - value) * (height - 2 * pad) / max_v
         points.append((x, y))
 
     line_points = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
