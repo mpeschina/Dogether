@@ -24,6 +24,7 @@ from src.assistant.stories.information import INFORMATION_STORY_ID, pending_goal
 from src.assistant.stories.night import NIGHT_STORY_ID
 from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
 from src.assistant.stories.special_examples import SPECIAL_STORY_ID
+from src.assistant.stories.star_tutorial import STAR_TUTORIAL_SCENES
 from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID
 from src.assistant.stories.weekly_summary import WEEKLY_SUMMARY_STORY_ID
 from src.assistant.stories.weekly_summary_ready import (
@@ -155,7 +156,7 @@ class AssistantDirector:
             return self.stories.get(PUSH_REMINDER_STORY_ID)
         if state.story == WEEKLY_SUMMARY_STORY_ID and state.status == "active":
             return self.stories.get(WEEKLY_SUMMARY_STORY_ID)
-        if state.story == STANDARD_STORY_ID and state.scene in EXPLANATION_SCENES:
+        if state.story == STANDARD_STORY_ID and state.scene in (*EXPLANATION_SCENES, *STAR_TUTORIAL_SCENES):
             return self.stories.get(STANDARD_STORY_ID)
 
         # normal dispatcher
@@ -298,4 +299,3 @@ def _parse_datetime(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
-

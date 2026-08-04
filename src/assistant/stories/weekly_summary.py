@@ -8,6 +8,11 @@ from typing import Final
 
 from src.assistant.core import AssistantCard, AssistantChoice, AssistantContext, AssistantLine, AssistantSelection, AssistantStory, AssistantTurn
 from src.assistant.state import AssistantState, WEEKLY_STAR_EVENT_ID
+from src.assistant.stories.star_tutorial import (
+    STAR_TUTORIAL_INTRO_SCENE,
+    STAR_TUTORIAL_SCENES,
+    star_tutorial_turn,
+)
 from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _datetime, _momentum_halves, _now, _week_start
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _shared_insights, _used_existing_insights
 from src.db.persistence_helpers import APP_ZONE
@@ -20,10 +25,12 @@ SELECT_SCENE: Final = "weekly.select"
 SUMMARY_SCENE: Final = "weekly.summary"
 DETAILS_SCENE: Final = "weekly.details"
 STAR_AWARD_SCENE: Final = "weekly.star_award"
+STAR_TUTORIAL_RETURN_SCENE: Final = "weekly.star_tutorial.return"
 UNAVAILABLE_PREFACE_SCENE: Final = "weekly.unavailable_preface"
 UNAVAILABLE_HINT_SCENE: Final = "weekly.unavailable_hint"
 WEEK_TO_WEEK_CHART_WEEKS: Final = 20
 WEEKLY_SUMMARY_UNAVAILABLE_MESSAGE: Final = "Currently Unavailable"
+WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY: Final = "stars.weekly_rewarded"
 
 # Development-only switch: each displayed report earns a STAR, includin
 # repeated views of the same partial or final week.
@@ -148,6 +155,20 @@ class WeeklySummaryStory(AssistantStory):
         if start is None:
             return self.advance(context, SELECT_SCENE, None)
         result = _analyse(context, start, partial)
+        if scene in STAR_TUTORIAL_SCENES:
+            return star_tutorial_turn(
+                context,
+                self.story_id,
+                scene,
+                selection,
+                return_scene=STAR_TUTORIAL_RETURN_SCENE,
+            )
+        if scene == STAR_TUTORIAL_RETURN_SCENE:
+            weekly = context.state.events.get(WEEKLY_STAR_EVENT_ID, {})
+            return self._week_to_week_turn(
+                result,
+                weekly_update=dict(weekly) if isinstance(weekly, dict) else {},
+            )
         if scene == STAR_AWARD_SCENE:
             if selection and selection.choice_id == "acknowledge_star":
                 weekly = context.state.events.get(WEEKLY_STAR_EVENT_ID, {})
@@ -157,10 +178,27 @@ class WeeklySummaryStory(AssistantStory):
                     result,
                     weekly_update=acknowledged,
                 )
+            if selection and selection.choice_id == "explain_stars":
+                weekly = context.state.events.get(WEEKLY_STAR_EVENT_ID, {})
+                acknowledged = dict(weekly) if isinstance(weekly, dict) else {}
+                acknowledged["acknowledged"] = True
+                return AssistantTurn(
+                    self.story_id,
+                    STAR_AWARD_SCENE,
+                    event_updates={WEEKLY_STAR_EVENT_ID: acknowledged},
+                    state_story=self.story_id,
+                    state_scene=STAR_TUTORIAL_INTRO_SCENE,
+                    state_status="active",
+                    completed=True,
+                    continue_flow=True,
+                )
             return AssistantTurn(
                 self.story_id, STAR_AWARD_SCENE,
                 lines=(AssistantLine("⭐ A STAR for the week."),),
-                choices=(AssistantChoice("acknowledge_star", "Nice!"),),
+                choices=(
+                    AssistantChoice("acknowledge_star", "Nice!"),
+                    AssistantChoice("explain_stars", "What are STARs?"),
+                ),
                 star_grant_animation=True,
                 state_story=self.story_id, state_scene=STAR_AWARD_SCENE, state_status="active",
             )
@@ -218,6 +256,11 @@ class WeeklySummaryStory(AssistantStory):
             "content": content,
             "event_updates": event_updates,
             "stars_delta": stars_delta,
+            "knowledge_updates": (
+                {WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY: True}
+                if stars_delta
+                else {}
+            ),
             "completed": debug_awards_enabled or not partial,
             "state_story": self.story_id,
             "state_scene": SUMMARY_SCENE,

@@ -13,6 +13,11 @@ from src.assistant.core import (
     AssistantTurn,
 )
 from src.assistant.stories.smalltalk import SmalltalkStory
+from src.assistant.stories.star_tutorial import (
+    STAR_TUTORIAL_INTRO_SCENE,
+    STAR_TUTORIAL_SCENES,
+    star_tutorial_turn,
+)
 from src.assistant.stories.tutorial import (
     EXPLANATION_SCENES,
     FRIENDS_EXPLANATION_NODE,
@@ -25,6 +30,7 @@ from src.assistant.stories.tutorial import (
     TUTORIAL_STORY_ID,
     explanation_turn,
 )
+from src.assistant.stories.weekly_summary import WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY
 
 
 STANDARD_MENU_EVENT_ID: Final = "standard.tutorial_menu"
@@ -77,8 +83,9 @@ def standard_help_turn(
     lines: tuple[AssistantLine, ...] = (),
     knowledge_updates=None,
     profile_analysis_completed: bool = False,
+    stars_explanation_unlocked: bool = False,
 ) -> AssistantTurn:
-    choices = (
+    choices = list(
         tuple(
             AssistantChoice(id=choice_id, label=label)
             for choice_id, label, _, _ in TUTORIAL_OPTIONS
@@ -86,11 +93,13 @@ def standard_help_turn(
         if profile_analysis_completed
         else (AssistantChoice("analyse_profile", "Analyse my Profile"),)
     )
+    if stars_explanation_unlocked:
+        choices.append(AssistantChoice("stars", "Explain STARs"))
     return AssistantTurn(
         story_id=STANDARD_STORY_ID,
         scene_id=STANDARD_HELP_SCENE,
         lines=lines,
-        choices=choices,
+        choices=tuple(choices),
         choice_label="",
         knowledge_updates=knowledge_updates or {},
     )
@@ -120,7 +129,7 @@ class StandardStory(AssistantStory):
         if (
             context.previous_page_key == "assistant"
             and context.state.story == self.story_id
-            and context.state.scene in (*EXPLANATION_SCENES, STANDARD_HELP_SCENE)
+            and context.state.scene in (*EXPLANATION_SCENES, *STAR_TUTORIAL_SCENES, STANDARD_HELP_SCENE)
         ):
             return context.state.scene or STANDARD_MENU_SCENE
         return STANDARD_MENU_SCENE
@@ -132,6 +141,14 @@ class StandardStory(AssistantStory):
         selection: AssistantSelection | None,
     ) -> AssistantTurn:
         scene_id = scene_id or self.entry_scene(context)
+        if scene_id in STAR_TUTORIAL_SCENES:
+            return star_tutorial_turn(
+                context,
+                self.story_id,
+                scene_id,
+                selection,
+                return_scene=STANDARD_HELP_SCENE,
+            )
         if scene_id in EXPLANATION_SCENES:
             if context.previous_page_key != "assistant" and selection is None:
                 return replace(
@@ -153,7 +170,12 @@ class StandardStory(AssistantStory):
                             context.state.knowledge.get(
                                 PROFILE_ANALYSIS_KNOWLEDGE_KEY, False
                             )
-                        )
+                        ),
+                        stars_explanation_unlocked=bool(
+                            context.state.knowledge.get(
+                                WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY, False
+                            )
+                        ),
                     ),
                     state_story=self.story_id, state_scene=STANDARD_HELP_SCENE,
                     state_status="active",
@@ -176,7 +198,12 @@ class StandardStory(AssistantStory):
                     context.state.knowledge.get(
                         PROFILE_ANALYSIS_KNOWLEDGE_KEY, False
                     )
-                )
+                ),
+                stars_explanation_unlocked=bool(
+                    context.state.knowledge.get(
+                        WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY, False
+                    )
+                ),
             )
 
         if selection.choice_id == "analyse_profile":
@@ -185,6 +212,16 @@ class StandardStory(AssistantStory):
                 scene_id=FRIENDS_NODE,
                 state_story=TUTORIAL_STORY_ID,
                 state_scene=FRIENDS_NODE,
+                state_status="active",
+                continue_flow=True,
+            )
+
+        if selection.choice_id == "stars":
+            return AssistantTurn(
+                story_id=self.story_id,
+                scene_id=STAR_TUTORIAL_INTRO_SCENE,
+                state_story=self.story_id,
+                state_scene=STAR_TUTORIAL_INTRO_SCENE,
                 state_status="active",
                 continue_flow=True,
             )
