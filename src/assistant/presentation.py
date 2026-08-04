@@ -478,7 +478,7 @@ class StreamlitAssistantView:
               }
               .assistant-star-flight { height:0; margin:0; position:relative; top:-2.35rem; width:min(80%, 30rem); }
               .assistant-star-flight span { animation:assistant-star-flight 1.35s var(--star-delay) cubic-bezier(.2,.8,.2,1) forwards; color:#ffd60a; font-size:2.2rem; font-weight:700; left:calc(.75rem + var(--star-offset)); line-height:1; position:absolute; text-shadow:0 0 .25rem #fff3a3, 0 0 .55rem rgba(255,214,10,.9); }
-              @keyframes assistant-star-flight { 0% { opacity:0; transform:translate(0, .5rem) scale(.65); } 20% { opacity:1; } 100% { opacity:0; transform:translate(-12rem, -32rem) scale(.45); } }
+              @keyframes assistant-star-flight { 0% { opacity:0; transform:translate(0, .5rem) scale(.65); } 20% { opacity:1; } 100% { opacity:0; transform:translate(12rem, -32rem) scale(.45); } }
               @media (prefers-reduced-motion: reduce) {
                 [class*="st-key-assistant-choice-bar-"] { animation: none; }
               }
