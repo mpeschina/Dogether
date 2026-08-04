@@ -26,7 +26,7 @@ def _choices(*items: tuple[str, str]) -> tuple[AssistantChoice, ...]:
 
 def _lines(*text: str, long_pause: bool = False) -> tuple[AssistantLine, ...]:
     lines = tuple(AssistantLine(item, typing_delay=0) for item in text)
-    return (*lines, AssistantLine("", typing_delay=5)) if long_pause else lines
+    return (*lines, AssistantLine("", typing_delay=6)) if long_pause else lines
 
 
 def star_tutorial_turn(
@@ -85,7 +85,7 @@ def star_tutorial_turn(
             continue_flow=True,
         )
 
-    choices = _choices(("thanks", "(ok, thanks)"), ("not_helpful", "(ok, that was not helpful)"))
+    choices = _choices(("thanks", "ok, thanks"), ("not_helpful", "ok, that was not helpful"))
     if selection is None or selection.choice_id not in {choice.id for choice in choices}:
         return AssistantTurn(
             owner,
