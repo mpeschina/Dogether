@@ -144,13 +144,12 @@ class WeeklySummaryStory(AssistantStory):
         result = _analyse(context, start, partial)
         if scene == STAR_AWARD_SCENE:
             if selection and selection.choice_id == "acknowledge_star":
-                return self._remaining_summary(
+                weekly = context.state.events.get(WEEKLY_STAR_EVENT_ID, {})
+                acknowledged = dict(weekly) if isinstance(weekly, dict) else {}
+                acknowledged["acknowledged"] = True
+                return self._week_to_week_turn(
                     result,
-                    extra_id,
-                    shared_id,
-                    start,
-                    partial,
-                    prefix=self._week_to_week_content(result),
+                    weekly_update=acknowledged,
                 )
             return AssistantTurn(
                 self.story_id, STAR_AWARD_SCENE,
@@ -175,6 +174,7 @@ class WeeklySummaryStory(AssistantStory):
                 and (DEBUG_AWARD_STAR_EVERY_REPORT or not partial)
                 and isinstance(weekly, dict)
                 and weekly.get("awarded")
+                and not weekly.get("acknowledged")
             ):
                 return self.advance(context, STAR_AWARD_SCENE, None)
             return self._remaining_summary(result, extra_id, shared_id, start, partial)
@@ -314,6 +314,29 @@ class WeeklySummaryStory(AssistantStory):
             content.append(AssistantLine(comparison))
         return tuple(content)
 
+    def _week_to_week_turn(
+        self,
+        result: WeekResult,
+        *,
+        weekly_update: dict[str, object],
+    ) -> AssistantTurn:
+        """Restore the normal pause after the Week-to-Week insight."""
+        content = self._week_to_week_content(result)
+        if not content:
+            return self._remaining_summary(result)
+        return AssistantTurn(
+            self.story_id,
+            SUMMARY_SCENE,
+            lines=tuple(item for item in content if isinstance(item, AssistantLine)),
+            cards=tuple(item for item in content if isinstance(item, AssistantCard)),
+            content=content,
+            choices=(AssistantChoice("continue", "Continue"),),
+            event_updates={WEEKLY_STAR_EVENT_ID: weekly_update},
+            state_story=self.story_id,
+            state_scene=SUMMARY_SCENE,
+            state_status="active",
+        )
+
     def _remaining_summary_content(
         self, result: WeekResult, selected_id: str = "", shared_id: str = ""
     ) -> tuple[list[list[AssistantLine | AssistantCard]], str, str]:
@@ -386,11 +409,11 @@ class WeeklySummaryStory(AssistantStory):
             groups.append(list(selected_extra.content))
         return groups, selected_extra.identifier if selected_extra else "", selected_shared.identifier if selected_shared else ""
 
-    def _remaining_summary(self, result: WeekResult, selected_id: str = "", shared_id: str = "", start: date | None = None, partial: bool = False, prefix: tuple[AssistantLine | AssistantCard, ...] = ()) -> AssistantTurn:
+    def _remaining_summary(self, result: WeekResult, selected_id: str = "", shared_id: str = "", start: date | None = None, partial: bool = False) -> AssistantTurn:
         """Render two further insights before offering the next conversational break."""
         groups, selected_extra_id, selected_shared_id = self._remaining_summary_content(result, selected_id, shared_id)
         preview_groups = groups[:2]
-        content: list[AssistantLine | AssistantCard] = [*prefix, AssistantLine("Let’s look a little closer.", typing_delay=0.4)]
+        content: list[AssistantLine | AssistantCard] = [AssistantLine("Let’s look a little closer.", typing_delay=0.4)]
         content.extend(item for group in preview_groups for item in group)
         lines = tuple(item for item in content if isinstance(item, AssistantLine))
         cards = tuple(item for item in content if isinstance(item, AssistantCard))
