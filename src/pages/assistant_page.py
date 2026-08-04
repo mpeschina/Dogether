@@ -78,7 +78,12 @@ def _assistant_star_markup(user_id: str, stars: int) -> str:
             f"<span class='assistant-star-filled'>{'&#9733;' * stars}</span>"
             f"{'&#9734;' * (5 - stars)}</span>"
         )
-    positions = ((14, 18), (82, 18), (13, 52), (85, 52), (24, 82), (75, 82), (8, 35), (92, 35), (45, 88), (56, 12))
+    positions = (
+        (14, 18), (82, 18), (13, 52), (85, 52),
+        (24, 82), (75, 82), (8, 35), (92, 35),
+        (45, 88), (56, 12), (30, 10), (70, 10),
+        (7, 68), (93, 68), (37, 91), (64, 91),
+    )
     digest = hashlib.sha256(f"{user_id}:{stars}".encode()).digest()
     selected = sorted({byte % len(positions) for byte in digest})[:min(stars, len(positions))]
     overlay = "".join(
@@ -227,7 +232,7 @@ def _render_styles() -> None:
           .assistant-star-rating { bottom:.28rem; color:#ffd60a; font-family:Arial,sans-serif; font-size:.68rem; left:50%; letter-spacing:-.08rem; line-height:1; position:absolute; transform:translateX(-50%); white-space:nowrap; }
           .assistant-star-filled, .assistant-star-overlay { text-shadow:0 0 .18rem #fff3a3, 0 0 .42rem rgba(255,214,10,.9); }
           .assistant-star-overlay { color:#ffd60a; font-family:Arial,sans-serif; font-size:.8rem; line-height:1; position:absolute; transform:translate(-50%, -50%); }
-          .assistant-star-count { color:#ffd60a; font-family:Arial,sans-serif; font-size:.85rem; font-weight:700; letter-spacing:0; white-space:nowrap; }
+          .assistant-star-count { color:#ffd60a; font-family:Arial,sans-serif; font-size:1rem; font-weight:700; letter-spacing:0; white-space:nowrap; }
           .assistant-page-icon .material-symbols-rounded {
             font-family: 'Material Symbols Rounded';
             font-size: var(--assistant-page-glyph-size);
