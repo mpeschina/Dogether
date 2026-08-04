@@ -1,6 +1,6 @@
 from src.db.json_persistence import JsonPersistence
 from src.friends.alerts import pending_friend_request_alert_items
-from src.pages.friends_page import _friend_name_with_email
+from src.pages.friends_page import _dismiss_all_friend_suggestion_candidates, _friend_name_with_email
 from src.friends.suggestions import (
     friend_suggestion_candidates,
     load_friend_suggestion_data,
@@ -254,3 +254,32 @@ def test_friend_name_with_email_can_include_compact_note() -> None:
     )
 
     assert label == "Mareike Mandtler (mandtler.m@outlook.de, suggested by Sören Rinne)"
+
+
+def test_dismiss_all_friend_suggestion_candidates_hides_every_displayed_pair() -> None:
+    class RecordingPersistence:
+        def __init__(self) -> None:
+            self.dismissed_pairs: list[tuple[str, str, str]] = []
+
+        def dismiss_friend_suggestion_pair(
+            self,
+            user_id: str,
+            first_friend_id: str,
+            second_friend_id: str,
+            now=None,
+        ) -> dict:
+            self.dismissed_pairs.append((user_id, first_friend_id, second_friend_id))
+            return {}
+
+    candidates = [
+        {"first_user": {"user_id": "bob"}, "second_user": {"user_id": "charlie"}},
+        {"first_user": {"user_id": "dana"}, "second_user": {"user_id": "eli"}},
+    ]
+    persistence = RecordingPersistence()
+
+    _dismiss_all_friend_suggestion_candidates(candidates, persistence, "alice", now=None)
+
+    assert persistence.dismissed_pairs == [
+        ("alice", "bob", "charlie"),
+        ("alice", "dana", "eli"),
+    ]

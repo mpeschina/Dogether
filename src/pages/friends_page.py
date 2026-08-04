@@ -153,6 +153,22 @@ def _render_friend_suggestion_candidate(
                 st.error(str(error))
 
 
+def _dismiss_all_friend_suggestion_candidates(
+    candidates: list[dict[str, Any]],
+    persistence: Persistence,
+    user_id: str,
+    now: datetime | None,
+) -> None:
+    """Hide every currently displayed friend suggestion for this user."""
+    for candidate in candidates:
+        persistence.dismiss_friend_suggestion_pair(
+            user_id,
+            candidate["first_user"]["user_id"],
+            candidate["second_user"]["user_id"],
+            now=now,
+        )
+
+
 def render_friends(
     persistence: Persistence,
     current_user: dict,
@@ -306,7 +322,20 @@ def render_friends(
     #
     friends_for_manual_suggestions, manual_options = manual_friend_suggestion_options(suggestion_data)
     suggestion_candidates = friend_suggestion_candidates(suggestion_data)
-    st.subheader("Help your Friends to stay connected!")
+    suggestion_heading = st.container(horizontal=True)
+    suggestion_heading.subheader("Help your Friends to stay connected!")
+    if len(suggestion_candidates) > 5 and suggestion_heading.button("Dismiss all"):
+        try:
+            _dismiss_all_friend_suggestion_candidates(
+                suggestion_candidates,
+                persistence,
+                user_id,
+                now,
+            )
+            st.info("All suggestions dismissed.")
+            st.rerun()
+        except ValueError as error:
+            st.error(str(error))
     if suggestion_candidates:
         if len(suggestion_candidates) > 3:
             with st.container(height=390):
