@@ -276,6 +276,9 @@ class StreamlitAssistantView:
                         continue
                     choice_id = str(raw_choice.get("id", ""))
                     choice_label = str(raw_choice.get("label", choice_id))
+                    # Streamlit treats button labels as Markdown. Escape literal
+                    # asterisks so placeholder choices such as "*****" remain visible.
+                    button_label = choice_label.replace("*", r"\*")
                     choice_style = str(raw_choice.get("style", "default"))
                     record_selection = raw_choice.get("record_selection")
                     with column:
@@ -286,7 +289,7 @@ class StreamlitAssistantView:
                             )
                         ):
                             st.button(
-                                choice_label,
+                                button_label,
                                 key=f"assistant_choice_{control.get('round_id')}_{index}",
                                 type="primary",
                                 use_container_width=True,

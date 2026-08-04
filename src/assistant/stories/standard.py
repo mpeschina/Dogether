@@ -111,7 +111,7 @@ def standard_advanced_turn(*, lines: tuple[AssistantLine, ...] = ()) -> Assistan
         choices=(
             AssistantChoice("advanced_stars", "Explain STARs to me"),
             AssistantChoice("advanced_unavailable_one", "*****"),
-            AssistantChoice("advanced_unavailable_two", "*****"),
+            AssistantChoice("advanced_unavailable_two", ""),
             AssistantChoice("advanced_more", "I meant even more advanced!"),
         ),
         choice_label="",
@@ -238,10 +238,19 @@ class StandardStory(AssistantStory):
                     state_status="active",
                     continue_flow=True,
                 )
+            if selection.choice_id == "advanced_unavailable_two":
+                return standard_advanced_turn(
+                    lines=(
+                        AssistantLine("What? I dont get anything what do you want from me", typing_delay=1.0),
+                        AssistantLine("Ähm, sorry. I mean. Äh.", typing_delay=0.5),
+                        AssistantLine("Please spell your wishes more clearly.", typing_delay=2.5),
+                        AssistantLine("You can now try it again:", typing_delay=1),
+                    )
+                )
             message = (
                 "Nothing to see here"
                 if selection.choice_id == "advanced_more"
-                else "Not available under current cicumstances"
+                else "Not available under current circumstances"
             )
             return standard_advanced_turn(lines=(AssistantLine(message),))
 

@@ -99,7 +99,7 @@ def test_advanced_tutorial_menu_routes_choices_and_returns_from_star_tutorial() 
     )
     assert submenu.state_scene == STANDARD_ADVANCED_SCENE
     assert [choice.label for choice in submenu.choices] == [
-        "Explain STARs to me", "*****", "*****", "I meant even more advanced!"
+        "Explain STARs to me", "*****", "", "I meant even more advanced!"
     ]
 
     unavailable = story.advance(
@@ -107,14 +107,19 @@ def test_advanced_tutorial_menu_routes_choices_and_returns_from_star_tutorial() 
         STANDARD_ADVANCED_SCENE,
         AssistantSelection(STANDARD_STORY_ID, STANDARD_ADVANCED_SCENE, "advanced_unavailable_one", ""),
     )
-    assert unavailable.lines[0].text == "Not available under current cicumstances"
+    assert unavailable.lines[0].text == "Not available under current circumstances"
     assert unavailable.state_scene == STANDARD_ADVANCED_SCENE
-    other_unavailable = story.advance(
+    empty_choice = story.advance(
         context,
         STANDARD_ADVANCED_SCENE,
         AssistantSelection(STANDARD_STORY_ID, STANDARD_ADVANCED_SCENE, "advanced_unavailable_two", ""),
     )
-    assert other_unavailable.lines[0].text == "Not available under current cicumstances"
+    assert [line.text for line in empty_choice.lines] == [
+        "What? I dont get what do you want from me.",
+        "Please spell your wishes more clearly.",
+        "You can try it again:",
+    ]
+    assert [line.typing_delay for line in empty_choice.lines] == [0, 0, 0]
     more = story.advance(
         context,
         STANDARD_ADVANCED_SCENE,

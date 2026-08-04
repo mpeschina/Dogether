@@ -122,6 +122,29 @@ view.finish()
     assert app.session_state.filtered_state["assistant.transcript"] == [("assistant", "Done")]
 
 
+def test_choice_button_renders_literal_asterisks() -> None:
+    app_source = """
+import src.assistant.presentation as presentation
+from src.assistant.core import AssistantChoice, AssistantTurn
+
+view = presentation.StreamlitAssistantView()
+if not view.waiting_for_input:
+    view.present(AssistantTurn(
+        story_id='test', scene_id='start',
+        choices=(AssistantChoice('stars', '*****'),),
+    ))
+view.finish()
+"""
+    app = AppTest.from_string(app_source, default_timeout=10).run()
+
+    # AppTest exposes the Markdown source passed to Streamlit; the browser
+    # renders the escaped asterisks as literal characters.
+    assert [button.label for button in app.button] == [r"\*\*\*\*\*"]
+    assert app.session_state.filtered_state["assistant.active_control"]["choices"] == [
+        {"id": "stars", "label": "*****", "style": "default", "record_selection": True}
+    ]
+
+
 def test_send_control_is_restored_without_recording_player_bubbles() -> None:
     app = AppTest.from_string(SEND_APP, default_timeout=10).run()
     assert not app.exception
