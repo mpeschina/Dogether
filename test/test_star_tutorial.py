@@ -8,7 +8,14 @@ from src.assistant.stories.star_tutorial import (
     STAR_TUTORIAL_INTRO_SCENE,
     star_tutorial_turn,
 )
-from src.assistant.stories.standard import STANDARD_HELP_SCENE, standard_help_turn
+from src.assistant.director import apply_turn
+from src.assistant.stories.standard import (
+    STANDARD_ADVANCED_SCENE,
+    STANDARD_HELP_SCENE,
+    StandardStory,
+    standard_help_turn,
+)
+from src.assistant.stories.tutorial import PROFILE_ANALYSIS_KNOWLEDGE_KEY, STANDARD_STORY_ID
 from src.assistant.stories.weekly_summary import (
     STAR_AWARD_SCENE,
     WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY,
@@ -66,6 +73,74 @@ def test_help_only_offers_star_explanation_after_a_weekly_reward() -> None:
     )
     assert "stars" not in [choice.id for choice in locked.choices]
     assert "stars" in [choice.id for choice in unlocked.choices]
+
+
+def test_advanced_tutorial_menu_requires_a_star() -> None:
+    locked = standard_help_turn(profile_analysis_completed=True)
+    unlocked = standard_help_turn(profile_analysis_completed=True, stars=1)
+
+    assert "advanced" not in [choice.id for choice in locked.choices]
+    assert [choice.label for choice in unlocked.choices][-1] == "Whats the advanced stuff here?"
+
+
+def test_advanced_tutorial_menu_routes_choices_and_returns_from_star_tutorial() -> None:
+    story = StandardStory()
+    state = AssistantState(
+        stars=1,
+        story=STANDARD_STORY_ID,
+        scene=STANDARD_HELP_SCENE,
+        status="active",
+        knowledge={PROFILE_ANALYSIS_KNOWLEDGE_KEY: True},
+    )
+    context = _context(state)
+
+    submenu = story.advance(
+        context,
+        STANDARD_HELP_SCENE,
+        AssistantSelection(STANDARD_STORY_ID, STANDARD_HELP_SCENE, "advanced", ""),
+    )
+    assert submenu.state_scene == STANDARD_ADVANCED_SCENE
+    assert [choice.label for choice in submenu.choices] == [
+        "Explain STARs to me", "*****", "*****", "I meant even more advanced!"
+    ]
+
+    unavailable = story.advance(
+        context,
+        STANDARD_ADVANCED_SCENE,
+        AssistantSelection(STANDARD_STORY_ID, STANDARD_ADVANCED_SCENE, "advanced_unavailable_one", ""),
+    )
+    assert unavailable.lines[0].text == "Not available under current cicumstances"
+    assert unavailable.state_scene == STANDARD_ADVANCED_SCENE
+    other_unavailable = story.advance(
+        context,
+        STANDARD_ADVANCED_SCENE,
+        AssistantSelection(STANDARD_STORY_ID, STANDARD_ADVANCED_SCENE, "advanced_unavailable_two", ""),
+    )
+    assert other_unavailable.lines[0].text == "Not available under current cicumstances"
+    more = story.advance(
+        context,
+        STANDARD_ADVANCED_SCENE,
+        AssistantSelection(STANDARD_STORY_ID, STANDARD_ADVANCED_SCENE, "advanced_more", ""),
+    )
+    assert more.lines[0].text == "Nothing to see here"
+    assert more.state_scene == STANDARD_ADVANCED_SCENE
+
+    start = story.advance(
+        context,
+        STANDARD_ADVANCED_SCENE,
+        AssistantSelection(STANDARD_STORY_ID, STANDARD_ADVANCED_SCENE, "advanced_stars", ""),
+    )
+    star_state = apply_turn(state, start)
+    complete = story.advance(
+        _context(star_state),
+        STAR_TUTORIAL_FINISH_SCENE,
+        AssistantSelection(STANDARD_STORY_ID, STAR_TUTORIAL_FINISH_SCENE, "thanks", ""),
+    )
+    assert complete.state_scene == STANDARD_ADVANCED_SCENE
+    assert complete.clear_events
+    assert complete.lines[0].text == "Always at your service"
+    assert complete.assistant_leaves is True
+    assert complete.continue_flow is False
 
 
 def test_weekly_star_explanation_acknowledges_the_reward_before_entering_tutorial() -> None:

@@ -36,10 +36,12 @@ from src.assistant.stories.weekly_summary import WEEKLY_STAR_REWARD_UNLOCKED_KNO
 STANDARD_MENU_EVENT_ID: Final = "standard.tutorial_menu"
 STANDARD_MENU_SCENE: Final = "standard.menu"
 STANDARD_HELP_SCENE: Final = "standard.help"
+STANDARD_ADVANCED_SCENE: Final = "standard.advanced"
 STANDARD_TUTORIAL_FLOW: Final = STANDARD_STORY_ID
 STANDARD_PUSH_FLOW: Final = "push_reminder"
 STANDARD_PUSH_NODE: Final = "push.offer_enable"
 PUSH_PROMPT_EVENT_ID: Final = "standard.push_prompt"
+STAR_TUTORIAL_RETURN_EVENT_ID: Final = "standard.star_tutorial.return"
 
 TUTORIAL_OPTIONS: Final = (
     ("friends", "How do I add friends?", "tutorial.friends.seen", FRIENDS_EXPLANATION_NODE),
@@ -50,7 +52,6 @@ TUTORIAL_OPTIONS: Final = (
         "tutorial.notifications.seen",
         PUSH_EXPLANATION_NODE,
     ),
-    ("progress", "How do I track progress?", "tutorial.progress.seen", None),
 )
 
 
@@ -84,6 +85,7 @@ def standard_help_turn(
     knowledge_updates=None,
     profile_analysis_completed: bool = False,
     stars_explanation_unlocked: bool = False,
+    stars: int = 0,
 ) -> AssistantTurn:
     choices = list(
         tuple(
@@ -93,6 +95,8 @@ def standard_help_turn(
         if profile_analysis_completed
         else (AssistantChoice("analyse_profile", "Analyse my Profile"),)
     )
+    if stars > 0:
+        choices.append(AssistantChoice("advanced", "Whats the advanced stuff here?"))
     if stars_explanation_unlocked:
         choices.append(AssistantChoice("stars", "Explain STARs"))
     return AssistantTurn(
@@ -102,6 +106,24 @@ def standard_help_turn(
         choices=tuple(choices),
         choice_label="",
         knowledge_updates=knowledge_updates or {},
+    )
+
+
+def standard_advanced_turn(*, lines: tuple[AssistantLine, ...] = ()) -> AssistantTurn:
+    return AssistantTurn(
+        story_id=STANDARD_STORY_ID,
+        scene_id=STANDARD_ADVANCED_SCENE,
+        lines=lines,
+        choices=(
+            AssistantChoice("advanced_stars", "Explain STARs to me"),
+            AssistantChoice("advanced_unavailable_one", "*****"),
+            AssistantChoice("advanced_unavailable_two", "*****"),
+            AssistantChoice("advanced_more", "I meant even more advanced!"),
+        ),
+        choice_label="",
+        state_story=STANDARD_STORY_ID,
+        state_scene=STANDARD_ADVANCED_SCENE,
+        state_status="active",
     )
 
 
@@ -129,7 +151,12 @@ class StandardStory(AssistantStory):
         if (
             context.previous_page_key == "assistant"
             and context.state.story == self.story_id
-            and context.state.scene in (*EXPLANATION_SCENES, *STAR_TUTORIAL_SCENES, STANDARD_HELP_SCENE)
+            and context.state.scene in (
+                *EXPLANATION_SCENES,
+                *STAR_TUTORIAL_SCENES,
+                STANDARD_HELP_SCENE,
+                STANDARD_ADVANCED_SCENE,
+            )
         ):
             return context.state.scene or STANDARD_MENU_SCENE
         return STANDARD_MENU_SCENE
@@ -142,13 +169,27 @@ class StandardStory(AssistantStory):
     ) -> AssistantTurn:
         scene_id = scene_id or self.entry_scene(context)
         if scene_id in STAR_TUTORIAL_SCENES:
-            return star_tutorial_turn(
+            return_turn = str(
+                context.state.events.get(STAR_TUTORIAL_RETURN_EVENT_ID, {}).get(
+                    "scene", STANDARD_HELP_SCENE
+                )
+            )
+            turn = star_tutorial_turn(
                 context,
                 self.story_id,
                 scene_id,
                 selection,
-                return_scene=STANDARD_HELP_SCENE,
+                return_scene=return_turn,
             )
+            if turn.continue_flow and turn.state_scene == return_turn:
+                return replace(
+                    turn,
+                    lines=(AssistantLine("Always at your service"),),
+                    assistant_leaves=True,
+                    continue_flow=False,
+                    clear_events=(STAR_TUTORIAL_RETURN_EVENT_ID,),
+                )
+            return turn
         if scene_id in EXPLANATION_SCENES:
             if context.previous_page_key != "assistant" and selection is None:
                 return replace(
@@ -176,6 +217,7 @@ class StandardStory(AssistantStory):
                                 WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY, False
                             )
                         ),
+                        stars=context.state.stars,
                     ),
                     state_story=self.story_id, state_scene=STANDARD_HELP_SCENE,
                     state_status="active",
@@ -192,6 +234,28 @@ class StandardStory(AssistantStory):
                 )
             return self._menu_turn(context)
 
+        if scene_id == STANDARD_ADVANCED_SCENE:
+            if selection is None:
+                return standard_advanced_turn()
+            if selection.choice_id == "advanced_stars":
+                return AssistantTurn(
+                    story_id=self.story_id,
+                    scene_id=STAR_TUTORIAL_INTRO_SCENE,
+                    event_updates={
+                        STAR_TUTORIAL_RETURN_EVENT_ID: {"scene": STANDARD_ADVANCED_SCENE}
+                    },
+                    state_story=self.story_id,
+                    state_scene=STAR_TUTORIAL_INTRO_SCENE,
+                    state_status="active",
+                    continue_flow=True,
+                )
+            message = (
+                "Nothing to see here"
+                if selection.choice_id == "advanced_more"
+                else "Not available under current cicumstances"
+            )
+            return standard_advanced_turn(lines=(AssistantLine(message),))
+
         if selection is None:
             return standard_help_turn(
                 profile_analysis_completed=bool(
@@ -204,7 +268,11 @@ class StandardStory(AssistantStory):
                         WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY, False
                     )
                 ),
+                stars=context.state.stars,
             )
+
+        if selection.choice_id == "advanced":
+            return standard_advanced_turn()
 
         if selection.choice_id == "analyse_profile":
             return AssistantTurn(
@@ -220,6 +288,9 @@ class StandardStory(AssistantStory):
             return AssistantTurn(
                 story_id=self.story_id,
                 scene_id=STAR_TUTORIAL_INTRO_SCENE,
+                event_updates={
+                    STAR_TUTORIAL_RETURN_EVENT_ID: {"scene": STANDARD_HELP_SCENE}
+                },
                 state_story=self.story_id,
                 state_scene=STAR_TUTORIAL_INTRO_SCENE,
                 state_status="active",
@@ -231,7 +302,7 @@ class StandardStory(AssistantStory):
             None,
         )
         if selected is None:
-            return standard_help_turn(profile_analysis_completed=True)
+            return standard_help_turn(profile_analysis_completed=True, stars=context.state.stars)
 
         _, _, knowledge_key, tutorial_scene = selected
         if tutorial_scene is None:

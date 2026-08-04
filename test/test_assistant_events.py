@@ -691,7 +691,7 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
         STANDARD_MENU_SCENE,
         selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "help"),
     )
-    assert len(completed_help.choices) == 4
+    assert len(completed_help.choices) == 3
 
     start = story.advance(
         context,
@@ -831,7 +831,7 @@ def test_help_selection_does_not_repeat_the_greeting() -> None:
     assert sum(turn.story_id == GREETINGS_STORY_ID for turn in all_turns) == 1
     assert len(help_view.turns) == 1
     assert help_view.turns[0].scene_id == STANDARD_HELP_SCENE
-    assert len(help_view.turns[0].choices) == 4
+    assert len(help_view.turns[0].choices) == 3
     assert state.scene == STANDARD_HELP_SCENE
 
 
