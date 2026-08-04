@@ -164,8 +164,13 @@ class StreamlitAssistantView:
 
     @staticmethod
     def _render_star_grant_animation() -> None:
+        stars = "".join(
+            "<span style='--star-delay:"
+            f"{index * 0.12:.2f}s;--star-offset:{offset}rem'>&#9733;</span>"
+            for index, offset in enumerate((-0.8, 0.4, -0.25, 0.9, 0))
+        )
         st.markdown(
-            "<div class='assistant-star-flight' aria-label='STAR awarded'>&#9733;</div>",
+            f"<div class='assistant-star-flight' aria-label='STAR awarded'>{stars}</div>",
             unsafe_allow_html=True,
         )
 
@@ -471,7 +476,8 @@ class StreamlitAssistantView:
                 from { opacity: 0; }
                 to { opacity: 1; }
               }
-              .assistant-star-flight { animation:assistant-star-flight 1.35s cubic-bezier(.2,.8,.2,1) forwards; color:#ffd60a; font-size:2.2rem; font-weight:700; line-height:1; margin:.4rem 0; text-align:right; text-shadow:0 1px 3px rgba(0,0,0,.22); }
+              .assistant-star-flight { height:0; margin:0; position:relative; top:-2.35rem; width:min(80%, 30rem); }
+              .assistant-star-flight span { animation:assistant-star-flight 1.35s var(--star-delay) cubic-bezier(.2,.8,.2,1) forwards; color:#ffd60a; font-size:2.2rem; font-weight:700; left:calc(.75rem + var(--star-offset)); line-height:1; position:absolute; text-shadow:0 0 .25rem #fff3a3, 0 0 .55rem rgba(255,214,10,.9); }
               @keyframes assistant-star-flight { 0% { opacity:0; transform:translate(0, .5rem) scale(.65); } 20% { opacity:1; } 100% { opacity:0; transform:translate(-12rem, -32rem) scale(.45); } }
               @media (prefers-reduced-motion: reduce) {
                 [class*="st-key-assistant-choice-bar-"] { animation: none; }

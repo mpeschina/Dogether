@@ -153,7 +153,7 @@ class WeeklySummaryStory(AssistantStory):
                 )
             return AssistantTurn(
                 self.story_id, STAR_AWARD_SCENE,
-                lines=(AssistantLine("A STAR for the week."),),
+                lines=(AssistantLine("⭐ A STAR for the week."),),
                 choices=(AssistantChoice("acknowledge_star", "Nice!"),),
                 star_grant_animation=True,
                 state_story=self.story_id, state_scene=STAR_AWARD_SCENE, state_status="active",
