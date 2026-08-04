@@ -135,6 +135,8 @@ class AssistantTurn:
     completed: bool = False  # Whether to save state durably.
     continue_flow: bool = False  # Whether to advance again immediately.
     advance_sequences: tuple[str, ...] = ()  # Sequences to increment.
+    stars_delta: int = 0  # Durable STAR increment applied with this turn.
+    star_grant_animation: bool = False  # One-shot presentation effect.
     knowledge_updates: Mapping[str, bool] = field(default_factory=dict)  # Knowledge to set.
     event_updates: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # Events to save.
     clear_events: tuple[str, ...] = ()  # Events to remove.

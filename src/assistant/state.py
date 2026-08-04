@@ -12,6 +12,8 @@ ASSISTANT_STATE_SCHEMA_VERSION = 2
 # scene, status, and events so an unfinished flow can resume; it deliberately
 # does not contain the UI's buttons or input configuration.
 TRANSIENT_ASSISTANT_STATE_SESSION_KEY = "assistant.transient_state"
+STAR_AWARDS_EVENT_ID = "stars.story_awards"
+WEEKLY_STAR_EVENT_ID = "stars.weekly"
 
 
 class AssistantMode(str, Enum):
@@ -122,6 +124,21 @@ class AssistantState:
 def grant_stars(state: AssistantState, amount: int = 1) -> AssistantState:
     """Return Assistant state with a non-negative STAR grant applied."""
     return replace(state, stars=state.stars + max(0, int(amount)))
+
+
+def claim_story_star(state: AssistantState, award_id: str) -> tuple[AssistantState, bool]:
+    """Claim a configured story award exactly once for this Assistant state."""
+    award_id = str(award_id).strip()
+    if not award_id:
+        raise ValueError("STAR award IDs must be non-empty.")
+    events = copy.deepcopy(state.events)
+    award_state = events.get(STAR_AWARDS_EVENT_ID, {})
+    claimed = set(award_state.get("claimed", [])) if isinstance(award_state, Mapping) else set()
+    if award_id in claimed:
+        return state, False
+    claimed.add(award_id)
+    events[STAR_AWARDS_EVENT_ID] = {"claimed": sorted(claimed)}
+    return replace(state, events=events, stars=state.stars + 1), True
 
 
 def transient_assistant_state_for_user(

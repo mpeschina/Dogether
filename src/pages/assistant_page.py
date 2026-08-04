@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
 
 import streamlit as st
 
@@ -66,6 +67,32 @@ Instead:
 
 
 
+def _assistant_star_markup(user_id: str, stars: int) -> str:
+    """Return stable STAR decoration for the existing Assistant badge."""
+    stars = max(0, int(stars))
+    if not stars:
+        return ""
+    if stars <= 5:
+        return (
+            "<span class='assistant-star-rating'>"
+            f"<span class='assistant-star-filled'>{'&#9733;' * stars}</span>"
+            f"{'&#9734;' * (5 - stars)}</span>"
+        )
+    positions = ((14, 18), (82, 18), (13, 52), (85, 52), (24, 82), (75, 82), (8, 35), (92, 35), (45, 88), (56, 12))
+    digest = hashlib.sha256(f"{user_id}:{stars}".encode()).digest()
+    selected = sorted({byte % len(positions) for byte in digest})[:min(stars, len(positions))]
+    overlay = "".join(
+        f"<span class='assistant-star-overlay' style='left:{positions[index][0]}%;top:{positions[index][1]}%'>&#9733;</span>"
+        for index in selected
+    )
+    return overlay
+
+
+def _assistant_star_count_markup(stars: int) -> str:
+    stars = max(0, int(stars))
+    return f"<span class='assistant-star-count'>&#9733; {stars}</span>" if stars > 5 else ""
+
+
 def render_assistant(
     persistence: Persistence,
     current_user: dict,
@@ -79,6 +106,9 @@ def render_assistant(
 
     clear_transcript_for_new_help_visit(st.session_state, previous_page_key)
     _render_styles()
+    state = transient_assistant_state_for_user(st.session_state, user_id)
+    if state is None:
+        state = AssistantState.from_profile(current_user)
     icon_background = ASSISTANT_ICON_BACKGROUND_COLOR or str(
         st.get_option("theme.primaryColor") or "#1F2937"
     )
@@ -86,22 +116,21 @@ def render_assistant(
     icon_size = ASSISTANT_ICON_BASE_SIZE_REM * ASSISTANT_ICON_SIZE_MULTIPLIER
     st.markdown(
         "<div class='assistant-page-heading'>"
-        "<span class='assistant-page-icon' aria-hidden='true' "
+        "<span id='assistant-star-target' class='assistant-page-icon' aria-label='Assistant STAR count' "
         f"style='--assistant-page-icon-background: {icon_background}; "
         f"--assistant-page-icon-color: {ASSISTANT_ICON_FOREGROUND_COLOR}; "
         f"--assistant-page-badge-size: {badge_size}rem; "
         f"--assistant-page-glyph-size: {icon_size}rem;'>"
         "<span class='material-symbols-rounded'>support_agent</span>"
+        f"{_assistant_star_markup(user_id, state.stars)}"
         "</span>"
+        f"{_assistant_star_count_markup(state.stars)}"
         "<span>Assistant</span>"
         "</div>",
         unsafe_allow_html=True,
     )
     st.caption("Your friendly helper")
 
-    state = transient_assistant_state_for_user(st.session_state, user_id)
-    if state is None:
-        state = AssistantState.from_profile(current_user)
     friends = persistence.list_friends(user_id)
     goals = persistence.list_goals_for_user(user_id, now=now)
     user_state = {
@@ -189,10 +218,16 @@ def _render_styles() -> None:
             color: var(--assistant-page-icon-color);
             display: inline-flex;
             font-size: var(--assistant-page-glyph-size);
+            overflow: hidden;
+            position: relative;
             height: var(--assistant-page-badge-size);
             justify-content: center;
             width: var(--assistant-page-badge-size);
           }
+          .assistant-star-rating { bottom:.28rem; color:#ffd60a; font-family:Arial,sans-serif; font-size:.68rem; left:50%; letter-spacing:-.08rem; line-height:1; position:absolute; transform:translateX(-50%); white-space:nowrap; }
+          .assistant-star-filled, .assistant-star-overlay { text-shadow:0 0 .18rem #fff3a3, 0 0 .42rem rgba(255,214,10,.9); }
+          .assistant-star-overlay { color:#ffd60a; font-family:Arial,sans-serif; font-size:.8rem; line-height:1; position:absolute; transform:translate(-50%, -50%); }
+          .assistant-star-count { color:#ffd60a; font-family:Arial,sans-serif; font-size:.85rem; font-weight:700; letter-spacing:0; white-space:nowrap; }
           .assistant-page-icon .material-symbols-rounded {
             font-family: 'Material Symbols Rounded';
             font-size: var(--assistant-page-glyph-size);

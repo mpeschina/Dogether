@@ -7,7 +7,7 @@ import random
 from typing import Final
 
 from src.assistant.core import AssistantCard, AssistantChoice, AssistantContext, AssistantLine, AssistantSelection, AssistantStory, AssistantTurn
-from src.assistant.state import AssistantState
+from src.assistant.state import AssistantState, WEEKLY_STAR_EVENT_ID
 from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _datetime, _momentum_halves, _now, _week_start
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _shared_insights, _used_existing_insights
 from src.db.persistence_helpers import APP_ZONE
@@ -18,10 +18,29 @@ WEEK_SELECTION_EVENT_ID: Final = "weekly_summary.selection"
 SELECT_SCENE: Final = "weekly.select"
 SUMMARY_SCENE: Final = "weekly.summary"
 DETAILS_SCENE: Final = "weekly.details"
+STAR_AWARD_SCENE: Final = "weekly.star_award"
 UNAVAILABLE_PREFACE_SCENE: Final = "weekly.unavailable_preface"
 UNAVAILABLE_HINT_SCENE: Final = "weekly.unavailable_hint"
 WEEK_TO_WEEK_CHART_WEEKS: Final = 20
 WEEKLY_SUMMARY_UNAVAILABLE_MESSAGE: Final = "Currently Unavailable"
+
+# Development-only switch: each displayed report earns a STAR, includin
+# repeated views of the same partial or final week.
+DEBUG_AWARD_STAR_EVERY_REPORT: Final = True
+
+
+def _weekly_star_evaluation(state: AssistantState, start: date, rate: float) -> tuple[dict[str, object], int]:
+    """Return a persisted-once weekly STAR decision and its STAR increment."""
+    week = start.isoformat()
+    previous = state.events.get(WEEKLY_STAR_EVENT_ID, {})
+    if isinstance(previous, dict) and previous.get("evaluated_week") == week:
+        return previous, 0
+    probability = 0.9 if rate > 80 else 0.5 if rate > 50 else 0
+    awarded = probability > 0 and random.random() < probability
+    result: dict[str, object] = {"evaluated_week": week, "awarded": awarded}
+    if awarded:
+        result["last_claimed_week"] = week
+    return result, int(awarded)
 
 
 def _weekly_summary_unlock_at(context: AssistantContext) -> datetime | None:
@@ -123,6 +142,23 @@ class WeeklySummaryStory(AssistantStory):
         if start is None:
             return self.advance(context, SELECT_SCENE, None)
         result = _analyse(context, start, partial)
+        if scene == STAR_AWARD_SCENE:
+            if selection and selection.choice_id == "acknowledge_star":
+                return self._remaining_summary(
+                    result,
+                    extra_id,
+                    shared_id,
+                    start,
+                    partial,
+                    prefix=self._week_to_week_content(result),
+                )
+            return AssistantTurn(
+                self.story_id, STAR_AWARD_SCENE,
+                lines=(AssistantLine("A STAR for the week."),),
+                choices=(AssistantChoice("acknowledge_star", "Nice!"),),
+                star_grant_animation=True,
+                state_story=self.story_id, state_scene=STAR_AWARD_SCENE, state_status="active",
+            )
         if scene == DETAILS_SCENE:
             if selection and selection.choice_id == "done":
                 return AssistantTurn(self.story_id, DETAILS_SCENE, completed=True, assistant_leaves=True, state_story=self.story_id, state_scene=DETAILS_SCENE, state_status="completed")
@@ -132,6 +168,15 @@ class WeeklySummaryStory(AssistantStory):
         if selection and selection.choice_id == "details":
             return self._details_turn(result, start, partial, extra_id)
         if selection and selection.choice_id == "continue":
+            weekly = context.state.events.get(WEEKLY_STAR_EVENT_ID, {})
+            if (
+                context.state.story == self.story_id
+                and context.state.status == "active"
+                and (DEBUG_AWARD_STAR_EVERY_REPORT or not partial)
+                and isinstance(weekly, dict)
+                and weekly.get("awarded")
+            ):
+                return self.advance(context, STAR_AWARD_SCENE, None)
             return self._remaining_summary(result, extra_id, shared_id, start, partial)
         if selection and selection.choice_id == "more":
             return self._more_summary(result, extra_id, shared_id)
@@ -143,12 +188,47 @@ class WeeklySummaryStory(AssistantStory):
 
     def _summary_turn(self, context: AssistantContext, start: date, partial: bool) -> AssistantTurn:
         result = _analyse(context, start, partial)
-        turn = self._opening_summary(result)
+        event_updates: dict[str, dict[str, object]] = {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial}}
+        stars_delta = 0
+        if DEBUG_AWARD_STAR_EVERY_REPORT:
+            weekly_result = {
+                "evaluated_week": start.isoformat(),
+                "awarded": True,
+                "last_claimed_week": start.isoformat(),
+                "debug_forced": True,
+            }
+            stars_delta = 1
+            event_updates[WEEKLY_STAR_EVENT_ID] = weekly_result
+        elif not partial:
+            weekly_result, stars_delta = _weekly_star_evaluation(context.state, start, result.rate)
+            event_updates[WEEKLY_STAR_EVENT_ID] = weekly_result
+        turn = self._opening_summary(result, include_week_to_week=not bool(stars_delta))
         opening = (AssistantLine("This week is still moving."), AssistantLine("Here’s the story so far.", typing_delay=0.6)) if partial else (AssistantLine("Let’s look at last week."), AssistantLine("A few things stand out.", typing_delay=0.6))
         content = (*opening, *turn.content) if turn.content else ()
-        return AssistantTurn(**{**turn.__dict__, "lines": (*opening, *turn.lines), "content": content, "event_updates": {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial}}, "state_story": self.story_id, "state_scene": SUMMARY_SCENE, "state_status": "active"})
+        changes = {
+            **turn.__dict__,
+            "lines": (*opening, *turn.lines),
+            "content": content,
+            "event_updates": event_updates,
+            "stars_delta": stars_delta,
+            "completed": DEBUG_AWARD_STAR_EVERY_REPORT or not partial,
+            "state_story": self.story_id,
+            "state_scene": SUMMARY_SCENE,
+            "state_status": "active",
+        }
+        if stars_delta:
+            # The reward is an immediate outlet from the opening insight; it
+            # does not require the user to first press the normal Continue.
+            changes.update(
+                choices=(),
+                continue_flow=True,
+                state_scene=STAR_AWARD_SCENE,
+            )
+        return AssistantTurn(**changes)
 
-    def _opening_summary(self, result: WeekResult) -> AssistantTurn:
+    def _opening_summary(
+        self, result: WeekResult, *, include_week_to_week: bool = True
+    ) -> AssistantTurn:
         if not result.active:
             message = (
                 f"Only {result.skipped} excused period{'s were' if result.skipped != 1 else ' was'} recorded."
@@ -204,28 +284,36 @@ class WeeklySummaryStory(AssistantStory):
             headline,
             AssistantLine(_headline_analysis(result)),
         ]
-        if result.previous_rate is not None and not result.partial:
-            diff = result.rate - result.previous_rate
-            workload = result.active - result.previous_active
-            content.append(
-                AssistantCard(
-                    "WEEK TO WEEK",
-                    f"{diff:+.0f} completion points",
-                    "",
-                    (
-                        ("Previous week", f"{result.previous_rate:.0f}% · {result.previous_active} active"),
-                        ("Selected week", f"{result.rate:.0f}% · {result.active} active"),
-                        ("Workload", f"{workload:+d} active periods"),
-                    ),
-                    weekly_chart=_week_to_week_chart(result),
-                )
-            )
-            comparison = _comparison_analysis(result, diff)
-            if comparison:
-                content.append(AssistantLine(comparison))
+        if include_week_to_week:
+            content.extend(self._week_to_week_content(result))
         lines = tuple(item for item in content if isinstance(item, AssistantLine))
         cards = tuple(item for item in content if isinstance(item, AssistantCard))
         return AssistantTurn(self.story_id, SUMMARY_SCENE, lines=lines, cards=cards, content=tuple(content), choices=(AssistantChoice("continue", "Continue"),))
+
+    @staticmethod
+    def _week_to_week_content(result: WeekResult) -> tuple[AssistantLine | AssistantCard, ...]:
+        if result.previous_rate is None or result.partial:
+            return ()
+        diff = result.rate - result.previous_rate
+        workload = result.active - result.previous_active
+        content: list[AssistantLine | AssistantCard] = [
+            AssistantCard(
+                "WEEK TO WEEK",
+                f"{diff:+.0f} completion points",
+                "",
+                (
+                    ("Previous week", f"{result.previous_rate:.0f}% · {result.previous_active} active"),
+                    ("Selected week", f"{result.rate:.0f}% · {result.active} active"),
+                    ("Workload", f"{workload:+d} active periods"),
+                ),
+                weekly_chart=_week_to_week_chart(result),
+            )
+        ]
+        comparison = _comparison_analysis(result, diff)
+        if comparison:
+            content.append(AssistantLine(comparison))
+        return tuple(content)
+
     def _remaining_summary_content(
         self, result: WeekResult, selected_id: str = "", shared_id: str = ""
     ) -> tuple[list[list[AssistantLine | AssistantCard]], str, str]:
@@ -298,11 +386,11 @@ class WeeklySummaryStory(AssistantStory):
             groups.append(list(selected_extra.content))
         return groups, selected_extra.identifier if selected_extra else "", selected_shared.identifier if selected_shared else ""
 
-    def _remaining_summary(self, result: WeekResult, selected_id: str = "", shared_id: str = "", start: date | None = None, partial: bool = False) -> AssistantTurn:
+    def _remaining_summary(self, result: WeekResult, selected_id: str = "", shared_id: str = "", start: date | None = None, partial: bool = False, prefix: tuple[AssistantLine | AssistantCard, ...] = ()) -> AssistantTurn:
         """Render two further insights before offering the next conversational break."""
         groups, selected_extra_id, selected_shared_id = self._remaining_summary_content(result, selected_id, shared_id)
         preview_groups = groups[:2]
-        content: list[AssistantLine | AssistantCard] = [AssistantLine("Let’s look a little closer.", typing_delay=0.4)]
+        content: list[AssistantLine | AssistantCard] = [*prefix, AssistantLine("Let’s look a little closer.", typing_delay=0.4)]
         content.extend(item for group in preview_groups for item in group)
         lines = tuple(item for item in content if isinstance(item, AssistantLine))
         cards = tuple(item for item in content if isinstance(item, AssistantCard))

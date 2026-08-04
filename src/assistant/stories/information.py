@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 from datetime import datetime
 from collections.abc import MutableMapping
 from typing import Any, Mapping
@@ -15,7 +16,7 @@ from src.assistant.core import (
     AssistantStory,
     AssistantTurn,
 )
-from src.assistant.state import AssistantState, grant_stars
+from src.assistant.state import AssistantState, claim_story_star
 from src.assistant.story_session import story_session
 from src.assistant.stories.tutorial import READY_NODE, STANDARD_STORY_ID
 
@@ -25,6 +26,7 @@ GOAL_INVITATION_EVENT_ID = "information.goal_invitations"
 INFORMATION_COMPLETE_KEY = "complete"
 GOAL_INVITATION_NOTIFICATIONS_UNLOCKED_KNOWLEDGE_KEY = "information.goal_invitation_notifications_unlocked"
 GOAL_INVITATION_STAR_REWARD_GRANTED_KNOWLEDGE_KEY = "information.goal_invitation_star_reward_granted"
+GOAL_INVITATION_STAR_AWARD_ID = "information.third_shared_goal"
 
 
 def pending_goal_invitations(state: AssistantState | Mapping[str, Any]) -> list[dict[str, str]]:
@@ -78,7 +80,8 @@ def record_goal_invitation_news(
             recipient_user_id in award_star_for
             and not knowledge.get(GOAL_INVITATION_STAR_REWARD_GRANTED_KNOWLEDGE_KEY, False)
         ):
-            updated_state = grant_stars(state)
+            updated_state, _ = claim_story_star(state, GOAL_INVITATION_STAR_AWARD_ID)
+            events = copy.deepcopy(updated_state.events)
             knowledge[GOAL_INVITATION_STAR_REWARD_GRANTED_KNOWLEDGE_KEY] = True
         friend_ids = {friend.get("user_id") for friend in persistence.list_friends(recipient_user_id)}
         participants = set(goal.get("participants", {}))

@@ -134,6 +134,8 @@ class StreamlitAssistantView:
                     self._present_line(line)
                 for card in turn.cards:
                     self._append_and_render("card", card)
+            if turn.star_grant_animation:
+                self._render_star_grant_animation()
             for message in turn.statuses:
                 self._append_and_render(
                     "status" if turn.keep_statuses_in_history else "live_status",
@@ -159,6 +161,13 @@ class StreamlitAssistantView:
                 "live_progress",
                 {"value": progress.value, "text": progress.text},
             )
+
+    @staticmethod
+    def _render_star_grant_animation() -> None:
+        st.markdown(
+            "<div class='assistant-star-flight' aria-label='STAR awarded'>&#9733;</div>",
+            unsafe_allow_html=True,
+        )
 
     def clear_control(self) -> None:
         st.session_state.pop(ACTIVE_CONTROL_KEY, None)
@@ -462,6 +471,8 @@ class StreamlitAssistantView:
                 from { opacity: 0; }
                 to { opacity: 1; }
               }
+              .assistant-star-flight { animation:assistant-star-flight 1.35s cubic-bezier(.2,.8,.2,1) forwards; color:#ffd60a; font-size:2.2rem; font-weight:700; line-height:1; margin:.4rem 0; text-align:right; text-shadow:0 1px 3px rgba(0,0,0,.22); }
+              @keyframes assistant-star-flight { 0% { opacity:0; transform:translate(0, .5rem) scale(.65); } 20% { opacity:1; } 100% { opacity:0; transform:translate(-12rem, -32rem) scale(.45); } }
               @media (prefers-reduced-motion: reduce) {
                 [class*="st-key-assistant-choice-bar-"] { animation: none; }
               }

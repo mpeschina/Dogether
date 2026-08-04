@@ -276,6 +276,7 @@ def apply_turn(state: AssistantState, turn: AssistantTurn) -> AssistantState:
         sequences=sequences,
         knowledge=knowledge,
         events=events,
+        stars=max(0, state.stars + max(0, turn.stars_delta)),
         story=turn.state_story if turn.state_story is not None else state.story,
         scene=turn.state_scene if turn.state_scene is not None else state.scene,
         status=turn.state_status if turn.state_status is not None else state.status,
