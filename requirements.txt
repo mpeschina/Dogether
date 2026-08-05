@@ -4,3 +4,4 @@ pymongo[srv]
 pytest
 pywebpush
 py-vapid
+starlette==1.3.1
