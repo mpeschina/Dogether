@@ -328,6 +328,27 @@ def test_weekly_chart_history_bars_are_slightly_darker_than_the_secondary_theme_
     )
 
 
+def test_mobile_choice_bar_uses_a_two_column_grid_and_reserves_scroll_space(monkeypatch) -> None:
+    rendered: list[str] = []
+    monkeypatch.setattr(
+        presentation.st,
+        "markdown",
+        lambda body, **_: rendered.append(body),
+    )
+
+    presentation.StreamlitAssistantView._render_control_styles()
+
+    styles = rendered[0]
+    assert "@media (max-width: 640px)" in styles
+    assert "padding-bottom: 14rem" in styles
+    assert 'choice_layout = "grid" if len(choices) >= 3 else "stacked"' in Path(
+        "src/assistant/presentation.py"
+    ).read_text(encoding="utf-8")
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in styles
+    assert "flex-direction: column" in styles
+    assert "max-height: calc(100dvh - 4.5rem)" in styles
+
+
 def test_send_control_uses_its_stable_css_position_without_delayed_repositioning() -> None:
     content = Path("src/assistant/presentation.py").read_text(encoding="utf-8")
 

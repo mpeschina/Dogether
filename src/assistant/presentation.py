@@ -282,8 +282,12 @@ class StreamlitAssistantView:
         if not isinstance(choices, list) or not choices:
             return
         with self._control_bar.container():
+            choice_layout = "grid" if len(choices) >= 3 else "stacked"
             with st.container(
-                key=f"assistant-choice-bar-{control.get('round_id')}"
+                key=(
+                    "assistant-choice-bar-"
+                    f"{control.get('round_id')}-{choice_layout}"
+                )
             ):
                 label = str(control.get("label", ""))
                 if label:
@@ -496,6 +500,30 @@ class StreamlitAssistantView:
                 font-style: italic;
               }
               [class*="st-key-assistant-send-bar-"] { bottom: 0.5rem; }
+              @media (max-width: 640px) {
+                [data-testid="stMainBlockContainer"] { padding-bottom: 14rem; }
+                [class*="st-key-assistant-choice-bar-"] {
+                  max-height: calc(100dvh - 4.5rem);
+                  overflow-y: auto;
+                  overscroll-behavior: contain;
+                }
+                [class*="st-key-assistant-choice-bar-"][class*="-grid"] [data-testid="stHorizontalBlock"] {
+                  display: grid !important;
+                  gap: 0.5rem;
+                  grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+                [class*="st-key-assistant-choice-bar-"][class*="-grid"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+                  min-width: 0;
+                  width: 100% !important;
+                }
+                [class*="st-key-assistant-choice-bar-"][class*="-stacked"] [data-testid="stHorizontalBlock"] {
+                  flex-direction: column;
+                  gap: 0.5rem;
+                }
+                [class*="st-key-assistant-choice-bar-"][class*="-stacked"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+                  width: 100% !important;
+                }
+              }
               @keyframes assistant-choice-fade-in {
                 from { opacity: 0; }
                 to { opacity: 1; }
