@@ -16,7 +16,10 @@ from src.pages.account_page import (
     clear_greeting_session,
     clear_smalltalk_session,
     debug_account_status,
+    format_personal_best_day,
     greeting_debug_info,
+    personal_best_records,
+    personal_bests_html,
     reset_assistant_session_state,
 )
 
@@ -101,6 +104,36 @@ def test_activity_diagram_html_renders_full_past_365_days() -> None:
     assert "2026-01-01: 1 / 1 goals fulfilled (100.0%)" in html
     assert "2026-12-31: 1 / 2 goals fulfilled (50.0%)" in html
     assert html.count("class='activity-day'") == 371
+
+
+def test_personal_bests_show_only_active_numeric_goals_and_use_a_friendly_day() -> None:
+    goals = [
+        {"id": "run", "description": "Run <fast>", "participants": {"alice": {"target": 5}}},
+        {"id": "binary", "description": "Meditate", "participants": {"alice": {"target": 1}}},
+        {"id": "missing", "description": "Read", "participants": {"alice": {"target": 10}}},
+    ]
+    user = {
+        "user_id": "alice",
+        "personal_bests": {
+            "run": {"repetitions": 12, "achieved_at": "2025-11-21T11:00:00+00:00"},
+            "binary": {"repetitions": 2, "achieved_at": "2025-11-20T11:00:00+00:00"},
+            "missing": {"repetitions": 0, "achieved_at": "2025-11-20T11:00:00+00:00"},
+            "stale": {"repetitions": 99, "achieved_at": "2025-11-20T11:00:00+00:00"},
+        },
+    }
+
+    records = personal_best_records(user, goals)
+
+    assert len(records) == 1
+    assert records[0]["goal"] == "Run <fast>"
+    assert records[0]["repetitions"] == 12
+    assert format_personal_best_day(records[0]["achieved"]) == "Friday 21st of November 2025"
+    html = personal_bests_html(records)
+    assert "Personal Bests" in html
+    assert "Your record-breaking moments</div>" in html
+    assert "Run &lt;fast&gt;" in html
+    assert "personal-best-card-heading" in html
+    assert "12 <span>reps</span>" in html
 
 
 def test_greeting_debug_info_shows_and_clears_only_session_greeting_state() -> None:

@@ -110,7 +110,57 @@ def _normalise_user_profile(user: dict[str, Any]) -> dict[str, Any]:
         seen_pairs.add(pair_key)
         dismissed_pairs.append(pair)
     normalised["dismissed_friend_suggestion_pairs"] = dismissed_pairs
+    personal_bests: dict[str, dict[str, Any]] = {}
+    raw_personal_bests = user.get("personal_bests", {})
+    if isinstance(raw_personal_bests, dict):
+        for goal_id, record in raw_personal_bests.items():
+            if not isinstance(goal_id, str) or not goal_id or not isinstance(record, dict):
+                continue
+            try:
+                repetitions = int(record.get("repetitions", 0))
+            except (TypeError, ValueError):
+                continue
+            achieved_at = record.get("achieved_at")
+            if repetitions < 1 or not isinstance(achieved_at, str):
+                continue
+            try:
+                datetime.fromisoformat(achieved_at)
+            except ValueError:
+                continue
+            personal_bests[goal_id] = {
+                "repetitions": repetitions,
+                "achieved_at": achieved_at,
+            }
+    normalised["personal_bests"] = personal_bests
     return normalised
+
+
+def _record_personal_best(
+    profile: dict[str, Any],
+    goal_id: str,
+    *,
+    target: int,
+    current: int,
+    now: datetime | None = None,
+) -> bool:
+    """Store a strictly improved numeric-goal record and report whether it changed."""
+    target = max(1, int(target))
+    current = max(0, int(current))
+    if target <= 1 or current < 1:
+        return False
+    personal_bests = profile.setdefault("personal_bests", {})
+    if not isinstance(personal_bests, dict):
+        personal_bests = {}
+        profile["personal_bests"] = personal_bests
+    existing = personal_bests.get(goal_id, {})
+    try:
+        existing_repetitions = int(existing.get("repetitions", 0))
+    except (AttributeError, TypeError, ValueError):
+        existing_repetitions = 0
+    if current <= existing_repetitions:
+        return False
+    personal_bests[goal_id] = {"repetitions": current, "achieved_at": _iso(now)}
+    return True
 
 
 def debug_info_enabled(profile: Mapping[str, Any]) -> bool:
