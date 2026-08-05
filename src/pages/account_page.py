@@ -132,7 +132,7 @@ def personal_bests_html(records: list[dict[str, object]]) -> str:
         ".personal-best-goal{overflow-wrap:anywhere}.personal-best-count{font-size:1.7rem;font-weight:800;color:#8a5b00;margin:.45rem 0 .1rem}"
         ".personal-best-count span{font-size:.95rem;font-weight:600}.personal-best-date{font-size:.9rem;font-weight:600}"
         ".personal-best-cheer{font-size:.82rem;color:#75612a;margin-top:.5rem}@media(max-width:480px){.personal-bests-grid{grid-template-columns:1fr}}"
-        "</style><section class='personal-bests'><div class='personal-bests-heading'>Personal Bests</div>"
+        "</style><section class='personal-bests'><div class='personal-bests-heading'>Personal Highlights</div>"
         "<div class='personal-bests-intro'>Your record-breaking moments</div>"
         f"<div class='personal-bests-grid'>{cards}</div></section>"
     )
