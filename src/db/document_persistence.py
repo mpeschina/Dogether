@@ -24,7 +24,6 @@ from .persistence_helpers import (
     _parse_dt,
     _period_start,
     _record_period_outcome,
-    _record_personal_best,
     _refresh_activity_day,
     _repair_activity_days,
     _schedule,
@@ -70,7 +69,6 @@ class DocumentPersistence:
             )
             user.setdefault("debug_info", False)
             user.setdefault("dismissed_friend_suggestion_pairs", [])
-            user.setdefault("personal_bests", {})
             if existing != user:
                 data["users"][user_id] = user
                 self._write(data)
@@ -159,7 +157,6 @@ class DocumentPersistence:
                 "last_seen_at": now_iso,
                 "debug_info": False,
                 "dismissed_friend_suggestion_pairs": [],
-                "personal_bests": {},
             }
             data["users"][user_id] = profile
             self._write(data)
@@ -725,13 +722,6 @@ class DocumentPersistence:
                 "archived_at": None,
             }
             data["goals"][goal_id] = goal
-            _record_personal_best(
-                data["users"][created_by],
-                goal_id,
-                target=target,
-                current=current,
-                now=now_dt,
-            )
             for participant_id in participant_ids:
                 _refresh_activity_day(data, participant_id, now_dt.date())
             self._write(data)
@@ -846,13 +836,6 @@ class DocumentPersistence:
             after_current = max(0, int(participant.get("current", 0)))
             after_target = max(1, int(participant.get("target", 1)))
             is_complete = after_current >= after_target
-            _record_personal_best(
-                data["users"][user_id],
-                goal_id,
-                target=after_target,
-                current=after_current,
-                now=now_dt,
-            )
             notification_event = None
             if (
                 is_complete

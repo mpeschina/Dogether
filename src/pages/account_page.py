@@ -18,7 +18,7 @@ from src.assistant.stories.greetings import (
 )
 from src.assistant.stories.smalltalk import SMALLTALK_STORY_ID
 from src.db.persistence import Persistence
-from src.db.persistence_helpers import APP_ZONE, debug_info_enabled
+from src.db.persistence_helpers import debug_info_enabled
 from src.pages.common_helpers import (
     ACTIVITY_CELL_GAP,
     ACTIVITY_CELL_SIZE,
@@ -55,98 +55,12 @@ def render_account(
 
     st.subheader("Activity")
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=365)
-    render_personal_bests(current_user, persistence.list_goals_for_user(user_id, now=now))
     if debug_info_enabled(current_user):
         render_assistant_settings(persistence, current_user, user_id, now=now)
 
 
 def debug_account_status(current_user: Mapping[str, Any]) -> str:
     return "Debug account: enabled" if debug_info_enabled(current_user) else "Debug account: disabled"
-
-
-def personal_best_records(current_user: Mapping[str, Any], goals: list[dict]) -> list[dict[str, object]]:
-    """Return display-ready personal bests for active numeric goals only."""
-    stored_bests = current_user.get("personal_bests", {})
-    if not isinstance(stored_bests, Mapping):
-        return []
-    records = []
-    for goal in goals:
-        goal_id = goal.get("id")
-        participant = goal.get("participants", {}).get(current_user.get("user_id"), {})
-        best = stored_bests.get(goal_id)
-        if not isinstance(goal_id, str) or not isinstance(participant, Mapping) or not isinstance(best, Mapping):
-            continue
-        try:
-            target = int(participant.get("target", 1))
-            repetitions = int(best.get("repetitions", 0))
-        except (TypeError, ValueError):
-            continue
-        achieved_at = best.get("achieved_at")
-        if target <= 1 or repetitions < 1 or not isinstance(achieved_at, str):
-            continue
-        try:
-            achieved = datetime.fromisoformat(achieved_at).astimezone(APP_ZONE)
-        except ValueError:
-            continue
-        records.append(
-            {
-                "goal": str(goal.get("description") or "Goal"),
-                "repetitions": repetitions,
-                "achieved": achieved,
-            }
-        )
-    return sorted(records, key=lambda record: (-int(record["repetitions"]), str(record["goal"]).casefold()))
-
-
-def _ordinal(day: int) -> str:
-    suffix = "th" if 10 <= day % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-    return f"{day}{suffix}"
-
-
-def format_personal_best_day(achieved: datetime) -> str:
-    return f"{achieved.strftime('%A')} {_ordinal(achieved.day)} of {achieved.strftime('%B %Y')}"
-
-
-def personal_bests_html(records: list[dict[str, object]]) -> str:
-    cards = "".join(
-        "<article class='personal-best-card'>"
-        "<div class='personal-best-card-heading'>"
-        "<span class='personal-best-trophy' aria-hidden='true'>🏆</span>"
-        f"<strong class='personal-best-goal'>{escape(str(record['goal']))}</strong>"
-        "</div>"
-        f"<div class='personal-best-count'>{int(record['repetitions']):,} <span>reps</span></div>"
-        f"<div class='personal-best-date'>{escape(format_personal_best_day(record['achieved']))}</div>"
-        "<div class='personal-best-cheer'>A personal best — brilliant work!</div>"
-        "</article>"
-        for record in records
-    )
-    return (
-        "<style>"
-        ".personal-bests{margin:1.5rem 0 1.75rem}.personal-bests-heading{display:flex;align-items:center;gap:.45rem;"
-        "font-size:1.35rem;font-weight:700;margin-bottom:.2rem}.personal-bests-intro{color:rgba(49,51,63,.72);margin-bottom:.85rem}"
-        ".personal-bests-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.75rem}"
-        ".personal-best-card{position:relative;overflow:hidden;padding:1rem 1.1rem;border:1px solid #f0c85a;border-radius:16px;"
-        "background:linear-gradient(135deg,#fff9df,#fff 62%,#f8edff);box-shadow:0 4px 14px rgba(147,103,9,.12)}"
-        ".personal-best-card::after{content:'✦  ✧';position:absolute;right:.7rem;top:.45rem;color:#e7af24;font-size:1.1rem}"
-        ".personal-best-card-heading{display:flex;align-items:center;gap:.4rem;padding-right:2.2rem}.personal-best-trophy{font-size:1.35rem}"
-        ".personal-best-goal{overflow-wrap:anywhere}.personal-best-count{font-size:1.7rem;font-weight:800;color:#8a5b00;margin:.45rem 0 .1rem}"
-        ".personal-best-count span{font-size:.95rem;font-weight:600}.personal-best-date{font-size:.9rem;font-weight:600}"
-        ".personal-best-cheer{font-size:.82rem;color:#75612a;margin-top:.5rem}@media(max-width:480px){.personal-bests-grid{grid-template-columns:1fr}}"
-        "</style><section class='personal-bests'><div class='personal-bests-heading'>Personal Bests</div>"
-        "<div class='personal-bests-intro'>Your record-breaking moments</div>"
-        f"<div class='personal-bests-grid'>{cards}</div></section>"
-    )
-
-
-def render_personal_bests(current_user: Mapping[str, Any], goals: list[dict]) -> None:
-    records = personal_best_records(current_user, goals)
-    if not records:
-        return
-    html = personal_bests_html(records)
-    if hasattr(st, "html"):
-        st.html(html)
-    else:
-        st.markdown(html, unsafe_allow_html=True)
 
 
 def render_assistant_settings(

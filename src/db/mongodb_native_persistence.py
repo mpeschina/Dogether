@@ -29,7 +29,6 @@ from .persistence_helpers import (
     _parse_dt,
     _period_start,
     _record_period_outcome,
-    _record_personal_best,
     _refresh_activity_day,
     _repair_activity_days,
     _schedule,
@@ -424,7 +423,6 @@ class MongoNativePersistence:
         )
         user.setdefault("debug_info", False)
         user.setdefault("dismissed_friend_suggestion_pairs", [])
-        user.setdefault("personal_bests", {})
         if user != existing:
             self._users_inventory_collection().update_one({"_id": user_id}, {"$set": user}, upsert=True)
             self._cache_clear()
@@ -518,7 +516,6 @@ class MongoNativePersistence:
             "last_seen_at": now_iso,
             "debug_info": False,
             "dismissed_friend_suggestion_pairs": [],
-            "personal_bests": {},
         }
         self._users_inventory_collection().replace_one({"_id": user_id}, {"_id": user_id, **profile}, upsert=True)
         self._cache_clear()
@@ -1037,17 +1034,6 @@ class MongoNativePersistence:
             "archived_at": None,
         }
         self._goals_collection().replace_one({"_id": goal_id}, {"_id": goal_id, **goal}, upsert=True)
-        creator = self.get_user(created_by)
-        if creator and _record_personal_best(
-            creator,
-            goal_id,
-            target=target,
-            current=current,
-            now=now_dt,
-        ):
-            self._users_inventory_collection().update_one(
-                {"_id": created_by}, {"$set": {"personal_bests": creator["personal_bests"]}}
-            )
         self._cache_clear()
         for participant_id in participant_ids:
             self._refresh_activity_day_for_user(participant_id, now_dt.date())
@@ -1131,24 +1117,12 @@ class MongoNativePersistence:
         after_current = max(0, int(participant.get("current", 0)))
         after_target = max(1, int(participant.get("target", 1)))
         is_complete = after_current >= after_target
-        user = self.get_user(user_id)
-        personal_best_changed = bool(user) and _record_personal_best(
-            user,
-            goal_id,
-            target=after_target,
-            current=after_current,
-            now=now_dt,
-        )
         notification_event = None
         if is_complete and not was_complete and participant.get("last_completion_notification_day") != today_key:
             participant["last_completion_notification_day"] = today_key
             notification_event = {"type": "goal_completed", "goal_id": goal_id, "completed_by_user_id": user_id, "day": today_key}
         self._goals_collection().update_one({"_id": goal_id}, {"$set": {f"participants.{user_id}": participant}})
         self._users_inventory_collection().update_one({"_id": user_id}, {"$set": {"last_seen_at": _iso(now)}})
-        if personal_best_changed:
-            self._users_inventory_collection().update_one(
-                {"_id": user_id}, {"$set": {"personal_bests": user["personal_bests"]}}
-            )
         self._cache_clear()
         self._refresh_activity_day_for_user(user_id, now_dt.date())
         result = copy.deepcopy(goal)

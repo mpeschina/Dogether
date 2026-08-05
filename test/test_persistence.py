@@ -416,7 +416,6 @@ def test_purge_account_resets_profile_and_removes_all_json_references(tmp_path: 
         "last_seen_at": "2026-06-02T07:00:00+00:00",
         "debug_info": False,
         "dismissed_friend_suggestion_pairs": [],
-        "personal_bests": {},
     }
     assert data["users"]["alice"] == profile
     assert data["friend_invites"] == {}
@@ -1136,69 +1135,6 @@ def test_period_rollover_records_partial_progress_ratio(tmp_path: Path) -> None:
     }
 
 
-def test_personal_bests_track_live_numeric_progress_without_historical_backfill(tmp_path: Path) -> None:
-    persistence = JsonPersistence(tmp_path / "users.json")
-    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
-    goal = persistence.create_goal(
-        created_by="alice",
-        description="Push ups",
-        schedule_class="daily",
-        required_periods=1,
-        friend_user_ids=[],
-        target=10,
-        current=0,
-        now=at("2026-06-01T09:00:00"),
-    )
-
-    persistence.update_goal_progress(goal["id"], alice["user_id"], current=12, now=at("2026-06-01T10:00:00"))
-    first_record = persistence.get_user(alice["user_id"])["personal_bests"][goal["id"]]
-    persistence.update_goal_progress(goal["id"], alice["user_id"], current=12, now=at("2026-06-02T10:00:00"))
-    persistence.update_goal_progress(goal["id"], alice["user_id"], current=8, now=at("2026-06-02T11:00:00"))
-    persistence.correct_goal_period_progress(
-        goal["id"], alice["user_id"], at("2026-06-01T00:00:00"), current=99, now=at("2026-06-03T10:00:00")
-    )
-
-    assert first_record == {"repetitions": 12, "achieved_at": "2026-06-01T08:00:00+00:00"}
-    assert persistence.get_user(alice["user_id"])["personal_bests"][goal["id"]] == first_record
-
-
-def test_personal_bests_ignore_binary_and_zero_progress(tmp_path: Path) -> None:
-    persistence = JsonPersistence(tmp_path / "users.json")
-    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
-    binary = persistence.create_goal("alice", "Meditate", "daily", 1, [], 1, current=3)
-    numeric = persistence.create_goal("alice", "Read", "daily", 1, [], 2, current=0)
-    persistence.update_goal_progress(numeric["id"], alice["user_id"], current=0)
-
-    assert persistence.get_user(alice["user_id"])["personal_bests"] == {}
-
-
-def test_personal_best_profile_normalization_discards_malformed_records(tmp_path: Path) -> None:
-    path = tmp_path / "users.json"
-    path.write_text(
-        json.dumps(
-            {
-                "users": {
-                    "alice": {
-                        "user_id": "alice",
-                        "email": "alice@example.com",
-                        "personal_bests": {
-                            "valid": {"repetitions": "7", "achieved_at": "2026-06-01T08:00:00+00:00"},
-                            "zero": {"repetitions": 0, "achieved_at": "2026-06-01T08:00:00+00:00"},
-                            "invalid-date": {"repetitions": 2, "achieved_at": "nope"},
-                        },
-                    }
-                }
-            }
-        )
-    )
-
-    profile = JsonPersistence(path).get_user("alice")
-
-    assert profile["personal_bests"] == {
-        "valid": {"repetitions": 7, "achieved_at": "2026-06-01T08:00:00+00:00"}
-    }
-
-
 def test_correct_goal_period_progress_updates_missed_daily_outcome_and_activity(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
@@ -1701,21 +1637,6 @@ def test_mongodb_native_goal_progress_uses_targeted_updates() -> None:
     assert not [call for call in database["goals"].calls if call[0] == "replace_one"]
     assert [call for call in database["users_inventory"].calls if call[0] == "update_one"]
     assert database["goals"].documents[goal["id"]]["participants"]["alice"]["current"] == 4
-
-
-def test_mongodb_native_personal_bests_follow_live_progress() -> None:
-    database = FakeMongoNativeDatabase()
-    persistence = MongoNativePersistence(mongo_database=database)
-    alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
-    goal = persistence.create_goal("alice", "Run", "daily", 1, [], 4, now=at("2026-06-01T09:00:00"))
-
-    persistence.update_goal_progress(goal["id"], alice["user_id"], current=5, now=at("2026-06-01T10:00:00"))
-    persistence.update_goal_progress(goal["id"], alice["user_id"], current=4, now=at("2026-06-02T10:00:00"))
-
-    assert persistence.get_user("alice")["personal_bests"][goal["id"]] == {
-        "repetitions": 5,
-        "achieved_at": "2026-06-01T08:00:00+00:00",
-    }
 
 
 def test_mongodb_native_assistant_state_uses_targeted_write_without_read() -> None:
