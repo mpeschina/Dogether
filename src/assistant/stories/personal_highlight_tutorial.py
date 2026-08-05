@@ -20,7 +20,7 @@ PERSONAL_HIGHLIGHT_TUTORIAL_TOAST: Final = "**Important feature unlock**  \nI ha
 PERSONAL_HIGHLIGHT_TUTORIAL_TOAST_ICON: Final = ":material/support_agent:"
 # Development-only override. It is intentionally ineffective for ordinary
 # accounts and remains a one-time tutorial once it has been viewed.
-DEBUG_PERSONAL_HIGHLIGHT_TUTORIAL_ALWAYS_ELIGIBLE: Final = True
+DEBUG_PERSONAL_HIGHLIGHT_TUTORIAL_ALWAYS_ELIGIBLE: Final = False
 
 
 def _local_now(now: datetime | None) -> datetime:
