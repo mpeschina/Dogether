@@ -194,6 +194,10 @@ class StreamlitAssistantView:
     def _present_line(self, line: AssistantLine) -> None:
         if line.wait_before > 0:
             time.sleep(line.wait_before)
+        if line.progress_duration is not None:
+            self._filling_progress_indicator(line.progress_duration, line.progress_label)
+        if line.spinner_duration is not None:
+            self._spinner_indicator(line.spinner_duration, line.spinner_label)
         if line.typing_delay is not None:
             self._typing_indicator(line.typing_delay)
         if line.text:
@@ -212,6 +216,23 @@ class StreamlitAssistantView:
                 )
         if line.wait_after > 0:
             time.sleep(line.wait_after)
+
+    @staticmethod
+    def _filling_progress_indicator(duration_seconds: float, label: str) -> None:
+        """Fill a temporary progress bar smoothly over the requested duration."""
+        duration = max(0, duration_seconds)
+        progress = st.progress(0, text=label)
+        started_at = time.monotonic()
+        while (elapsed := time.monotonic() - started_at) < duration:
+            progress.progress(min(100, int(elapsed / duration * 100)), text=label)
+            time.sleep(min(0.05, duration - elapsed))
+        progress.progress(100, text=label)
+        progress.empty()
+
+    @staticmethod
+    def _spinner_indicator(duration_seconds: float, label: str) -> None:
+        with st.spinner(label):
+            time.sleep(max(0, duration_seconds))
 
     def _typing_indicator(self, duration_seconds: float) -> None:
         duration = (

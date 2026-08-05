@@ -25,8 +25,8 @@ MORNING_GREETING_EVENT_ID: Final = "morning_greeting"
 MORNING_GREETING_DISPLAYED_ON_KEY: Final = "last_displayed_on"
 MORNING_GREETING_REPLY_KEY: Final = "morning_reply"
 GREETING_INTERVAL: Final = timedelta(hours=1)
-# Set to ``None`` to restore normal greeting selection.
-DEBUG_GREETING_ID: str | None = None # "waiting_crack"
+# Temporary greeting override. Set to ``None`` to restore normal greeting selection.
+DEBUG_GREETING_ID: str | None = None #"overprepared_hi"
 
 NORMAL_GREETING_IDS: Final = (
     "tiny_progress",
@@ -68,7 +68,7 @@ INTERACTIVE_GREETING_IDS: Final = (
     "secret_club",
     "dangerous_confidence",
 )
-RARE_GREETING_IDS: Final = ("silent", "waiting_crack", "malfunction")
+RARE_GREETING_IDS: Final = ("silent", "waiting_crack", "malfunction", "overprepared_hi")
 
 NORMAL_MESSAGES: Final = {
     "tiny_progress": "Tiny progress time.",
@@ -242,6 +242,21 @@ class GreetingsStory(AssistantStory):
                     AssistantLine("Initializing motivational systems…", typing_delay=0),
                     AssistantLine("Motivation not found.", typing_delay=0),
                     AssistantLine("We’ll improvise.", typing_delay=0),
+                ),
+                continue_flow=True,
+            )
+        if greeting_id == "overprepared_hi":
+            story_session(context.session_state, self.story_id).pop(GREETING_PENDING_KEY)
+            return AssistantTurn(
+                story_id=self.story_id,
+                scene_id=greeting_id,
+                lines=(
+                    AssistantLine("", progress_duration=6, progress_label="loading"),
+                    AssistantLine("", spinner_duration=3, spinner_label="spinning"),
+                    AssistantLine("", typing_delay=3),
+                    AssistantLine("", wait_before=1),
+                    AssistantLine("", typing_delay=0.5),
+                    AssistantLine("Hi"),
                 ),
                 continue_flow=True,
             )

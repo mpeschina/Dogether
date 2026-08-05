@@ -45,7 +45,8 @@ class AssistantLine:
     indicator shown before it: ``None`` disables it, ``0`` chooses a random
     duration, and a positive value specifies its duration in seconds.
     ``wait_before`` and ``wait_after`` are plain pauses, in seconds, before
-    and after the message is presented.
+    and after the message is presented. ``progress_duration`` and
+    ``spinner_duration`` render transient visual indicators before the text.
     """
 
     text: str
@@ -53,6 +54,14 @@ class AssistantLine:
     wait_before: float = 0
     wait_after: float = 0
     font_scale: float = 1
+    progress_duration: float | None = None
+    progress_label: str = ""
+    spinner_duration: float | None = None
+    spinner_label: str = ""
+
+    def __post_init__(self) -> None:
+        if self.progress_duration is not None and self.spinner_duration is not None:
+            raise ValueError("An assistant line cannot show a progress bar and spinner together.")
 
 
 @dataclass(frozen=True)
