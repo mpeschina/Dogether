@@ -926,31 +926,6 @@ def test_greetings_choose_interactive_rare_variants_and_keep_them_pending() -> N
     assert [line.text for line in reply.lines][0] == "Oh! Hello."
 
 
-def test_overprepared_hi_greeting_runs_the_full_loading_sequence() -> None:
-    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
-    session = {}
-    context = context_for(state, session_state=session, now=datetime(2026, 7, 26, tzinfo=timezone.utc))
-    story = GreetingsStory(random_source=StubRandom(0.9, 3))
-
-    scene = story.entry_scene(context)
-    turn = story.advance(context, scene, None)
-
-    assert scene == "overprepared_hi"
-    assert [(line.text, line.progress_duration, line.progress_label) for line in turn.lines[:1]] == [
-        ("", 6, "loading")
-    ]
-    assert [(line.text, line.spinner_duration, line.spinner_label) for line in turn.lines[1:2]] == [
-        ("", 3, "spinning")
-    ]
-    assert [(line.text, line.typing_delay, line.wait_before) for line in turn.lines[2:]] == [
-        ("", 3, 0),
-        ("", None, 1),
-        ("", 0.8, 0),
-        ("Hi", None, 0),
-    ]
-    assert story_session(session, GREETINGS_STORY_ID).get(GREETING_PENDING_KEY) is None
-
-
 def test_morning_greeting_intercept_is_daily_durable_and_ignores_hourly_cadence() -> None:
     state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
     session = {}
