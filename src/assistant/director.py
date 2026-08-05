@@ -22,6 +22,10 @@ from src.assistant.presentation import ASSISTANT_LEFT_THIS_VISIT_KEY, StreamlitA
 from src.assistant.stories.greetings import GREETINGS_STORY_ID
 from src.assistant.stories.information import INFORMATION_STORY_ID, pending_goal_invitations
 from src.assistant.stories.night import NIGHT_STORY_ID
+from src.assistant.stories.personal_highlight_tutorial import (
+    PERSONAL_HIGHLIGHT_TUTORIAL_STORY_ID,
+    personal_highlight_tutorial_pending,
+)
 from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
 from src.assistant.stories.special_examples import SPECIAL_STORY_ID
 from src.assistant.stories.star_tutorial import STAR_TUTORIAL_SCENES
@@ -168,8 +172,8 @@ class AssistantDirector:
             return self.stories.get(WEEKLY_SUMMARY_READY_STORY_ID)
         if pending_goal_invitations(state):
             return self.stories.get(INFORMATION_STORY_ID)
-        if self._unseen_tutorial_story(context) is not None:
-            return self._unseen_tutorial_story(context)
+        if unseen_tutorial := self._unseen_tutorial_story(context):
+            return unseen_tutorial
         if self._push_prompt_is_eligible(context):
             return self.stories.get(PUSH_REMINDER_STORY_ID)
         if not skip_greeting:
@@ -223,9 +227,10 @@ class AssistantDirector:
             return self.stories.get(NIGHT_STORY_ID)
         return None
 
-    @staticmethod
-    def _unseen_tutorial_story(context: AssistantContext):
-        del context
+    def _unseen_tutorial_story(self, context: AssistantContext) -> AssistantStory | None:
+        """Return the next eligible, not-yet-viewed feature tutorial."""
+        if personal_highlight_tutorial_pending(context.state, context.now, context.current_user):
+            return self.stories.get(PERSONAL_HIGHLIGHT_TUTORIAL_STORY_ID)
         return None
 
     @staticmethod

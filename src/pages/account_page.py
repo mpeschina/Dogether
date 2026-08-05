@@ -9,6 +9,7 @@ from typing import Any
 import streamlit as st
 
 from src.assistant.state import AssistantMode, AssistantState, clear_transient_assistant_state
+from src.assistant.stories.personal_highlight_tutorial import personal_highlights_unlocked
 from src.assistant.story_session import clear_story_sessions, story_session
 from src.assistant.stories.greetings import (
     GREETING_PENDING_KEY,
@@ -55,13 +56,19 @@ def render_account(
 
     st.subheader("Activity")
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=365)
-    render_personal_bests(current_user, persistence.list_goals_for_user(user_id, now=now))
+    if personal_highlights_visible(current_user):
+        render_personal_bests(current_user, persistence.list_goals_for_user(user_id, now=now))
     if debug_info_enabled(current_user):
         render_assistant_settings(persistence, current_user, user_id, now=now)
 
 
 def debug_account_status(current_user: Mapping[str, Any]) -> str:
     return "Debug account: enabled" if debug_info_enabled(current_user) else "Debug account: disabled"
+
+
+def personal_highlights_visible(current_user: Mapping[str, Any]) -> bool:
+    """Whether the delayed Assistant unlock permits Personal Highlights to render."""
+    return personal_highlights_unlocked(AssistantState.from_profile(current_user))
 
 
 def personal_best_records(current_user: Mapping[str, Any], goals: list[dict]) -> list[dict[str, object]]:

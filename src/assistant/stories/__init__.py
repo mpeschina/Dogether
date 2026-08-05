@@ -5,6 +5,7 @@ from src.assistant.state import AssistantMode
 from src.assistant.stories.greetings import GreetingsStory
 from src.assistant.stories.information import InformationStory
 from src.assistant.stories.night import NightStory
+from src.assistant.stories.personal_highlight_tutorial import PersonalHighlightTutorialStory
 from src.assistant.stories.push_reminder import PushReminderStory
 from src.assistant.stories.special_examples import SpecialExampleStory
 from src.assistant.stories.smalltalk import SmalltalkStory
@@ -26,6 +27,7 @@ def default_stories() -> Mapping[AssistantMode | str, AssistantStory]:
         "weekly_summary_ready": WeeklySummaryReadyStory(),
         "greetings": GreetingsStory(),
         "information": InformationStory(),
+        "personal_highlight_tutorial": PersonalHighlightTutorialStory(),
         "night": night,
         AssistantMode.SPECIAL: special,
         "special_examples": special,
@@ -34,4 +36,4 @@ def default_stories() -> Mapping[AssistantMode | str, AssistantStory]:
     }
 
 
-__all__ = ["GreetingsStory", "InformationStory", "InitialTutorialStory", "NightStory", "PushReminderStory", "SmalltalkStory", "SpecialExampleStory", "StandardStory", "WeeklySummaryStory", "WeeklySummaryReadyStory", "default_stories"]
+__all__ = ["GreetingsStory", "InformationStory", "InitialTutorialStory", "NightStory", "PersonalHighlightTutorialStory", "PushReminderStory", "SmalltalkStory", "SpecialExampleStory", "StandardStory", "WeeklySummaryStory", "WeeklySummaryReadyStory", "default_stories"]

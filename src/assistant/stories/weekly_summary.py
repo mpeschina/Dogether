@@ -13,6 +13,7 @@ from src.assistant.stories.star_tutorial import (
     STAR_TUTORIAL_SCENES,
     star_tutorial_turn,
 )
+from src.assistant.stories.personal_highlight_tutorial import record_first_weekly_summary_view
 from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _datetime, _momentum_halves, _now, _week_start
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _shared_insights, _used_existing_insights
 from src.db.persistence_helpers import APP_ZONE
@@ -233,6 +234,7 @@ class WeeklySummaryStory(AssistantStory):
     def _summary_turn(self, context: AssistantContext, start: date, partial: bool) -> AssistantTurn:
         result = _analyse(context, start, partial)
         event_updates: dict[str, dict[str, object]] = {WEEK_SELECTION_EVENT_ID: {"start": start.isoformat(), "partial": partial}}
+        event_updates.update(record_first_weekly_summary_view(context.state, context.now))
         stars_delta = 0
         debug_awards_enabled = _debug_star_awards_enabled(context)
         if debug_awards_enabled:

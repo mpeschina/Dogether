@@ -32,6 +32,11 @@ from src.assistant.stories.weekly_summary_ready import (
     refresh_weekly_summary_ready_event,
     weekly_summary_ready_toast_key,
 )
+from src.assistant.stories.personal_highlight_tutorial import (
+    PERSONAL_HIGHLIGHT_TUTORIAL_TOAST,
+    PERSONAL_HIGHLIGHT_TUTORIAL_TOAST_ICON,
+    personal_highlight_tutorial_toast_key,
+)
 from src.app_notifications import flush_startup_notifications, queue_user_notification
 from src.viewport_component import viewport_info
 from src.pages.login_page import login_screen
@@ -122,6 +127,17 @@ if weekly_ready_toast_key:
         WEEKLY_SUMMARY_READY_TOAST,
         key=weekly_ready_toast_key,
         icon=WEEKLY_SUMMARY_READY_TOAST_ICON,
+        duration="long",
+    )
+
+personal_highlight_toast_key = personal_highlight_tutorial_toast_key(
+    user_id, weekly_ready_state, app_now, current_user
+)
+if personal_highlight_toast_key:
+    queue_user_notification(
+        PERSONAL_HIGHLIGHT_TUTORIAL_TOAST,
+        key=personal_highlight_toast_key,
+        icon=PERSONAL_HIGHLIGHT_TUTORIAL_TOAST_ICON,
         duration="long",
     )
 
@@ -269,6 +285,7 @@ assistant_destinations = {
     "manage_goals": manage_goals_page_entry,
     "push_notifications": push_notifications_page_entry,
     "assistant": assistant_page_entry,
+    "account": account_page_entry,
 }
 
 
