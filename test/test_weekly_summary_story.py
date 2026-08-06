@@ -652,6 +652,91 @@ def test_shared_insights_cover_all_social_patterns_and_restrict_people_to_approv
     assert [person.name for person in people] == ["Alice", "Maya", "Leo"]
 
 
+def test_outgoing_reaction_insight_is_all_insights_only_and_groups_approved_recipients() -> None:
+    def outcomes() -> dict[str, dict]:
+        return {
+            f"2026-07-{day:02d}": {"completed": True, "fulfilled": True}
+            for day in range(20, 27)
+        }
+
+    no_reactions = _analyse(
+        _context(datetime(2026, 7, 27, tzinfo=timezone.utc)), date(2026, 7, 20), False
+    )
+    assert not any(
+        insight.identifier.split(":")[0] == "outgoing_support"
+        for insight in _additional_insights(
+            no_reactions, set(), set(), include_outgoing_support=True
+        )
+    )
+
+    context = AssistantContext(
+        user_id="alice", current_user={"name": "Alice"}, state=AssistantState(), session_state={},
+        current_page_key="assistant", now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "friend_profiles": {"maya": {"name": "Maya"}, "leo": {"name": "Leo"}},
+            "goals": [
+                {
+                    "id": "walking", "description": "Walking", "participants": {
+                        "alice": {"period_outcomes": outcomes()},
+                        "maya": {"period_outcomes": outcomes(), "completion_reactions": {
+                            "2026-07-20": {"alice": {"emote": "🔥", "reacted_at": "2026-07-20T09:00:00+00:00"}},
+                            "2026-07-21": {"alice": {"emote": "🙌", "reacted_at": "2026-07-21T09:00:00+00:00"}},
+                            "2026-07-22": {"alice": {"emote": "🎉", "reacted_at": "2026-08-01T09:00:00+00:00"}},
+                        }},
+                        "leo": {"period_outcomes": outcomes(), "completion_reactions": {
+                            "2026-07-20": {"alice": {"emote": "🔥", "reacted_at": "2026-07-20T10:00:00+00:00"}},
+                            "2026-07-21": {"alice": {"emote": "🙌", "reacted_at": "2026-07-21T10:00:00+00:00"}},
+                        }},
+                        "outsider": {"period_outcomes": outcomes(), "completion_reactions": {
+                            "2026-07-20": {"alice": {"emote": "🔥", "reacted_at": "2026-07-20T11:00:00+00:00"}},
+                        }},
+                    },
+                },
+                {
+                    "id": "cycling", "description": "Cycling", "participants": {
+                        "alice": {"period_outcomes": outcomes()},
+                        "maya": {"period_outcomes": outcomes(), "completion_reactions": {
+                            "2026-07-22": {"alice": {"emote": "🙂", "reacted_at": "2026-07-22T09:00:00+00:00"}},
+                        }},
+                        "leo": {"period_outcomes": outcomes(), "completion_reactions": {
+                            "2026-07-22": {"alice": {"emote": "🎉", "reacted_at": "2026-07-22T10:00:00+00:00"}},
+                        }},
+                    },
+                },
+            ],
+        },
+    )
+
+    result = _analyse(context, date(2026, 7, 20), False)
+
+    assert [
+        (recipient_id, emote)
+        for goal in result.shared_goals
+        for recipient_id, _, emote, _ in goal.sent_reactions
+    ] == [
+        ("maya", "🔥"), ("maya", "🙌"), ("leo", "🔥"), ("leo", "🙌"),
+        ("maya", "🙂"), ("leo", "🎉"),
+    ]
+    assert "outgoing_support" not in {
+        insight.identifier.split(":")[0] for insight in _additional_insights(result, set(), set())
+    }
+    outgoing = next(
+        insight
+        for insight in _additional_insights(result, set(), set(), include_outgoing_support=True)
+        if insight.identifier.split(":")[0] == "outgoing_support"
+    )
+    card = next(item for item in outgoing.content if isinstance(item, AssistantCard))
+
+    assert card.rows == (("Leo", "3 · 🔥 🙌 🎉"), ("Maya", "3 · 🔥 🙌 🙂"))
+    assert "outsider" not in str(card.rows)
+
+    all_insights = WeeklySummaryStory()._all_insights_turn(result)
+    assert any(
+        card.rows == (("Leo", "3 · 🔥 🙌 🎉"), ("Maya", "3 · 🔥 🙌 🙂"))
+        for card in all_insights.cards
+    )
+
+
 def test_shared_comparison_hides_raw_progress_when_targets_differ_and_streak_is_not_duplicated() -> None:
     def participant(target: int, completed: set[int]) -> dict:
         return {"period_outcomes": {

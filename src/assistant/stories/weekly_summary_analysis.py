@@ -55,6 +55,7 @@ class SharedGoalResult:
     schedule_class: str
     participants: tuple[SharedParticipantResult, ...]
     reactions: tuple[tuple[str, str, str, datetime], ...] = ()
+    sent_reactions: tuple[tuple[str, str, str, datetime], ...] = ()
 
     @property
     def user(self) -> SharedParticipantResult:
@@ -311,12 +312,14 @@ def _analyse_shared_goal(
     if len(shared_people) < 2 or shared_people[0].user_id != context.user_id or not shared_people[0].periods:
         return None
     reactions = _shared_reactions(goal, context.user_id, profiles, start, end)
+    sent_reactions = _sent_shared_reactions(goal, context.user_id, profiles, start, end)
     return SharedGoalResult(
         str(goal.get("id") or goal.get("description", "goal")),
         str(goal.get("description", "Goal")),
         str(goal.get("schedule_class", "daily")),
         tuple(shared_people),
         reactions,
+        sent_reactions,
     )
 
 
@@ -364,6 +367,41 @@ def _shared_reactions(
             profile = profiles[sender_id]
             name = str(profile.get("name") or profile.get("email") or sender_id) if isinstance(profile, dict) else sender_id
             result.append((sender_id, name, str(reaction.get("emote", "")), local_reacted_at))
+    return tuple(result)
+
+
+def _sent_shared_reactions(
+    goal: dict[str, Any],
+    user_id: str,
+    profiles: dict[str, Any],
+    start: date,
+    end: date,
+) -> tuple[tuple[str, str, str, datetime], ...]:
+    """Return the current user's reactions to approved friends' completions."""
+    participants = goal.get("participants", {})
+    if not isinstance(participants, dict):
+        return ()
+    result = []
+    for recipient_id, profile in profiles.items():
+        participant = participants.get(recipient_id, {})
+        if not isinstance(participant, dict) or participant.get("left_at"):
+            continue
+        reactions = participant.get("completion_reactions", {})
+        if not isinstance(reactions, dict):
+            continue
+        name = str(profile.get("name") or profile.get("email") or recipient_id) if isinstance(profile, dict) else recipient_id
+        for period_reactions in reactions.values():
+            if not isinstance(period_reactions, dict):
+                continue
+            reaction = period_reactions.get(user_id)
+            if not isinstance(reaction, dict):
+                continue
+            reacted_at = _datetime(reaction.get("reacted_at"))
+            if reacted_at is None:
+                continue
+            local_reacted_at = reacted_at.replace(tzinfo=APP_ZONE) if reacted_at.tzinfo is None else reacted_at.astimezone(APP_ZONE)
+            if start <= local_reacted_at.date() <= end:
+                result.append((recipient_id, name, str(reaction.get("emote", "")), local_reacted_at))
     return tuple(result)
 
 
@@ -534,4 +572,3 @@ def _momentum_halves(result: WeekResult) -> tuple[float | None, float | None]:
         return sum(row[1] for row in rows) / active if active else None
 
     return rate(days[:split]), rate(days[split:])
-

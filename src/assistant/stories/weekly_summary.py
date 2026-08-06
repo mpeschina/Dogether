@@ -488,7 +488,9 @@ class WeeklySummaryStory(AssistantStory):
         used_types, used_subjects = _used_existing_insights(
             [item for group in groups for item in group]
         )
-        remaining = _additional_insights(result, used_types, used_subjects)
+        remaining = _additional_insights(
+            result, used_types, used_subjects, include_outgoing_support=True
+        )
         content: list[AssistantLine | AssistantCard] = [AssistantLine("Here’s everything else I found.")]
         for insight in remaining:
             content.extend(insight.content)

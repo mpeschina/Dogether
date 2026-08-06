@@ -44,10 +44,17 @@ def _used_existing_insights(content: list[AssistantLine | AssistantCard] | tuple
         elif title == "GROUP CONSISTENCY": types.add("group_consistency")
         elif title == "SHARED RECOVERY": types.add("friend_recovery")
         elif title == "FRIEND SUPPORT": types.add("friend_support")
+        elif title == "CHEERED MOST": types.add("outgoing_support")
     return types, subjects
 
 
-def _additional_insights(result: WeekResult, used_types: set[str], used_subjects: set[str]) -> list[AdditionalInsight]:
+def _additional_insights(
+    result: WeekResult,
+    used_types: set[str],
+    used_subjects: set[str],
+    *,
+    include_outgoing_support: bool = False,
+) -> list[AdditionalInsight]:
     """Return valid, non-overlapping optional insights in the prescribed broad order."""
     candidates: list[AdditionalInsight] = []
     rhythm = _daily_rhythm_insight(result)
@@ -81,6 +88,9 @@ def _additional_insights(result: WeekResult, used_types: set[str], used_subjects
     if schedule:
         candidates.append(schedule)
     candidates.extend(_shared_insights(result, used_subjects, used_types))
+    outgoing_support = _outgoing_reaction_insight(result)
+    if include_outgoing_support and outgoing_support and "outgoing_support" not in used_types:
+        candidates.append(outgoing_support)
     return candidates
 
 
@@ -314,6 +324,43 @@ def _reaction_insight(result: WeekResult) -> AdditionalInsight | None:
         AssistantLine("Here’s who cheered you on."),
         AssistantCard("FRIEND SUPPORT", detail, "", rows),
         AssistantLine(text),
+    ))
+
+
+def _outgoing_reaction_insight(result: WeekResult) -> AdditionalInsight | None:
+    reactions = [reaction for goal in result.shared_goals for reaction in goal.sent_reactions]
+    if not reactions:
+        return None
+    counts: dict[str, list[str]] = {}
+    names: dict[str, str] = {}
+    for recipient_id, recipient_name, emote, _ in reactions:
+        counts.setdefault(recipient_id, []).append(emote)
+        names[recipient_id] = recipient_name
+    ordered = sorted(counts, key=lambda recipient: (-len(counts[recipient]), names[recipient].casefold()))
+    top_count = len(counts[ordered[0]])
+    top_recipients = [recipient for recipient in ordered if len(counts[recipient]) == top_count]
+    rows = tuple(
+        (
+            names[recipient],
+            f"{len(counts[recipient])}" + (f" · {' '.join(counts[recipient][:3])}" if counts[recipient] else ""),
+        )
+        for recipient in ordered[:4]
+    )
+    top_names = _join_names([names[recipient] for recipient in top_recipients])
+    detail = (
+        f"{top_count} reaction{'s' if top_count != 1 else ''} sent"
+        if len(top_recipients) == 1
+        else f"{top_count} reaction{'s' if top_count != 1 else ''} sent to each"
+    )
+    closing = (
+        f"{top_names} received the most cheers from you."
+        if len(top_recipients) == 1
+        else f"{top_names} tied for the most cheers from you."
+    )
+    return AdditionalInsight("outgoing_support:" + ":".join(ordered), frozenset(), (
+        AssistantLine("You made time to cheer others, too."),
+        AssistantCard("CHEERED MOST", top_names, detail, rows),
+        AssistantLine(closing),
     ))
 
 
