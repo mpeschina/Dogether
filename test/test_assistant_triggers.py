@@ -252,11 +252,13 @@ def test_trigger_flow_remains_active_until_the_user_finishes_it() -> None:
 
 
 def test_candidate_order_uses_priority_stability_and_random_fun_ties() -> None:
-    old = StubTriggeredStory("old", priority=4)
-    new = StubTriggeredStory("new", priority=4)
-    lower = StubTriggeredStory("lower", priority=3)
+    old = StubTriggeredStory("old", importance=StoryImportance.IMPORTANT, priority=4)
+    new = StubTriggeredStory("new", importance=StoryImportance.IMPORTANT, priority=4)
+    lower = StubTriggeredStory(
+        "lower", importance=StoryImportance.IMPORTANT, priority=3
+    )
     selector = trigger_selector(new, lower, old)
-    assert selector.select(context(ready_state())).story_id == "old"
+    assert selector.select(context(ready_state())).story_id == "new"
 
     alpha = StubTriggeredStory("alpha", importance=StoryImportance.IMPORTANT)
     beta = StubTriggeredStory("beta", importance=StoryImportance.IMPORTANT)

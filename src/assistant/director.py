@@ -4,7 +4,7 @@ import copy
 import random
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from typing import Any, Final, Mapping
 
 from src.assistant.core import (
     AssistantContext,
@@ -52,10 +52,13 @@ from src.assistant.stories.tutorial import (
     STANDARD_STORY_ID,
     TUTORIAL_STORY_ID,
 )
-from src.db.persistence_helpers import APP_ZONE
+from src.db.persistence_helpers import APP_ZONE, debug_info_enabled
 
 
 MAX_AUTOMATIC_TURNS = 24
+# Development-only switch for testing other Assistant flows during night hours.
+# It must never suppress the night story for ordinary accounts.
+DEBUG_DISABLE_NIGHT_EVENT: Final = True
 
 
 class AssistantDirector:
@@ -315,6 +318,8 @@ class AssistantDirector:
 
     def _important_issue_story(self, context: AssistantContext):
         # return self.stories.get(NIGHT_STORY_ID) ##### just for debugging this event, keep this line
+        if DEBUG_DISABLE_NIGHT_EVENT and debug_info_enabled(context.current_user):
+            return None
         now = context.now or datetime.now(timezone.utc)
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)

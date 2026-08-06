@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from src.assistant import director as assistant_director
 from src.assistant.core import AssistantChoice, AssistantContext, AssistantSelection, AssistantTurn
 from src.assistant.director import AssistantDirector, apply_turn
 from src.assistant.presentation import (
@@ -1210,6 +1211,24 @@ def test_night_event_is_selected_only_during_berlin_night(now, expected) -> None
     story = director._important_issue_story(context_for(state, now=now))
 
     assert story is None if expected is None else story.story_id == expected
+
+
+def test_debug_night_disable_is_restricted_to_debug_accounts(monkeypatch) -> None:
+    monkeypatch.setattr(assistant_director, "DEBUG_DISABLE_NIGHT_EVENT", True)
+    director = AssistantDirector(RecordingPersistence(), default_stories())
+    state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
+    night = datetime(2026, 7, 27, 1, tzinfo=APP_ZONE)
+
+    ordinary = director._important_issue_story(
+        context_for(state, profile={"debug_info": False}, now=night)
+    )
+    debug = director._important_issue_story(
+        context_for(state, profile={"debug_info": True}, now=night)
+    )
+
+    assert ordinary is not None
+    assert ordinary.story_id == NIGHT_STORY_ID
+    assert debug is None
 
 
 def test_night_event_does_not_preempt_fresh_onboarding_but_preempts_information() -> None:
