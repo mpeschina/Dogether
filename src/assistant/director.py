@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import random
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
@@ -18,7 +19,17 @@ from src.assistant.state import (
     clear_transient_assistant_state,
     save_transient_assistant_state,
 )
-from src.assistant.presentation import ASSISTANT_LEFT_THIS_VISIT_KEY, StreamlitAssistantView
+from src.assistant.presentation import (
+    ASSISTANT_LEFT_THIS_VISIT_KEY,
+    StreamlitAssistantView,
+)
+from src.assistant.triggers import (
+    OPTIONAL_STORY_STARTED_THIS_VISIT_KEY,
+    StorySelectionConfig,
+    TriggeredAssistantStory,
+    TriggerStoryExecutionTracker,
+    TriggerStorySelector,
+)
 from src.assistant.stories.greetings import GREETINGS_STORY_ID
 from src.assistant.stories.information import INFORMATION_STORY_ID, pending_goal_invitations
 from src.assistant.stories.night import NIGHT_STORY_ID
@@ -56,6 +67,8 @@ class AssistantDirector:
         stories: Mapping[AssistantMode | str, AssistantStory],
         *,
         shared_story_state_store: SharedStoryStateStore | None = None,
+        selection_config: StorySelectionConfig = StorySelectionConfig(),
+        random_source: Any = random,
     ) -> None:
         self.persistence = persistence
         self.shared_story_state_store = shared_story_state_store
@@ -63,6 +76,17 @@ class AssistantDirector:
         for key, story in stories.items():
             self.stories[str(key)] = story
             self.stories[story.story_id] = story
+        self.triggered_stories = {
+            story.story_id: story
+            for story in self.stories.values()
+            if isinstance(story, TriggeredAssistantStory)
+        }
+        self.trigger_selector = TriggerStorySelector(
+            self.triggered_stories,
+            config=selection_config,
+            random_source=random_source,
+        )
+        self.trigger_execution = TriggerStoryExecutionTracker()
 
     def render(
         self, context: AssistantContext, view: StreamlitAssistantView
@@ -81,10 +105,11 @@ class AssistantDirector:
         state_changed = False
         save_durably = False
         greeting_has_played = False
+        started_this_render: set[str] = set()
 
         for _ in range(MAX_AUTOMATIC_TURNS):
             effective_context = self._context_with_state(context, state)
-            story = self.story_dispatch(
+            story, selected_triggered_story = self._story_dispatch(
                 effective_context,
                 selection,
                 skip_greeting=greeting_has_played,
@@ -99,6 +124,17 @@ class AssistantDirector:
             if scene_id is None:
                 break
 
+            starting_triggered = (
+                isinstance(story, TriggeredAssistantStory)
+                and selection is None
+                and selected_triggered_story
+            )
+            is_new_non_standard = (
+                selection is None
+                and story.story_id not in {STANDARD_STORY_ID, GREETINGS_STORY_ID}
+                and story.story_id != state.story
+                and story.story_id not in started_this_render
+            )
             turn = story.advance(effective_context, scene_id, selection)
             selection = None
             if turn is None:
@@ -107,6 +143,40 @@ class AssistantDirector:
             view.present(turn)
             greeting_has_played = greeting_has_played or story.story_id == GREETINGS_STORY_ID
             updated_state = apply_turn(state, turn)
+            if starting_triggered:
+                updated_state = self.trigger_execution.record_start(
+                    updated_state,
+                    story,
+                    self._now(effective_context),
+                )
+                visit_count = context.session_state.get(
+                    OPTIONAL_STORY_STARTED_THIS_VISIT_KEY, 0
+                )
+                context.session_state[OPTIONAL_STORY_STARTED_THIS_VISIT_KEY] = (
+                    max(0, visit_count) + 1 if isinstance(visit_count, int) else 1
+                )
+                save_durably = True
+                started_this_render.add(story.story_id)
+            elif is_new_non_standard:
+                updated_state = self.trigger_execution.record_global_start(
+                    updated_state,
+                    story.story_id,
+                    "core",
+                    self._now(effective_context),
+                )
+                started_this_render.add(story.story_id)
+
+            if (
+                isinstance(story, TriggeredAssistantStory)
+                and turn.execution_outcome is not None
+            ):
+                updated_state = self.trigger_execution.record_outcome(
+                    updated_state,
+                    story,
+                    turn.execution_outcome,
+                    self._now(effective_context),
+                )
+                save_durably = True
             state_changed = state_changed or updated_state != state
             state = updated_state
             save_durably = save_durably or turn.completed
@@ -143,48 +213,73 @@ class AssistantDirector:
         *,
         skip_greeting: bool = False,
     ) -> AssistantStory | None:
+        story, _ = self._story_dispatch(
+            context, selection, skip_greeting=skip_greeting
+        )
+        return story
+
+    def _story_dispatch(
+        self,
+        context: AssistantContext,
+        selection: AssistantSelection | None,
+        *,
+        skip_greeting: bool = False,
+    ) -> tuple[AssistantStory | None, bool]:
         if selection is not None:
-            return self.stories.get(selection.story_id)
+            return self.stories.get(selection.story_id), False
 
         state = context.state
         # high priority interrupt rules
-        if self._super_important_issue_story(context) is not None:
-            return self._super_important_issue_story(context)
+        if story := self._super_important_issue_story(context):
+            return story, False
         if state.mode is AssistantMode.SPECIAL:
-            return self.stories.get(SPECIAL_STORY_ID)
+            return self.stories.get(SPECIAL_STORY_ID), False
 
         # resume and continue rules to dispatch to a currently running story
         if state.story == TUTORIAL_STORY_ID and state.scene not in {None, READY_NODE}:
-            return self.stories.get(TUTORIAL_STORY_ID)
+            return self.stories.get(TUTORIAL_STORY_ID), False
         if state.story == PUSH_REMINDER_STORY_ID:
-            return self.stories.get(PUSH_REMINDER_STORY_ID)
+            return self.stories.get(PUSH_REMINDER_STORY_ID), False
         if state.story == WEEKLY_SUMMARY_STORY_ID and state.status == "active":
-            return self.stories.get(WEEKLY_SUMMARY_STORY_ID)
+            return self.stories.get(WEEKLY_SUMMARY_STORY_ID), False
         if state.story == STANDARD_STORY_ID and state.scene in (*EXPLANATION_SCENES, *STAR_TUTORIAL_SCENES):
-            return self.stories.get(STANDARD_STORY_ID)
+            return self.stories.get(STANDARD_STORY_ID), False
+        if (
+            state.status == "active"
+            and state.story is not None
+            and state.story in self.triggered_stories
+        ):
+            return self.triggered_stories[state.story], False
 
         # normal dispatcher
         if self._is_fully_fresh(state):
-            return self.stories.get(TUTORIAL_STORY_ID)
-        if self._important_issue_story(context) is not None:
-            return self._important_issue_story(context)
+            return self.stories.get(TUTORIAL_STORY_ID), False
+        if story := self._important_issue_story(context):
+            return story, False
         if weekly_summary_ready_event(state):
-            return self.stories.get(WEEKLY_SUMMARY_READY_STORY_ID)
+            return self.stories.get(WEEKLY_SUMMARY_READY_STORY_ID), False
         if pending_goal_invitations(state):
-            return self.stories.get(INFORMATION_STORY_ID)
+            return self.stories.get(INFORMATION_STORY_ID), False
         if unseen_tutorial := self._unseen_tutorial_story(context):
-            return unseen_tutorial
+            return unseen_tutorial, False
         if self._push_prompt_is_eligible(context):
-            return self.stories.get(PUSH_REMINDER_STORY_ID)
+            return self.stories.get(PUSH_REMINDER_STORY_ID), False
+        if story := self.trigger_selector.select(context):
+            return story, True
         if not skip_greeting:
-            return self.stories.get(GREETINGS_STORY_ID)
-        return self.stories.get(STANDARD_STORY_ID)
+            return self.stories.get(GREETINGS_STORY_ID), False
+        return self.stories.get(STANDARD_STORY_ID), False
 
     @staticmethod
     def _entry_scene(
         story: AssistantStory, context: AssistantContext
     ) -> str | None:
         return story.entry_scene(context)
+
+    @staticmethod
+    def _now(context: AssistantContext) -> datetime:
+        now = context.now or datetime.now(timezone.utc)
+        return now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now
 
     def _save_state(
         self,

@@ -10,6 +10,7 @@ from src.assistant.state import AssistantState
 
 
 ControlKind = Literal["choices", "send"]
+StoryExecutionOutcome = Literal["completed", "dismissed"]
 TranscriptKind = Literal[
     "assistant", "assistant_small", "user", "status", "progress", "live_status", "live_progress"
 ]
@@ -152,11 +153,14 @@ class AssistantTurn:
     state_story: str | None = None  # Next active story. where the assistant should resume on a later rerun or page return.
     state_scene: str | None = None  # Next active scene. where the assistant should resume on a later rerun or page return.
     state_status: str | None = None  # Next conversation status. the saved lifecycle state, such as active, paused, or completed.
+    execution_outcome: StoryExecutionOutcome | None = None
 
     def __post_init__(self) -> None:
         choice_ids = tuple(choice.id for choice in self.choices)
         if len(choice_ids) != len(set(choice_ids)):
             raise ValueError("Assistant turn choice IDs must be unique.")
+        if self.execution_outcome not in {None, "completed", "dismissed"}:
+            raise ValueError("Story execution outcome must be completed or dismissed.")
 
     @property
     def has_control(self) -> bool:

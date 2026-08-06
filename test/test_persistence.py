@@ -7,7 +7,12 @@ import json
 import pytest
 
 import src.db.cached_document_persistence as cached_document_persistence
-from src.assistant.state import AssistantMode, AssistantState
+from src.assistant.state import (
+    AssistantMode,
+    AssistantState,
+    StoryActivityState,
+    StoryExecutionState,
+)
 from src.db.mongodb_native_persistence import MongoNativePersistence
 from src.db.persistence import JsonPersistence, create_persistence, persistence_settings
 from src.pages.debug_page import DebugMechanics, debug_now, debug_view_enabled
@@ -358,6 +363,19 @@ def test_assistant_state_persists_in_json_user_profile_and_resets(tmp_path: Path
         sequences={"initial_tutorial": 1, "special_examples": 2},
         knowledge={"tutorial.app_intro.seen": True},
         events={"special.click_challenge": {"active": True, "clicks": 37}},
+        story_executions={
+            "trigger-example": StoryExecutionState(
+                starts=2,
+                completions=1,
+                last_started_at="2026-06-01T07:00:00+00:00",
+            )
+        },
+        story_activity=StoryActivityState(
+            last_story_id="trigger-example",
+            last_story_type="fun",
+            last_story_started_at="2026-06-01T07:00:00+00:00",
+            last_fun_started_at="2026-06-01T07:00:00+00:00",
+        ),
     )
 
     stored = persistence.save_assistant_state(
@@ -1731,6 +1749,12 @@ def test_mongodb_native_assistant_state_uses_targeted_write_without_read() -> No
     state = AssistantState(
         mode=AssistantMode.SPECIAL,
         sequences={"special_examples": 1},
+        story_executions={"trigger-example": StoryExecutionState(starts=1)},
+        story_activity=StoryActivityState(
+            last_story_id="trigger-example",
+            last_story_type="informational",
+            last_story_started_at="2026-06-01T07:00:00+00:00",
+        ),
     )
 
     stored = persistence.save_assistant_state(

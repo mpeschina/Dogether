@@ -3,11 +3,12 @@ from __future__ import annotations
 import copy
 from collections.abc import MutableMapping
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping
 
 
-ASSISTANT_STATE_SCHEMA_VERSION = 2
+ASSISTANT_STATE_SCHEMA_VERSION = 4
 # Session-only, authoritative story state.  It retains the active story,
 # scene, status, and events so an unfinished flow can resume; it deliberately
 # does not contain the UI's buttons or input configuration.
@@ -22,6 +23,86 @@ class AssistantMode(str, Enum):
 
 
 @dataclass(frozen=True)
+class StoryExecutionState:
+    starts: int = 0
+    completions: int = 0
+    last_started_at: str | None = None
+    last_completed_at: str | None = None
+    last_dismissed_at: str | None = None
+    pending_event_id: str | None = None
+
+    @classmethod
+    def from_value(cls, value: Any) -> "StoryExecutionState":
+        if not isinstance(value, Mapping):
+            return cls()
+        pending = value.get("pending_trigger")
+        legacy_pending_event_id = (
+            pending.get("event_id") if isinstance(pending, Mapping) else None
+        )
+        return cls(
+            starts=_non_negative_int(value.get("starts")),
+            completions=_non_negative_int(value.get("completions")),
+            last_started_at=_optional_datetime_string(
+                value.get("last_started_at")
+            ),
+            last_completed_at=_optional_datetime_string(
+                value.get("last_completed_at")
+            ),
+            last_dismissed_at=_optional_datetime_string(
+                value.get("last_dismissed_at")
+            ),
+            pending_event_id=_optional_string(value.get("pending_event_id"))
+            or _optional_string(legacy_pending_event_id),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "starts": self.starts,
+            "completions": self.completions,
+            "last_started_at": self.last_started_at,
+            "last_completed_at": self.last_completed_at,
+            "last_dismissed_at": self.last_dismissed_at,
+            "pending_event_id": self.pending_event_id,
+        }
+
+
+@dataclass(frozen=True)
+class StoryActivityState:
+    last_story_id: str | None = None
+    last_story_type: str | None = None
+    last_story_started_at: str | None = None
+    last_fun_started_at: str | None = None
+    last_important_started_at: str | None = None
+
+    @classmethod
+    def from_value(cls, value: Any) -> "StoryActivityState":
+        if not isinstance(value, Mapping):
+            return cls()
+        return cls(
+            last_story_id=_optional_string(value.get("last_story_id")),
+            last_story_type=_optional_string(value.get("last_story_type")),
+            last_story_started_at=_optional_datetime_string(
+                value.get("last_story_started_at")
+            ),
+            last_fun_started_at=_optional_datetime_string(
+                value.get("last_fun_started_at")
+            ),
+            last_important_started_at=_optional_datetime_string(
+                value.get("last_important_started_at")
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "last_story_id": self.last_story_id,
+            "last_story_type": self.last_story_type,
+            "last_story_started_at": self.last_story_started_at,
+            "last_fun_started_at": self.last_fun_started_at,
+            "last_important_started_at": self.last_important_started_at,
+        }
+
+
+@dataclass(frozen=True)
 class AssistantState:
     schema_version: int = ASSISTANT_STATE_SCHEMA_VERSION
     mode: AssistantMode = AssistantMode.NORMAL
@@ -32,6 +113,8 @@ class AssistantState:
     story: str | None = None
     scene: str | None = None
     status: str = "new"
+    story_executions: dict[str, StoryExecutionState] = field(default_factory=dict)
+    story_activity: StoryActivityState = field(default_factory=StoryActivityState)
 
     @classmethod
     def from_profile(cls, profile: Mapping[str, Any]) -> "AssistantState":
@@ -53,7 +136,7 @@ class AssistantState:
         stars = _non_negative_int(value.get("stars"))
         version = _non_negative_int(value.get("schema_version"))
 
-        if version < ASSISTANT_STATE_SCHEMA_VERSION:
+        if version < 2:
             return cls._from_legacy(
                 value,
                 mode=mode,
@@ -65,6 +148,8 @@ class AssistantState:
         story = _optional_string(value.get("story"))
         scene = _optional_string(value.get("scene"))
         status = _optional_string(value.get("status")) or "new"
+        story_executions = _normalise_story_executions(value.get("story_executions"))
+        story_activity = StoryActivityState.from_value(value.get("story_activity"))
         return cls(
             mode=mode,
             sequences=sequences,
@@ -74,6 +159,8 @@ class AssistantState:
             story=story,
             scene=scene,
             status=status,
+            story_executions=story_executions,
+            story_activity=story_activity,
         )
 
     @classmethod
@@ -111,6 +198,11 @@ class AssistantState:
             "story": self.story,
             "scene": self.scene,
             "status": self.status,
+            "story_executions": {
+                story_id: execution.to_dict()
+                for story_id, execution in self.story_executions.items()
+            },
+            "story_activity": self.story_activity.to_dict(),
         }
 
     def with_mode(self, mode: AssistantMode) -> "AssistantState":
@@ -205,8 +297,30 @@ def _normalise_events(value: Any) -> dict[str, dict[str, Any]]:
     }
 
 
+def _normalise_story_executions(value: Any) -> dict[str, StoryExecutionState]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        story_id: StoryExecutionState.from_value(execution)
+        for story_id, execution in value.items()
+        if isinstance(story_id, str) and story_id and isinstance(execution, Mapping)
+    }
+
+
 def _optional_string(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _optional_datetime_string(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.isoformat()
 
 
 def _non_negative_int(value: Any) -> int:

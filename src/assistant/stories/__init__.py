@@ -13,6 +13,11 @@ from src.assistant.stories.standard import StandardStory
 from src.assistant.stories.weekly_summary import WeeklySummaryStory
 from src.assistant.stories.weekly_summary_ready import WeeklySummaryReadyStory
 from src.assistant.stories.tutorial import InitialTutorialStory
+from src.assistant.stories.triggered import TRIGGERED_STORY_TYPES, triggered_stories
+
+
+for _triggered_story_type in TRIGGERED_STORY_TYPES:
+    globals()[_triggered_story_type.__name__] = _triggered_story_type
 
 
 def default_stories() -> Mapping[AssistantMode | str, AssistantStory]:
@@ -20,7 +25,7 @@ def default_stories() -> Mapping[AssistantMode | str, AssistantStory]:
     special = SpecialExampleStory()
     night = NightStory()
     weekly = WeeklySummaryStory()
-    return {
+    stories: dict[AssistantMode | str, AssistantStory] = {
         AssistantMode.NORMAL: standard,
         "standard": standard,
         "weekly_summary": weekly,
@@ -34,6 +39,22 @@ def default_stories() -> Mapping[AssistantMode | str, AssistantStory]:
         "tutorial": InitialTutorialStory(),
         "push_reminder": PushReminderStory(),
     }
+    stories.update(triggered_stories())
+    return stories
 
 
-__all__ = ["GreetingsStory", "InformationStory", "InitialTutorialStory", "NightStory", "PersonalHighlightTutorialStory", "PushReminderStory", "SmalltalkStory", "SpecialExampleStory", "StandardStory", "WeeklySummaryStory", "WeeklySummaryReadyStory", "default_stories"]
+__all__ = [
+    "GreetingsStory",
+    "InformationStory",
+    "InitialTutorialStory",
+    "NightStory",
+    "PersonalHighlightTutorialStory",
+    "PushReminderStory",
+    "SmalltalkStory",
+    "SpecialExampleStory",
+    "StandardStory",
+    "WeeklySummaryStory",
+    "WeeklySummaryReadyStory",
+    "default_stories",
+    *(story_type.__name__ for story_type in TRIGGERED_STORY_TYPES),
+]
