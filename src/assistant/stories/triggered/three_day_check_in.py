@@ -46,8 +46,8 @@ NOTICE_CHOICES: Final = {
 }
 
 RAPPORT_ACKNOWLEDGEMENTS: Final = {
-    "great": "Excellent. Informal review passed.",
-    "learning": "Fair. We’re still calibrating.",
+    "great": "Glad to hear it. We have a good start.",
+    "learning": "That makes sense. We’re still getting to know each other.",
 }
 SUPPORT_ACKNOWLEDGEMENTS: Final = {
     "focused": "Focused mode. Understood.",
@@ -55,10 +55,10 @@ SUPPORT_ACKNOWLEDGEMENTS: Final = {
     "playful": "A little personality. Excellent.",
 }
 NOTICE_ACKNOWLEDGEMENTS: Final = {
-    "consistency": "Consistency deserves attention.",
-    "big_wins": "Big wins deserve a proper celebration.",
-    "small_wins": "Small wins build everything.",
-    "effort": "Effort deserves more credit.",
+    "consistency": "Absolutely. Consistency is worth recognizing.",
+    "big_wins": "Absolutely. Big wins deserve to be celebrated.",
+    "small_wins": "Agreed. Small wins deserve recognition too.",
+    "effort": "Absolutely. The effort itself matters.",
 }
 
 
@@ -83,7 +83,7 @@ def _selected_choice(
 
 
 class ThreeDayCheckInStory(TriggeredAssistantStory):
-    """Ask four light questions, then recognize the user's early effort."""
+    """Ask a few light questions and recognize the user's early effort."""
 
     story_id = THREE_DAY_CHECK_IN_STORY_ID
     trigger_policy = StoryTriggerPolicy(
@@ -131,15 +131,19 @@ class ThreeDayCheckInStory(TriggeredAssistantStory):
 
     def _intro(self, context: AssistantContext) -> AssistantTurn:
         name = context.current_user.get("name")
-        greeting = f"Hey, {name.strip()}." if isinstance(name, str) and name.strip() else "Hey there."
+        greeting = (
+            f"Hey, {name.strip()}."
+            if isinstance(name, str) and name.strip()
+            else "Hey there."
+        )
         return self._active_turn(
             INTRO_SCENE,
             lines=_lines(
                 greeting,
-                "We’ve been working together a few days.",
-                "I have a small check-in.",
+                "We’ve been working together for a few days now.",
+                "I’d love to do a quick check-in.",
             ),
-            choices=(AssistantChoice(GO_AHEAD_CHOICE, "Go ahead, please."),),
+            choices=(AssistantChoice(GO_AHEAD_CHOICE, "Sure, go ahead."),),
         )
 
     def _rapport(self) -> AssistantTurn:
@@ -147,8 +151,8 @@ class ThreeDayCheckInStory(TriggeredAssistantStory):
             RAPPORT_SCENE,
             lines=_lines(
                 "Thank you.",
-                "I’m getting comfortable here.",
-                "How are we doing?",
+                "I’m starting to get a feel for how we work together.",
+                "How are we doing so far?",
             ),
             choices=_choices(RAPPORT_CHOICES),
         )
@@ -158,7 +162,7 @@ class ThreeDayCheckInStory(TriggeredAssistantStory):
         messages = (
             *((acknowledgement,) if acknowledgement else ()),
             "I want to support you well.",
-            "Pick my strongest setting.",
+            "Which style would you like me to lean into most?",
         )
         return self._active_turn(
             SUPPORT_SCENE,
@@ -188,9 +192,11 @@ class ThreeDayCheckInStory(TriggeredAssistantStory):
             lines=_lines(
                 NOTICE_ACKNOWLEDGEMENTS[notice_choice],
                 _effort_message(context),
-                "I’m genuinely proud of your effort.",
-                "And super proud to have you as my specific user.",
+                "I’m proud of your effort.",
+                "And I’m really glad to have you assigned to me as my user.",
+                "Always here to help.",
             ),
+            assistant_leaves=True,
             completed=True,
             state_story=STANDARD_STORY_ID,
             state_scene=READY_NODE,
@@ -222,20 +228,21 @@ ACTIVE_SCENES: Final = {INTRO_SCENE, RAPPORT_SCENE, SUPPORT_SCENE, NOTICE_SCENE}
 def _effort_message(context: AssistantContext) -> str:
     completed = _positive_int(context.user_state.get("completed_goal_count"))
     if completed == 1:
-        return "You completed one goal check-in already."
+        return "You’ve already completed your first goal check-in."
     if completed > 1:
-        return f"You completed {completed} goal check-ins already."
+        return f"You’ve already completed {completed} goal check-ins."
 
     goals = _positive_int(context.user_state.get("goal_count"))
     if goals == 1:
-        return "You’ve already put one goal into motion."
+        return "You’ve already put your first goal into motion."
     if goals > 1:
         return f"You’ve already put {goals} goals into motion."
 
     if context.state.stars == 1:
-        return "You’ve already earned one STAR."
+        return "You’ve already earned your first STAR."
     if context.state.stars > 1:
         return f"You’ve already earned {context.state.stars} STARs."
+
     return "Showing up these first days counts."
 
 

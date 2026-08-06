@@ -173,6 +173,7 @@ def test_story_has_one_two_three_and_four_choice_scenes() -> None:
     assert completed.scene_id == COMPLETE_SCENE
     assert completed.completed
     assert completed.execution_outcome == "completed"
+    assert completed.assistant_leaves
     assert not completed.choices
 
 
