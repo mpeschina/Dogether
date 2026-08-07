@@ -278,7 +278,6 @@ def test_cooldowns_spacing_visit_limit_and_important_override() -> None:
         "fun",
         cooldown=timedelta(days=1),
         min_since_any_story=timedelta(hours=2),
-        min_since_fun_story=timedelta(hours=12),
     )
     selector = trigger_selector(fun)
     blocked = ready_state(
@@ -353,6 +352,7 @@ def test_render_persists_start_completion_activity_and_event_consumption() -> No
     assert execution.pending_event_id is None
     assert result.story_activity.last_story_id == story.story_id
     assert result.story_activity.last_story_type == "important"
+    assert result.story_activity.last_triggered_story_started_at == NOW.isoformat()
     assert result.events["event.ready"] == {
         "payload": 3,
         "consumed_at": NOW.isoformat(),

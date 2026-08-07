@@ -360,7 +360,7 @@ def test_assistant_state_persists_in_json_user_profile_and_resets(tmp_path: Path
     )
     special_state = AssistantState(
         mode=AssistantMode.SPECIAL,
-        sequences={"initial_tutorial": 1, "special_examples": 2},
+        sequences={"initial_tutorial": 1, "debug": 2},
         knowledge={"tutorial.app_intro.seen": True},
         events={"special.click_challenge": {"active": True, "clicks": 37}},
         story_executions={
@@ -1748,7 +1748,7 @@ def test_mongodb_native_assistant_state_uses_targeted_write_without_read() -> No
     database["users_inventory"].calls.clear()
     state = AssistantState(
         mode=AssistantMode.SPECIAL,
-        sequences={"special_examples": 1},
+        sequences={"debug": 1},
         story_executions={"trigger-example": StoryExecutionState(starts=1)},
         story_activity=StoryActivityState(
             last_story_id="trigger-example",

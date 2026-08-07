@@ -38,7 +38,7 @@ from src.assistant.stories.personal_highlight_tutorial import (
     personal_highlight_tutorial_pending,
 )
 from src.assistant.stories.push_reminder import PUSH_REMINDER_STORY_ID
-from src.assistant.stories.special_examples import SPECIAL_STORY_ID
+from src.assistant.stories.debug import DEBUG_STORY_ID
 from src.assistant.stories.star_tutorial import STAR_TUTORIAL_SCENES
 from src.assistant.stories.standard import PUSH_PROMPT_EVENT_ID
 from src.assistant.stories.weekly_summary import WEEKLY_SUMMARY_STORY_ID
@@ -134,6 +134,7 @@ class AssistantDirector:
             )
             is_new_non_standard = (
                 selection is None
+                and state.mode is not AssistantMode.SPECIAL
                 and story.story_id not in {STANDARD_STORY_ID, GREETINGS_STORY_ID}
                 and story.story_id != state.story
                 and story.story_id not in started_this_render
@@ -236,7 +237,7 @@ class AssistantDirector:
         if story := self._super_important_issue_story(context):
             return story, False
         if state.mode is AssistantMode.SPECIAL:
-            return self.stories.get(SPECIAL_STORY_ID), False
+            return self.stories.get(DEBUG_STORY_ID), False
 
         # resume and continue rules to dispatch to a currently running story
         if state.story == TUTORIAL_STORY_ID and state.scene not in {None, READY_NODE}:

@@ -148,5 +148,4 @@ class FunStarTriggerStory(_StarTriggerStory):
         importance=StoryImportance.FUN,
         priority=10,
         cooldown=timedelta(days=7),
-        min_since_fun_story=timedelta(hours=12),
     )

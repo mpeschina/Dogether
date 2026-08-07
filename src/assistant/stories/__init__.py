@@ -7,7 +7,7 @@ from src.assistant.stories.information import InformationStory
 from src.assistant.stories.night import NightStory
 from src.assistant.stories.personal_highlight_tutorial import PersonalHighlightTutorialStory
 from src.assistant.stories.push_reminder import PushReminderStory
-from src.assistant.stories.special_examples import SpecialExampleStory
+from src.assistant.stories.debug import DebugFlowStory
 from src.assistant.stories.smalltalk import SmalltalkStory
 from src.assistant.stories.standard import StandardStory
 from src.assistant.stories.weekly_summary import WeeklySummaryStory
@@ -22,7 +22,7 @@ for _triggered_story_type in TRIGGERED_STORY_TYPES:
 
 def default_stories() -> Mapping[AssistantMode | str, AssistantStory]:
     standard = StandardStory()
-    special = SpecialExampleStory()
+    debug = DebugFlowStory()
     night = NightStory()
     weekly = WeeklySummaryStory()
     stories: dict[AssistantMode | str, AssistantStory] = {
@@ -34,8 +34,8 @@ def default_stories() -> Mapping[AssistantMode | str, AssistantStory]:
         "information": InformationStory(),
         "personal_highlight_tutorial": PersonalHighlightTutorialStory(),
         "night": night,
-        AssistantMode.SPECIAL: special,
-        "special_examples": special,
+        AssistantMode.SPECIAL: debug,
+        "debug": debug,
         "tutorial": InitialTutorialStory(),
         "push_reminder": PushReminderStory(),
     }
@@ -51,7 +51,7 @@ __all__ = [
     "PersonalHighlightTutorialStory",
     "PushReminderStory",
     "SmalltalkStory",
-    "SpecialExampleStory",
+    "DebugFlowStory",
     "StandardStory",
     "WeeklySummaryStory",
     "WeeklySummaryReadyStory",

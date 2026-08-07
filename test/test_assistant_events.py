@@ -54,15 +54,6 @@ from src.assistant.stories.night import (
     STATUS_CLICK_COUNT as NIGHT_STATUS_CLICK_COUNT,
     NightStory,
 )
-from src.assistant.stories.special_examples import (
-    BUTTON_TEST_EVENT_ID,
-    CLICK_CHALLENGE_EVENT_ID,
-    PROGRESS_BAR_CLICK_COUNT,
-    PROGRESS_BAR_COUNT,
-    SPECIAL_SEQUENCE_ID,
-    STATUS_CLICK_COUNT,
-    SpecialExampleStory,
-)
 from src.assistant.stories.smalltalk import (
     FUNNY_SMALLTALK_RESPONSES,
     SMALLTALK_CLICKED_AT_KEY,
@@ -1078,123 +1069,6 @@ def test_push_reminder_backoff_and_turn_updates() -> None:
     assert dismiss.event_updates[PUSH_PROMPT_EVENT_ID]["dismissed_count"] == 2
 
 
-def test_special_story_uses_choice_and_send_control_rounds() -> None:
-    story = SpecialExampleStory()
-    state = AssistantState(mode=AssistantMode.SPECIAL)
-    welcome = story.advance(context_for(state), story.entry_scene(context_for(state)), None)
-    assert welcome.completed
-    state = apply_turn(state, welcome)
-    assert state.sequences[SPECIAL_SEQUENCE_ID] == 1
-
-    context = context_for(state, previous_page_key="goals")
-    buttons = story.advance(context, story.entry_scene(context), None)
-    assert buttons.scene_id == BUTTON_TEST_EVENT_ID
-    assert [choice.label for choice in buttons.choices] == ["1", "2", "3"]
-    state = apply_turn(state, buttons)
-
-    chosen = story.advance(
-        context_for(state),
-        BUTTON_TEST_EVENT_ID,
-        selection(story.story_id, BUTTON_TEST_EVENT_ID, "2"),
-    )
-    state = apply_turn(state, chosen)
-    assert state.sequences[SPECIAL_SEQUENCE_ID] == 2
-    assert BUTTON_TEST_EVENT_ID not in state.events
-
-    click_state = replace(
-        state,
-        events={
-            CLICK_CHALLENGE_EVENT_ID: {
-                "active": True,
-                "clicks": STATUS_CLICK_COUNT,
-            }
-        },
-    )
-    send = story.advance(
-        context_for(click_state),
-        CLICK_CHALLENGE_EVENT_ID,
-        selection(
-            story.story_id,
-            CLICK_CHALLENGE_EVENT_ID,
-            "send",
-            "Send",
-        ),
-    )
-    assert send.control_kind == "send"
-    assert send.progress[0].text == f"1 / {PROGRESS_BAR_CLICK_COUNT}"
-
-
-def test_special_click_challenge_uses_live_statuses_and_reveals_bars_sequentially() -> None:
-    story = SpecialExampleStory()
-    state = AssistantState(
-        mode=AssistantMode.SPECIAL,
-        events={CLICK_CHALLENGE_EVENT_ID: {"active": True, "clicks": 0}},
-    )
-
-    for clicks in range(1, STATUS_CLICK_COUNT + 1):
-        turn = story.advance(
-            context_for(state),
-            CLICK_CHALLENGE_EVENT_ID,
-            selection(story.story_id, CLICK_CHALLENGE_EVENT_ID, "send", "Send"),
-        )
-        assert turn.statuses == (f"{clicks}x",)
-        assert turn.progress == ()
-        assert not turn.keep_statuses_in_history
-        state = apply_turn(state, turn)
-
-    first_bar = story.advance(
-        context_for(state),
-        CLICK_CHALLENGE_EVENT_ID,
-        selection(story.story_id, CLICK_CHALLENGE_EVENT_ID, "send", "Send"),
-    )
-    assert [entry.text for entry in first_bar.progress] == [
-        f"1 / {PROGRESS_BAR_CLICK_COUNT}"
-    ]
-
-    almost_second_bar = story.advance(
-        context_for(
-            replace(
-                state,
-                events={
-                    CLICK_CHALLENGE_EVENT_ID: {
-                        "active": True,
-                        "clicks": STATUS_CLICK_COUNT + PROGRESS_BAR_CLICK_COUNT,
-                    }
-                },
-            )
-        ),
-        CLICK_CHALLENGE_EVENT_ID,
-        selection(story.story_id, CLICK_CHALLENGE_EVENT_ID, "send", "Send"),
-    )
-    assert [entry.text for entry in almost_second_bar.progress] == [
-        f"{PROGRESS_BAR_CLICK_COUNT} / {PROGRESS_BAR_CLICK_COUNT}",
-        f"1 / {PROGRESS_BAR_CLICK_COUNT}",
-    ]
-
-    final = story.advance(
-        context_for(
-            replace(
-                state,
-                events={
-                    CLICK_CHALLENGE_EVENT_ID: {
-                        "active": True,
-                        "clicks": (
-                            STATUS_CLICK_COUNT
-                            + PROGRESS_BAR_CLICK_COUNT * PROGRESS_BAR_COUNT
-                            - 1
-                        ),
-                    }
-                },
-            )
-        ),
-        CLICK_CHALLENGE_EVENT_ID,
-        selection(story.story_id, CLICK_CHALLENGE_EVENT_ID, "send", "Send"),
-    )
-    assert [entry.text for entry in final.progress] == [
-        f"{PROGRESS_BAR_CLICK_COUNT} / {PROGRESS_BAR_CLICK_COUNT}"
-    ] * PROGRESS_BAR_COUNT
-
-
 @pytest.mark.parametrize(
     ("now", "expected"),
     (
@@ -1340,9 +1214,9 @@ def test_mode_switch_preserves_achievements_but_restarts_conversation() -> None:
         story=STANDARD_STORY_ID,
         scene=READY_NODE,
         status="completed",
-        sequences={SPECIAL_SEQUENCE_ID: 2},
+        sequences={"debug": 2},
         knowledge={"tutorial.notifications.seen": True},
-        events={CLICK_CHALLENGE_EVENT_ID: {"clicks": 20}},
+        events={"debug.flow": {"step": 2}},
     )
     switched = state.with_mode(AssistantMode.SPECIAL)
     assert switched.story is None

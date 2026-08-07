@@ -169,7 +169,7 @@ def render_assistant_settings(
     st.subheader("Assistant (Prototype)")
     st.caption(
         "Normal runs the guided onboarding and assistant events. "
-        "Special runs the example assistant story."
+        "Special runs a selected debug Assistant flow."
     )
 
     state = AssistantState.from_profile(current_user)

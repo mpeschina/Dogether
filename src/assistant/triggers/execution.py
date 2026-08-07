@@ -38,6 +38,7 @@ class TriggerStoryExecutionTracker:
             story.story_id,
             story.trigger_policy.importance.name.lower(),
             now,
+            triggered=True,
         )
         if (
             story.trigger_policy.event_id
@@ -87,6 +88,8 @@ class TriggerStoryExecutionTracker:
         story_id: str,
         story_type: str,
         now: datetime,
+        *,
+        triggered: bool = False,
     ) -> AssistantState:
         now = _normalise_datetime(now)
         activity = state.story_activity
@@ -96,6 +99,11 @@ class TriggerStoryExecutionTracker:
                 last_story_id=story_id,
                 last_story_type=story_type,
                 last_story_started_at=now.isoformat(),
+                last_triggered_story_started_at=(
+                    now.isoformat()
+                    if triggered
+                    else activity.last_triggered_story_started_at
+                ),
                 last_fun_started_at=(
                     now.isoformat()
                     if story_type == "fun"

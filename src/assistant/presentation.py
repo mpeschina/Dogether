@@ -67,9 +67,10 @@ def response_generator(
     *,
     delay_seconds: float = WORD_DELAY_SECONDS,
 ) -> Iterator[str]:
-    for word in response.split():
-        yield f"{word} "
-        time.sleep(delay_seconds)
+    for chunk in re.findall(r"\S+\s*|\s+", response):
+        yield chunk
+        if chunk.strip():
+            time.sleep(delay_seconds)
 
 
 class StreamlitAssistantView:
@@ -416,8 +417,9 @@ class StreamlitAssistantView:
     ) -> None:
         target = st if placeholder is None else placeholder
         safe_message = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escape(message))
+        formatted_message = safe_message.replace("\n", "<br />")
         target.markdown(
-            f"<div class='assistant-message' style='font-size:{font_scale}em'><p>{safe_message.replace(chr(10), '<br>')}</p></div>",
+            f"<div class='assistant-message' style='font-size:{font_scale}em'><p>{formatted_message}</p></div>",
             unsafe_allow_html=True,
         )
 

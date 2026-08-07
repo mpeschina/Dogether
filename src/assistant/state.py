@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Mapping
 
 
-ASSISTANT_STATE_SCHEMA_VERSION = 4
+ASSISTANT_STATE_SCHEMA_VERSION = 5
 # Session-only, authoritative story state.  It retains the active story,
 # scene, status, and events so an unfinished flow can resume; it deliberately
 # does not contain the UI's buttons or input configuration.
@@ -71,6 +71,7 @@ class StoryActivityState:
     last_story_id: str | None = None
     last_story_type: str | None = None
     last_story_started_at: str | None = None
+    last_triggered_story_started_at: str | None = None
     last_fun_started_at: str | None = None
     last_important_started_at: str | None = None
 
@@ -83,6 +84,9 @@ class StoryActivityState:
             last_story_type=_optional_string(value.get("last_story_type")),
             last_story_started_at=_optional_datetime_string(
                 value.get("last_story_started_at")
+            ),
+            last_triggered_story_started_at=_optional_datetime_string(
+                value.get("last_triggered_story_started_at")
             ),
             last_fun_started_at=_optional_datetime_string(
                 value.get("last_fun_started_at")
@@ -97,6 +101,7 @@ class StoryActivityState:
             "last_story_id": self.last_story_id,
             "last_story_type": self.last_story_type,
             "last_story_started_at": self.last_story_started_at,
+            "last_triggered_story_started_at": self.last_triggered_story_started_at,
             "last_fun_started_at": self.last_fun_started_at,
             "last_important_started_at": self.last_important_started_at,
         }

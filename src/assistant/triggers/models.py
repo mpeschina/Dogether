@@ -30,7 +30,7 @@ class StoryTriggerPolicy:
     max_repetitions: int | None = None
     cooldown: timedelta | None = None
     min_since_any_story: timedelta | None = None
-    min_since_fun_story: timedelta | None = None
+    min_since_triggered_story: timedelta | None = None
     event_id: str | None = None
     consume_trigger_on: TriggerConsumption = "start"
 
@@ -42,7 +42,7 @@ class StoryTriggerPolicy:
         for value in (
             self.cooldown,
             self.min_since_any_story,
-            self.min_since_fun_story,
+            self.min_since_triggered_story,
         ):
             if value is not None and value < timedelta(0):
                 raise ValueError("Story timing limits cannot be negative.")

@@ -74,6 +74,27 @@ view.finish()
 """
 
 
+def test_response_generator_preserves_line_breaks() -> None:
+    message = "Heading\n\n— first clause\n— second clause"
+
+    assert "".join(
+        presentation.response_generator(message, delay_seconds=0)
+    ) == message
+
+
+def test_assistant_message_renderer_emits_a_break_for_each_line(monkeypatch) -> None:
+    rendered: list[str] = []
+    monkeypatch.setattr(
+        presentation.st,
+        "markdown",
+        lambda body, **_: rendered.append(body),
+    )
+
+    presentation.StreamlitAssistantView._render_assistant_message("first\nsecond")
+
+    assert "<br />" in rendered[0]
+
+
 def test_choice_round_replays_history_and_consumes_click_once() -> None:
     app = AppTest.from_string(CHOICE_APP, default_timeout=10).run()
     assert not app.exception

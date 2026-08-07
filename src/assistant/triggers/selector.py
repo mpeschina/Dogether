@@ -95,10 +95,11 @@ class TriggerStorySelector:
         ):
             return False
         if not spacing_satisfied(
-            now, activity.last_fun_started_at, policy.min_since_fun_story
+            now,
+            activity.last_triggered_story_started_at,
+            policy.min_since_triggered_story,
         ):
             return False
-
         if policy.importance is StoryImportance.IMPORTANT:
             return True
         visit_count = context.session_state.get(
