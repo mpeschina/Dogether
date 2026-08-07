@@ -60,7 +60,9 @@ def render_account(
     cols[1].metric("Friends", stats["friend_count"])
     cols[2].metric("Days using app", stats["days_using_app"])
     cols[3].metric("Month completion", f"{stats['completion_rate']}%")
-    st.caption(f"Completed night events: {completed_night_event_count(current_user)}")
+    completed_night_events = completed_night_event_count(current_user)
+    if completed_night_events > 0:
+        st.caption(f"Completed night events: 🌙 {completed_night_events}")
 
     st.subheader("Activity")
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=365)

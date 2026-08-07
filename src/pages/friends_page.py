@@ -449,7 +449,9 @@ def render_friends(
             row = st.container(horizontal=True)
             row.write(friend.get("name", friend["email"]))
             row.write(friend.get("email", ""))
-            row.write(f"🌙 {_completed_night_events(friend)}")
+            completed_night_events = _completed_night_events(friend)
+            if completed_night_events > 0:
+                row.write(f"🌙 {completed_night_events}")
             if row.button(remove_label, key=f"remove_friend_{friend_id}", type=remove_type):
                 if confirm_remove:
                     persistence.remove_friend(user_id, friend_id, now=now)
