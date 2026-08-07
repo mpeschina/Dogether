@@ -28,6 +28,13 @@ from src.pages.common_helpers import (
 )
 
 
+def completed_night_event_count(profile: Mapping[str, Any]) -> int:
+    try:
+        return max(0, int(profile.get("completed_night_events", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
 def render_account(
     persistence: Persistence,
     current_user: dict,
@@ -53,6 +60,7 @@ def render_account(
     cols[1].metric("Friends", stats["friend_count"])
     cols[2].metric("Days using app", stats["days_using_app"])
     cols[3].metric("Month completion", f"{stats['completion_rate']}%")
+    st.caption(f"Completed night events: {completed_night_event_count(current_user)}")
 
     st.subheader("Activity")
     render_activity_diagram(stats.get("activity_days", {}), now=now, days=365)

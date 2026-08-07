@@ -36,6 +36,7 @@ class AssistantContext:
     shared_story_state_store: SharedStoryStateStore | None = None
     user_state: Mapping[str, Any] = field(default_factory=dict)
     create_friend_share_link: Callable[[], str] | None = None
+    record_night_event_completion: Callable[[], int] | None = None
 
 
 @dataclass(frozen=True)

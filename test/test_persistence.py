@@ -134,6 +134,8 @@ class FakeMongoNativeCollection:
             upserted_id = None
         for key, value in update.get("$set", {}).items():
             self._set_path(document, key, copy.deepcopy(value))
+        for key, value in update.get("$inc", {}).items():
+            self._set_path(document, key, self._get_path(document, key) + value)
         return FakeMongoWriteResult(matched_count=1 if upserted_id is None else 0, upserted_id=upserted_id)
 
     def delete_one(self, query: dict) -> None:
@@ -310,6 +312,30 @@ def test_user_profile_upsert_normalizes_email_and_preserves_activity_timestamp(t
     assert second["last_seen_at"] == first["last_seen_at"]
 
 
+def test_completed_night_events_default_normalizes_and_increments_in_json(tmp_path: Path) -> None:
+    path = tmp_path / "users.json"
+    path.write_text(
+        json.dumps({"users": {"alice": {"user_id": "alice", "email": "alice@example.com", "name": "Alice", "completed_night_events": "invalid"}}}),
+        encoding="utf-8",
+    )
+    persistence = JsonPersistence(path)
+
+    assert persistence.get_user("alice")["completed_night_events"] == 0
+    assert persistence.increment_completed_night_events("alice") == 1
+    assert JsonPersistence(path).get_user("alice")["completed_night_events"] == 1
+
+
+def test_completed_night_events_increment_atomically_in_native_mongo() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    persistence.upsert_user("alice", "alice@example.com", "Alice")
+
+    assert persistence.increment_completed_night_events("alice") == 1
+    assert persistence.increment_completed_night_events("alice") == 2
+    assert database["users_inventory"].documents["alice"]["completed_night_events"] == 2
+    assert any("$inc" in call[2] for call in database["users_inventory"].calls if call[0] == "update_one")
+
+
 def test_debug_info_defaults_false_and_preserves_direct_database_grants(tmp_path: Path) -> None:
     path = tmp_path / "users.json"
     persistence = JsonPersistence(path)
@@ -435,6 +461,7 @@ def test_purge_account_resets_profile_and_removes_all_json_references(tmp_path: 
         "debug_info": False,
         "dismissed_friend_suggestion_pairs": [],
         "personal_bests": {},
+        "completed_night_events": 0,
     }
     assert data["users"]["alice"] == profile
     assert data["friend_invites"] == {}

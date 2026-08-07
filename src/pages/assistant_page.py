@@ -165,6 +165,9 @@ def render_assistant(
         create_friend_share_link=lambda: create_friend_share_link(
             persistence, user_id, st.session_state, now=now
         ),
+        record_night_event_completion=lambda: persistence.increment_completed_night_events(
+            user_id, now=now
+        ),
     )
     view = StreamlitAssistantView()
     director = AssistantDirector(persistence, default_stories())

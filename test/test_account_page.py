@@ -15,6 +15,7 @@ from src.pages.account_page import (
     assistant_transient_debug_info,
     clear_greeting_session,
     clear_smalltalk_session,
+    completed_night_event_count,
     debug_account_status,
     format_personal_best_day,
     greeting_debug_info,
@@ -51,6 +52,13 @@ def test_debug_account_status_reflects_the_persisted_profile_flag() -> None:
     assert debug_account_status({"debug_info": True}) == "Debug account: enabled"
     assert debug_account_status({"debug_info": False}) == "Debug account: disabled"
     assert debug_account_status({}) == "Debug account: disabled"
+
+
+def test_completed_night_event_count_is_safe_for_missing_or_malformed_profiles() -> None:
+    assert completed_night_event_count({"completed_night_events": 4}) == 4
+    assert completed_night_event_count({}) == 0
+    assert completed_night_event_count({"completed_night_events": "invalid"}) == 0
+    assert completed_night_event_count({"completed_night_events": -1}) == 0
 
 
 def test_assistant_settings_requires_debug_info(monkeypatch) -> None:

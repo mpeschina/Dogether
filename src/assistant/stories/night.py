@@ -86,6 +86,8 @@ class NightStory(AssistantStory):
         completed_count = _non_negative_int(
             context.state.events.get(NIGHT_EVENT_ID, {}).get(NIGHT_COMPLETED_COUNT_KEY)
         ) + 1
+        if context.record_night_event_completion is not None:
+            context.current_user["completed_night_events"] = context.record_night_event_completion()
         return AssistantTurn(
             story_id=self.story_id,
             scene_id=NIGHT_AFTER_LEAVING_SCENE,

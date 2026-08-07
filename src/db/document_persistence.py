@@ -71,6 +71,7 @@ class DocumentPersistence:
             user.setdefault("debug_info", False)
             user.setdefault("dismissed_friend_suggestion_pairs", [])
             user.setdefault("personal_bests", {})
+            user.setdefault("completed_night_events", 0)
             if existing != user:
                 data["users"][user_id] = user
                 self._write(data)
@@ -160,6 +161,7 @@ class DocumentPersistence:
                 "debug_info": False,
                 "dismissed_friend_suggestion_pairs": [],
                 "personal_bests": {},
+                "completed_night_events": 0,
             }
             data["users"][user_id] = profile
             self._write(data)
@@ -189,6 +191,27 @@ class DocumentPersistence:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         return self.save_assistant_state(user_id, AssistantState.reset().to_dict(), now=now)
+
+    def increment_completed_night_events(
+        self,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> int:
+        """Atomically add one completed night event to a normal user profile."""
+        with self._lock:
+            data = self._read()
+            user = data["users"].get(user_id)
+            if not user:
+                raise ValueError("User not found.")
+            try:
+                completed = max(0, int(user.get("completed_night_events", 0)))
+            except (TypeError, ValueError):
+                completed = 0
+            completed += 1
+            user["completed_night_events"] = completed
+            user["updated_at"] = _iso(now)
+            self._write(data)
+            return completed
 
     def claim_site_break_effect(self, user_id: str, now: datetime | None = None) -> bool:
         """Atomically reserve the user's one site-break effect for today."""

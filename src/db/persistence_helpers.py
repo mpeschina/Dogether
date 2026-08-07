@@ -94,6 +94,10 @@ def _normalise_friend_pair(value: Any) -> list[str] | None:
 def _normalise_user_profile(user: dict[str, Any]) -> dict[str, Any]:
     normalised = dict(user)
     normalised["debug_info"] = normalised.get("debug_info") is True
+    try:
+        normalised["completed_night_events"] = max(0, int(normalised.get("completed_night_events", 0)))
+    except (TypeError, ValueError):
+        normalised["completed_night_events"] = 0
     if "assistant_state" in normalised:
         normalised["assistant_state"] = AssistantState.from_value(
             normalised.get("assistant_state")

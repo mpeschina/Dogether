@@ -98,12 +98,18 @@ from src.db.persistence_helpers import APP_ZONE
 class RecordingPersistence:
     def __init__(self) -> None:
         self.saved_states: list[dict] = []
+        self.completed_night_events = 0
 
     def save_assistant_state(self, user_id, assistant_state, now=None):
         del user_id, now
         stored = AssistantState.from_value(assistant_state).to_dict()
         self.saved_states.append(stored)
         return stored
+
+    def increment_completed_night_events(self, user_id, now=None):
+        del user_id, now
+        self.completed_night_events += 1
+        return self.completed_night_events
 
 
 class RecordingView:
@@ -144,6 +150,7 @@ def context_for(
     user_state: dict | None = None,
     session_state: dict | None = None,
     create_friend_share_link=None,
+    record_night_event_completion=None,
     now: datetime | None = None,
 ) -> AssistantContext:
     return AssistantContext(
@@ -155,6 +162,7 @@ def context_for(
         previous_page_key=previous_page_key,
         user_state=user_state or {},
         create_friend_share_link=create_friend_share_link,
+        record_night_event_completion=record_night_event_completion,
         now=now,
     )
 
@@ -1195,6 +1203,40 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
     assert exit_turn.destination_delay == 3
     assert exit_turn.completed
     assert "assistant.story_session" not in session
+
+
+def test_night_completion_increments_the_normal_profile_once() -> None:
+    persistence = RecordingPersistence()
+    director = AssistantDirector(persistence, {NIGHT_STORY_ID: NightStory(random_source=StubRandom(0))})
+    session = {
+        "assistant.story_session": {
+            NIGHT_STORY_ID: {
+                "clicks": NIGHT_STATUS_CLICK_COUNT + NIGHT_PROGRESS_BAR_CLICK_COUNT * NIGHT_PROGRESS_BAR_COUNT - 1
+            }
+        }
+    }
+    profile = {"user_id": "alice"}
+
+    completed_state = director.render(
+        context_for(
+            AssistantState(),
+            profile=profile,
+            session_state=session,
+            record_night_event_completion=lambda: persistence.increment_completed_night_events("alice"),
+        ),
+        RecordingView(selection(NIGHT_STORY_ID, NIGHT_EVENT_ID, "send", "Send")),
+    )
+    director.render(
+        context_for(
+            completed_state,
+            profile=profile,
+            session_state=session,
+        ),
+        RecordingView(selection(NIGHT_STORY_ID, NIGHT_AFTER_LEAVING_SCENE, "sorry")),
+    )
+
+    assert persistence.completed_night_events == 1
+    assert profile["completed_night_events"] == 1
 
 
 def test_night_story_can_open_with_imagined_sleeping_noises() -> None:

@@ -425,6 +425,7 @@ class MongoNativePersistence:
         user.setdefault("debug_info", False)
         user.setdefault("dismissed_friend_suggestion_pairs", [])
         user.setdefault("personal_bests", {})
+        user.setdefault("completed_night_events", 0)
         if user != existing:
             self._users_inventory_collection().update_one({"_id": user_id}, {"$set": user}, upsert=True)
             self._cache_clear()
@@ -519,6 +520,7 @@ class MongoNativePersistence:
             "debug_info": False,
             "dismissed_friend_suggestion_pairs": [],
             "personal_bests": {},
+            "completed_night_events": 0,
         }
         self._users_inventory_collection().replace_one({"_id": user_id}, {"_id": user_id, **profile}, upsert=True)
         self._cache_clear()
@@ -549,6 +551,24 @@ class MongoNativePersistence:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         return self.save_assistant_state(user_id, AssistantState.reset().to_dict(), now=now)
+
+    def increment_completed_night_events(
+        self,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> int:
+        """Atomically add one completed night event to a normal user profile."""
+        result = self._users_inventory_collection().update_one(
+            {"_id": user_id},
+            {"$inc": {"completed_night_events": 1}, "$set": {"updated_at": _iso(now)}},
+        )
+        if result is not None and not getattr(result, "matched_count", 0):
+            raise ValueError("User not found.")
+        self._cache_clear()
+        user = self.get_user(user_id)
+        if not user:
+            raise ValueError("User not found.")
+        return int(user["completed_night_events"])
 
     def claim_site_break_effect(self, user_id: str, now: datetime | None = None) -> bool:
         """Atomically reserve the user's one site-break effect for today."""

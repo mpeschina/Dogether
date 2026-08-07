@@ -47,6 +47,25 @@ def _friend_display_name(friend: dict[str, Any]) -> str:
     return str(friend.get("name") or friend.get("email") or friend["user_id"])
 
 
+def _completed_night_events(friend: dict[str, Any]) -> int:
+    try:
+        return max(0, int(friend.get("completed_night_events", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _ranked_friends(friends: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        friends,
+        key=lambda friend: (
+            -_completed_night_events(friend),
+            _friend_display_name(friend).casefold(),
+            str(friend.get("email") or "").casefold(),
+            str(friend.get("user_id") or ""),
+        ),
+    )
+
+
 def _friend_name_with_email(
     friend: dict[str, Any] | None,
     fallback_email: str | None = None,
@@ -413,7 +432,7 @@ def render_friends(
     #
     # Expandable Friendlist Section
     #
-    friends = suggestion_data.friends
+    friends = _ranked_friends(suggestion_data.friends)
     pending_removals = set(st.session_state.get("friends_pending_removals", []))
     pending_removals &= {friend["user_id"] for friend in friends}
     st.session_state["friends_pending_removals"] = sorted(pending_removals)
@@ -430,6 +449,7 @@ def render_friends(
             row = st.container(horizontal=True)
             row.write(friend.get("name", friend["email"]))
             row.write(friend.get("email", ""))
+            row.write(f"🌙 {_completed_night_events(friend)}")
             if row.button(remove_label, key=f"remove_friend_{friend_id}", type=remove_type):
                 if confirm_remove:
                     persistence.remove_friend(user_id, friend_id, now=now)

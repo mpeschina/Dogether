@@ -1,6 +1,6 @@
 from src.db.json_persistence import JsonPersistence
 from src.friends.alerts import pending_friend_request_alert_items
-from src.pages.friends_page import _dismiss_all_friend_suggestion_candidates, _friend_name_with_email
+from src.pages.friends_page import _dismiss_all_friend_suggestion_candidates, _friend_name_with_email, _ranked_friends
 from src.friends.suggestions import (
     friend_suggestion_candidates,
     load_friend_suggestion_data,
@@ -38,6 +38,20 @@ class CountingSuggestionPersistence(JsonPersistence):
 
     def list_friend_suggestions_for_pair(self, first_user_id: str, second_user_id: str) -> list[dict]:
         raise AssertionError("Suggestion calculations must use the preloaded snapshot.")
+
+
+def test_ranked_friends_order_by_completed_night_events_then_profile_identity() -> None:
+    friends = [
+        {"user_id": "zara", "name": "Zara", "email": "zara@example.com", "completed_night_events": 1},
+        {"user_id": "bob", "name": "Bob", "email": "bob@example.com", "completed_night_events": 3},
+        {"user_id": "alex", "name": "Alex", "email": "alex@example.com", "completed_night_events": 1},
+        {"user_id": "unknown", "name": "Unknown", "email": "unknown@example.com"},
+    ]
+
+    ranked = _ranked_friends(friends)
+
+    assert [friend["user_id"] for friend in ranked] == ["bob", "alex", "zara", "unknown"]
+    assert ranked[-1].get("completed_night_events", 0) == 0
 
 
 def test_manual_friend_suggestion_options_include_unconnected_friends(tmp_path) -> None:
