@@ -15,6 +15,8 @@ from src.assistant.stories.weekly_summary import (
 )
 from src.assistant.stories.weekly_summary_analysis import _analyse
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _used_existing_insights
+from src.assistant.stories.personal_highlight_tutorial import PERSONAL_HIGHLIGHT_TUTORIAL_EVENT_ID
+from src.assistant.stories.tutorial import READY_NODE, STANDARD_STORY_ID
 
 
 def _context(now: datetime, state: AssistantState | None = None) -> AssistantContext:
@@ -49,6 +51,10 @@ def test_monday_automatically_analyses_last_week() -> None:
     assert turn.lines[0].text == "Let’s look at last week."
     assert turn.cards[0].title == "WEEKLY COMPLETION"
     assert turn.event_updates["weekly_summary.selection"]["partial"] is False
+    assert PERSONAL_HIGHLIGHT_TUTORIAL_EVENT_ID in turn.event_updates
+    assert turn.state_story == STANDARD_STORY_ID
+    assert turn.state_scene == READY_NODE
+    assert turn.state_status == "completed"
 
 
 def test_summary_is_unavailable_until_the_account_has_a_closed_week() -> None:
@@ -88,6 +94,9 @@ def test_thursday_offers_this_or_last_week_and_marks_current_week_partial() -> N
     assert [choice.id for choice in prompt.choices] == ["this", "last"]
     assert turn.lines[0].text == "This week is still moving."
     assert turn.cards[0].title == "COMPLETION SO FAR"
+    assert turn.completed
+    assert turn.state_story == STANDARD_STORY_ID
+    assert turn.state_status == "completed"
 
 
 def test_week_selection_uses_the_apps_local_weekday() -> None:
@@ -118,7 +127,7 @@ def test_completed_weekly_summary_prompts_for_a_week_again() -> None:
     assert [choice.id for choice in prompt.choices] == ["this", "last"]
 
 
-def test_active_weekly_summary_resumes_without_showing_week_picker() -> None:
+def test_active_weekly_summary_starts_with_a_fresh_week_picker() -> None:
     context = _context(
         datetime(2026, 7, 30, tzinfo=timezone.utc),
         AssistantState(
@@ -129,7 +138,27 @@ def test_active_weekly_summary_resumes_without_showing_week_picker() -> None:
         ),
     )
 
-    assert WeeklySummaryStory().entry_scene(context) == SUMMARY_SCENE
+    assert WeeklySummaryStory().entry_scene(context) == SELECT_SCENE
+
+
+def test_active_weekly_summary_is_discarded_before_returning_to_the_assistant() -> None:
+    context = _context(
+        datetime(2026, 7, 30, tzinfo=timezone.utc),
+        AssistantState(
+            events={"weekly_summary.selection": {"start": "2026-07-27", "partial": True}},
+            story=WEEKLY_SUMMARY_STORY_ID,
+            scene=SUMMARY_SCENE,
+            status="active",
+        ),
+    )
+
+    turn = WeeklySummaryStory().advance(context, SELECT_SCENE, None)
+
+    assert turn.completed
+    assert turn.continue_flow
+    assert turn.state_story == STANDARD_STORY_ID
+    assert turn.state_scene == READY_NODE
+    assert turn.clear_events == ("weekly_summary.selection",)
 
 
 def test_completed_summary_groups_analysis_and_keeps_cards_adjacent() -> None:
@@ -147,7 +176,11 @@ def test_completed_summary_groups_analysis_and_keeps_cards_adjacent() -> None:
     assert turn.content[2].text == "First, the big picture."
     assert turn.content[3].title == "WEEKLY COMPLETION"
     assert not turn.content[4].text.startswith("**")
-    assert "\n" in turn.content[-1].text
+    assert any(
+        "\n" in item.text
+        for item in turn.content
+        if isinstance(item, AssistantLine)
+    )
     assert len(turn.lines) <= 12
 
 

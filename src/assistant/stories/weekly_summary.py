@@ -16,6 +16,7 @@ from src.assistant.stories.star_tutorial import (
 from src.assistant.stories.personal_highlight_tutorial import record_first_weekly_summary_view
 from src.assistant.stories.weekly_summary_analysis import GoalResult, WeekResult, _analyse, _date, _datetime, _momentum_halves, _now, _week_start
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _shared_insights, _used_existing_insights
+from src.assistant.stories.tutorial import READY_NODE, STANDARD_STORY_ID
 from src.db.persistence_helpers import APP_ZONE
 from src.db.persistence_helpers import debug_info_enabled
 from src.pages.common_helpers import compact_goal_activity_html
@@ -35,7 +36,7 @@ WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY: Final = "stars.weekly_rewarded"
 
 # Development-only switch: each displayed report earns a STAR, includin
 # repeated views of the same partial or final week.
-DEBUG_AWARD_STAR_EVERY_REPORT: Final = False
+DEBUG_AWARD_STAR_EVERY_REPORT: Final = True
 
 
 def _weekly_star_evaluation(state: AssistantState, start: date, rate: float) -> tuple[dict[str, object], int]:
@@ -91,14 +92,12 @@ class WeeklySummaryStory(AssistantStory):
     story_id = WEEKLY_SUMMARY_STORY_ID
 
     def entry_scene(self, context: AssistantContext) -> str:
-        # A saved selection belongs to a previous run once this story is no
-        # longer active.  Start completed runs at the picker so users can
-        # choose the current or last week again.  An active run, on the other
-        # hand, resumes exactly where it left off.
+        # Reports are intentionally non-resumable.  The STAR tutorial is the
+        # one in-visit exception because it must return to its open report.
         if (
             context.state.story == self.story_id
             and context.state.status == "active"
-            and context.state.scene is not None
+            and context.state.scene in (*STAR_TUTORIAL_SCENES, STAR_TUTORIAL_RETURN_SCENE)
         ):
             return context.state.scene
         return SELECT_SCENE
@@ -142,6 +141,23 @@ class WeeklySummaryStory(AssistantStory):
             )
         now = _now(context)
         if scene == SELECT_SCENE:
+            if (
+                selection is None
+                and context.state.story == self.story_id
+                and context.state.status == "active"
+            ):
+                # Discard any persisted position from the previous resumable
+                # implementation before continuing with the normal Assistant.
+                return AssistantTurn(
+                    self.story_id,
+                    SELECT_SCENE,
+                    completed=True,
+                    state_story=STANDARD_STORY_ID,
+                    state_scene=READY_NODE,
+                    state_status="completed",
+                    clear_events=(WEEK_SELECTION_EVENT_ID,),
+                    continue_flow=True,
+                )
             if selection is None or selection.choice_id not in {"this", "last"}:
                 if now.weekday() >= 3:
                     return AssistantTurn(self.story_id, SELECT_SCENE, lines=(AssistantLine("Which week should I analyse?"),), choices=(AssistantChoice("this", "Week in progress"), AssistantChoice("last", "Last Final Week")), state_story=self.story_id, state_scene=SELECT_SCENE, state_status="active")
@@ -170,7 +186,10 @@ class WeeklySummaryStory(AssistantStory):
                 result,
                 weekly_update=dict(weekly) if isinstance(weekly, dict) else {},
             )
-        if scene == STAR_AWARD_SCENE:
+        if scene == STAR_AWARD_SCENE or (
+            selection is not None
+            and selection.choice_id in {"acknowledge_star", "explain_stars"}
+        ):
             if selection and selection.choice_id == "acknowledge_star":
                 weekly = context.state.events.get(WEEKLY_STAR_EVENT_ID, {})
                 acknowledged = dict(weekly) if isinstance(weekly, dict) else {}
@@ -190,7 +209,9 @@ class WeeklySummaryStory(AssistantStory):
                     state_story=self.story_id,
                     state_scene=STAR_TUTORIAL_INTRO_SCENE,
                     state_status="active",
-                    completed=True,
+                    # The STAR was already saved when it was awarded.  Keep
+                    # this handoff transient so the weekly report itself does
+                    # not become resumable in the database.
                     continue_flow=True,
                 )
             return AssistantTurn(
@@ -263,18 +284,24 @@ class WeeklySummaryStory(AssistantStory):
                 if stars_delta
                 else {}
             ),
-            "completed": debug_awards_enabled or not partial,
-            "state_story": self.story_id,
-            "state_scene": SUMMARY_SCENE,
-            "state_status": "active",
+            # Starting any report durably records the viewed milestone and a
+            # possible STAR, but never a resumable weekly-summary position.
+            "completed": True,
+            "state_story": STANDARD_STORY_ID,
+            "state_scene": READY_NODE,
+            "state_status": "completed",
         }
         if stars_delta:
-            # The reward is an immediate outlet from the opening insight; it
-            # does not require the user to first press the normal Continue.
+            # Keep the STAR acknowledgement in this report turn.  This avoids
+            # storing a weekly-summary scene solely to resume the award UI.
             changes.update(
-                choices=(),
-                continue_flow=True,
-                state_scene=STAR_AWARD_SCENE,
+                lines=(*changes["lines"], AssistantLine("⭐ A STAR for the week.")),
+                content=(*changes["content"], AssistantLine("⭐ A STAR for the week.")),
+                choices=(
+                    AssistantChoice("acknowledge_star", "Nice!"),
+                    AssistantChoice("explain_stars", "What are STARs?"),
+                ),
+                star_grant_animation=True,
             )
         return AssistantTurn(**changes)
 

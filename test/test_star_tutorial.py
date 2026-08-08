@@ -18,6 +18,7 @@ from src.assistant.stories.standard import (
 from src.assistant.stories.tutorial import PROFILE_ANALYSIS_KNOWLEDGE_KEY, STANDARD_STORY_ID
 from src.assistant.stories.weekly_summary import (
     STAR_AWARD_SCENE,
+    STAR_TUTORIAL_RETURN_SCENE,
     WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY,
     WEEKLY_SUMMARY_STORY_ID,
     WeeklySummaryStory,
@@ -143,7 +144,7 @@ def test_advanced_tutorial_menu_routes_choices_and_returns_from_star_tutorial() 
     assert complete.continue_flow is False
 
 
-def test_weekly_star_explanation_acknowledges_the_reward_before_entering_tutorial() -> None:
+def test_weekly_star_explanation_returns_to_the_open_weekly_report() -> None:
     state = AssistantState(
         story=WEEKLY_SUMMARY_STORY_ID,
         scene=STAR_AWARD_SCENE,
@@ -159,5 +160,44 @@ def test_weekly_star_explanation_acknowledges_the_reward_before_entering_tutoria
         STAR_AWARD_SCENE,
         AssistantSelection(WEEKLY_SUMMARY_STORY_ID, STAR_AWARD_SCENE, "explain_stars", "What are STARs?"),
     )
+    tutorial = WeeklySummaryStory().advance(
+        _context(apply_turn(state, turn)),
+        STAR_TUTORIAL_INTRO_SCENE,
+        None,
+    )
+
+    assert turn.state_story == WEEKLY_SUMMARY_STORY_ID
     assert turn.state_scene == STAR_TUTORIAL_INTRO_SCENE
     assert turn.event_updates[WEEKLY_STAR_EVENT_ID]["acknowledged"] is True
+    assert tutorial.choices[0].id == "measurement"
+
+    completed_tutorial = star_tutorial_turn(
+        _context(),
+        WEEKLY_SUMMARY_STORY_ID,
+        STAR_TUTORIAL_FINISH_SCENE,
+        AssistantSelection(WEEKLY_SUMMARY_STORY_ID, STAR_TUTORIAL_FINISH_SCENE, "thanks", ""),
+        return_scene=STAR_TUTORIAL_RETURN_SCENE,
+    )
+    assert completed_tutorial.state_scene == STAR_TUTORIAL_RETURN_SCENE
+
+    return_state = apply_turn(apply_turn(state, turn), completed_tutorial)
+    return_context = _context(return_state)
+    return_context.user_state["goals"] = [
+        {
+            "description": "Walking",
+            "participants": {
+                "alice": {
+                    "period_outcomes": {
+                        f"2026-07-{day:02d}": {"fulfilled": True, "skipped": False}
+                        for day in range(20, 27)
+                    }
+                }
+            },
+        }
+    ]
+    returned_report = WeeklySummaryStory().advance(return_context, None, None)
+    continued_state = apply_turn(return_state, returned_report)
+
+    assert returned_report.scene_id == "weekly.summary"
+    assert continued_state.story == WEEKLY_SUMMARY_STORY_ID
+    assert continued_state.status == "active"

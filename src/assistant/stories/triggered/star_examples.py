@@ -38,7 +38,7 @@ class _StarTriggerStory(TriggeredAssistantStory):
     closing_message = ""
 
     def is_triggered(self, context: AssistantContext) -> bool:
-        return context.state.stars > 5
+        return context.state.stars > 50
 
     def entry_scene(self, context: AssistantContext) -> str:
         del context
