@@ -16,15 +16,23 @@ from src.db.persistence import Persistence
 from src.push.storage import PushStorage
 
 
+# Assistant page colour scheme. These CSS custom properties are also consumed
+# by ``src.assistant.presentation`` for controls rendered outside this module.
 # Choose one of these palette values for the Assistant badge. Set the active
 # color to ``None`` to inherit Streamlit's configured primary color instead.
 ASSISTANT_COLORS = {
-    "light_ash": "#687B99",
+    "primary": "#1F2937",
+    "light_ash": "#4B5563",
     "sky_blue": "#2E90FA",
     "reddish_pink": "#F0447A",
 }
-ASSISTANT_ICON_BACKGROUND_COLOR: str | None = ASSISTANT_COLORS["light_ash"]
+ASSISTANT_ICON_BACKGROUND_COLOR: str | None = ASSISTANT_COLORS["primary"]
 ASSISTANT_ICON_FOREGROUND_COLOR = "#FFFFFF"
+ASSISTANT_CHOICE_BUTTON_BACKGROUND_COLOR = "#1F2937"
+ASSISTANT_USER_MESSAGE_BACKGROUND_COLOR = "#4B5563"
+ASSISTANT_PAGE_BACKGROUND_COLOR = "#FFFFFF"
+ASSISTANT_MESSAGE_BACKGROUND_COLOR = "#F2F4F7"
+ASSISTANT_CONTROL_BAR_BACKGROUND_COLOR = ASSISTANT_PAGE_BACKGROUND_COLOR
 ASSISTANT_BADGE_SIZE_MULTIPLIER: float = 1.0
 ASSISTANT_ICON_SIZE_MULTIPLIER: float = 1.0
 ASSISTANT_BADGE_BASE_SIZE_REM = 3.5
@@ -201,9 +209,24 @@ def _completed_goal_period_count(goals: list[dict], user_id: str) -> int:
 
 
 def _render_styles() -> None:
+    color_scheme = f"""
+          :root {{
+            --assistant-choice-button-background: {ASSISTANT_CHOICE_BUTTON_BACKGROUND_COLOR};
+            --assistant-control-bar-background: {ASSISTANT_CONTROL_BAR_BACKGROUND_COLOR};
+            --assistant-message-background: {ASSISTANT_MESSAGE_BACKGROUND_COLOR};
+            --assistant-page-background: {ASSISTANT_PAGE_BACKGROUND_COLOR};
+            --assistant-user-message-background: {ASSISTANT_USER_MESSAGE_BACKGROUND_COLOR};
+          }}
+    """
     st.markdown(
         """
         <style>
+        """
+        + color_scheme
+        + """
+          [data-testid="stAppViewContainer"] {
+            background: var(--assistant-page-background);
+          }
           [data-testid="stMainBlockContainer"] {
             max-width: 760px;
             padding-top: 2.75rem;
@@ -264,7 +287,7 @@ def _render_styles() -> None:
           }
           .assistant-typing {
             align-items: center;
-            background: #f2f4f7;
+            background: var(--assistant-message-background);
             border-radius: 1rem;
             display: inline-flex;
             gap: 0.25rem;
@@ -272,7 +295,7 @@ def _render_styles() -> None:
             padding: 0.55rem 0.75rem;
           }
           .assistant-message {
-            background: #f2f4f7;
+            background: var(--assistant-message-background);
             border-radius: 0.35rem 1.25rem 1.25rem;
             color: #101828;
             margin: 0.35rem 0;
@@ -303,7 +326,7 @@ def _render_styles() -> None:
             margin: 0.8rem 0;
           }
           .assistant-user-choice span {
-            background: var(--primary-color, #1f2937);
+            background: var(--assistant-user-message-background);
             border-radius: 1.4rem 0.35rem 1.4rem 1.4rem;
             color: #ffffff;
             display: inline-block;

@@ -487,7 +487,7 @@ class StreamlitAssistantView:
               [data-testid="stMainBlockContainer"] { padding-bottom: 9rem; }
               [class*="st-key-assistant-choice-bar-"],
               [class*="st-key-assistant-send-bar-"] {
-                background: var(--background-color, #ffffff);
+                background: var(--assistant-control-bar-background, var(--background-color, #ffffff));
                 box-sizing: border-box;
                 left: 50%;
                 padding: 0.5rem 0 0.25rem;
@@ -502,6 +502,11 @@ class StreamlitAssistantView:
               }
               [class*="st-key-assistant-choice-option-"][class*="-italic"] button {
                 font-style: italic;
+              }
+              [class*="st-key-assistant-choice-option-"] button[kind="primary"],
+              [class*="st-key-assistant-send-bar-"] button[kind="primary"] {
+                background: var(--assistant-choice-button-background, var(--primary-color, #1f2937));
+                border-color: var(--assistant-choice-button-background, var(--primary-color, #1f2937));
               }
               [class*="st-key-assistant-send-bar-"] { bottom: 0.5rem; }
               @media (max-width: 640px) {
