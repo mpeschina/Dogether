@@ -36,7 +36,7 @@ WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY: Final = "stars.weekly_rewarded"
 
 # Development-only switch: each displayed report earns a STAR, includin
 # repeated views of the same partial or final week.
-DEBUG_AWARD_STAR_EVERY_REPORT: Final = True
+DEBUG_AWARD_STAR_EVERY_REPORT: Final = False
 
 
 def _weekly_star_evaluation(state: AssistantState, start: date, rate: float) -> tuple[dict[str, object], int]:

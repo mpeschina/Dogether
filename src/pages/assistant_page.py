@@ -21,15 +21,14 @@ from src.push.storage import PushStorage
 # Choose one of these palette values for the Assistant badge. Set the active
 # color to ``None`` to inherit Streamlit's configured primary color instead.
 ASSISTANT_COLORS = {
-    "primary": "#1F2937",
-    "light_ash": "#4B5563",
+    "primary": str(st.get_option("theme.primaryColor") or "#1F2937"),
     "sky_blue": "#2E90FA",
     "reddish_pink": "#F0447A",
 }
-ASSISTANT_ICON_BACKGROUND_COLOR: str | None = ASSISTANT_COLORS["primary"]
+ASSISTANT_ICON_BACKGROUND_COLOR: str = ASSISTANT_COLORS["primary"]
 ASSISTANT_ICON_FOREGROUND_COLOR = "#FFFFFF"
-ASSISTANT_CHOICE_BUTTON_BACKGROUND_COLOR = "#1F2937"
-ASSISTANT_USER_MESSAGE_BACKGROUND_COLOR = "#4B5563"
+ASSISTANT_CHOICE_BUTTON_BACKGROUND_COLOR = ASSISTANT_COLORS["primary"]
+ASSISTANT_USER_MESSAGE_BACKGROUND_COLOR = "#5E6A7D"
 ASSISTANT_PAGE_BACKGROUND_COLOR = "#FFFFFF"
 ASSISTANT_MESSAGE_BACKGROUND_COLOR = "#F2F4F7"
 ASSISTANT_CONTROL_BAR_BACKGROUND_COLOR = ASSISTANT_PAGE_BACKGROUND_COLOR
@@ -122,9 +121,7 @@ def render_assistant(
     state = transient_assistant_state_for_user(st.session_state, user_id)
     if state is None:
         state = AssistantState.from_profile(current_user)
-    icon_background = ASSISTANT_ICON_BACKGROUND_COLOR or str(
-        st.get_option("theme.primaryColor") or "#1F2937"
-    )
+    icon_background = ASSISTANT_ICON_BACKGROUND_COLOR
     badge_size = ASSISTANT_BADGE_BASE_SIZE_REM * ASSISTANT_BADGE_SIZE_MULTIPLIER
     icon_size = ASSISTANT_ICON_BASE_SIZE_REM * ASSISTANT_ICON_SIZE_MULTIPLIER
     st.markdown(
