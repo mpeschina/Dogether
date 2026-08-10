@@ -14,6 +14,7 @@ from src.assistant.stories.weekly_summary import (
     WeeklySummaryStory,
     _weekly_star_evaluation,
     _streak_content,
+    weekly_summary_is_available,
 )
 from src.assistant.stories.weekly_summary_analysis import _analyse
 from src.assistant.stories.weekly_summary_insights import _additional_insights, _used_existing_insights
@@ -90,7 +91,7 @@ def test_low_completion_note_is_not_attached_to_later_star_evaluations() -> None
 
 def test_summary_is_unavailable_until_the_account_has_a_closed_week() -> None:
     context = _context(datetime(2026, 7, 27, tzinfo=timezone.utc))
-    context.current_user["created_at"] = "2026-07-21T10:00:00+00:00"
+    context.current_user["created_at"] = "2026-07-22T10:00:00+00:00"
 
     turn = WeeklySummaryStory().advance(context, SELECT_SCENE, None)
 
@@ -110,6 +111,17 @@ def test_summary_is_unavailable_until_the_account_has_a_closed_week() -> None:
 
     assert len(hint.lines) == 1
     assert hint.completed
+
+
+def test_summary_becomes_available_after_six_days() -> None:
+    created_at = "2026-07-21T10:00:00+00:00"
+
+    assert not weekly_summary_is_available(
+        {"created_at": created_at}, datetime(2026, 7, 27, 9, 59, tzinfo=timezone.utc)
+    )
+    assert weekly_summary_is_available(
+        {"created_at": created_at}, datetime(2026, 7, 27, 10, tzinfo=timezone.utc)
+    )
 
 
 def test_thursday_offers_this_or_last_week_and_marks_current_week_partial() -> None:

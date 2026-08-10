@@ -68,7 +68,7 @@ def _debug_star_awards_enabled(context: AssistantContext) -> bool:
 
 
 def _weekly_summary_unlock_at(context: AssistantContext) -> datetime | None:
-    """Return the precise time a new account has completed its first week.
+    """Return the precise time a new account qualifies for analysis.
 
     Older account records and lightweight test contexts may not have a creation
     timestamp, so they remain eligible for the established summary behavior.
@@ -80,11 +80,11 @@ def _weekly_summary_unlock_at(context: AssistantContext) -> datetime | None:
         created_at = created_at.replace(tzinfo=APP_ZONE)
     else:
         created_at = created_at.astimezone(APP_ZONE)
-    return created_at + timedelta(days=7)
+    return created_at + timedelta(days=6)
 
 
 def weekly_summary_is_available(current_user: dict, now: datetime) -> bool:
-    """Whether the account has completed the first-week wait for analysis."""
+    """Whether the account has completed the six-day wait for analysis."""
     context = AssistantContext(
         user_id="",
         current_user=current_user,
