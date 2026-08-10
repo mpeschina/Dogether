@@ -150,7 +150,12 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
     shared_goals: list[SharedGoalResult] = []
     previous_active = 0
     previous_done = 0
-    for goal in context.user_state.get("goals", []):
+    # Historical summaries receive soft-deleted goals separately so other
+    # Assistant stories can continue treating ``goals`` as active-only.
+    report_goals = context.user_state.get(
+        "weekly_summary_goals", context.user_state.get("goals", [])
+    )
+    for goal in report_goals:
         participant = goal.get("participants", {}).get(context.user_id, {}) if isinstance(goal, dict) else {}
         outcomes = participant.get("period_outcomes", {}) if isinstance(participant, dict) else {}
         # Retained history can be incomplete; only weeks with enough closed
@@ -273,7 +278,7 @@ def _analyse_shared_goal(
     end: date,
     now: date,
 ) -> SharedGoalResult | None:
-    """Extract only active, currently approved participants for social insights."""
+    """Extract approved participants who belonged to the goal that week."""
     participants = goal.get("participants", {})
     if not isinstance(participants, dict) or context.user_id not in participants:
         return None
@@ -286,7 +291,7 @@ def _analyse_shared_goal(
         if participant_id != context.user_id
         and participant_id in profiles
         and isinstance(participant, dict)
-        and not participant.get("left_at")
+        and _participant_selected_outcomes(participant, start, end)
     )
     if len(visible_ids) < 2:
         return None

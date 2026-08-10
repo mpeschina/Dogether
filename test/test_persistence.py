@@ -1105,13 +1105,19 @@ def test_participant_updates_own_progress_and_can_leave_goal(tmp_path: Path) -> 
     persistence.leave_goal(goal["id"], "bob")
     data = persistence.raw_data()
 
-    assert "bob" not in data["goals"][goal["id"]]["participants"]
-    assert data["goals"][goal["id"]]["participant_user_ids"] == ["alice"]
+    assert data["goals"][goal["id"]]["participants"]["bob"]["left_at"]
+    assert data["goals"][goal["id"]]["participant_user_ids"] == ["alice", "bob"]
     assert persistence.list_goals_for_user("bob") == []
+    assert [item["id"] for item in persistence.list_goal_history_for_user("bob")] == [goal["id"]]
     assert persistence.list_goals_for_user("alice") != []
 
+    restored = persistence.add_goal_friends(goal["id"], "alice", ["bob"])
 
-def test_last_participant_leaving_deletes_goal_record(tmp_path: Path) -> None:
+    assert restored["participants"]["bob"]["left_at"] is None
+    assert restored["participant_user_ids"].count("bob") == 1
+
+
+def test_last_participant_leaving_archives_goal_record(tmp_path: Path) -> None:
     persistence = JsonPersistence(tmp_path / "users.json")
     alice = persistence.upsert_user("alice", "alice@example.com", "Alice")
     goal = persistence.create_goal(
@@ -1125,8 +1131,13 @@ def test_last_participant_leaving_deletes_goal_record(tmp_path: Path) -> None:
 
     persistence.leave_goal(goal["id"], alice["user_id"])
 
-    assert goal["id"] not in persistence.raw_data()["goals"]
+    retained = persistence.raw_data()["goals"][goal["id"]]
+    assert retained["archived_at"]
+    assert retained["participants"][alice["user_id"]]["left_at"]
     assert persistence.list_goals_for_user(alice["user_id"]) == []
+    assert [
+        item["id"] for item in persistence.list_goal_history_for_user(alice["user_id"])
+    ] == [goal["id"]]
 
 
 def test_period_rollover_updates_streak_activity_and_resets_progress(tmp_path: Path) -> None:
@@ -1905,6 +1916,34 @@ def test_mongodb_native_list_goals_reads_matching_goal_collection_only() -> None
     assert goal_find_calls
     assert goal_find_calls[0][1]["participant_user_ids"] == "alice"
     assert not database["users_inventory"].calls
+
+
+def test_mongodb_native_leave_goal_retains_history_and_archives_last_participant() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user(
+        "alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00")
+    )
+    goal = persistence.create_goal(
+        "alice", "Run", "daily", 1, [], 1,
+        current=1, now=at("2026-06-01T09:01:00"),
+    )
+
+    persistence.leave_goal(
+        goal["id"], alice["user_id"], now=at("2026-06-02T09:00:00")
+    )
+
+    assert persistence.list_goals_for_user(
+        alice["user_id"], now=at("2026-06-02T10:00:00")
+    ) == []
+    retained = persistence.list_goal_history_for_user(
+        alice["user_id"], now=at("2026-06-02T10:00:00")
+    )
+    assert [item["id"] for item in retained] == [goal["id"]]
+    participant = retained[0]["participants"][alice["user_id"]]
+    assert participant["left_at"] == "2026-06-02T07:00:00+00:00"
+    assert participant["period_outcomes"]["2026-06-01"]["completed"] is True
+    assert retained[0]["archived_at"] == participant["left_at"]
 
 
 

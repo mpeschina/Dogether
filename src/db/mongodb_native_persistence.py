@@ -1077,6 +1077,18 @@ class MongoNativePersistence:
         goals = self._rollover_user_goals(user_id, now)
         return sorted(goals, key=lambda goal: goal["created_at"])
 
+    def list_goal_history_for_user(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
+        """Return active and departed goals whose history belongs to a user."""
+        self._rollover_user_goals(user_id, now)
+        goals = self._strip_many(
+            self._goals_collection().find({"participant_user_ids": user_id})
+        )
+        _normalise_goal_participants({goal["id"]: goal for goal in goals if "id" in goal})
+        return sorted(
+            (goal for goal in goals if user_id in goal.get("participants", {})),
+            key=lambda goal: goal["created_at"],
+        )
+
     def add_goal_friends(self, goal_id: str, user_id: str, friend_user_ids: list[str], now: datetime | None = None) -> dict[str, Any]:
         now_dt = _now(now)
         goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
@@ -1089,7 +1101,12 @@ class MongoNativePersistence:
         if invalid:
             raise ValueError("Goals can only be shared with accepted friends.")
         existing_participant_ids = set(goal.get("participants", {}))
-        new_participant_ids = sorted(requested_friend_ids - existing_participant_ids)
+        new_participant_ids = sorted(
+            participant_id
+            for participant_id in requested_friend_ids
+            if participant_id not in existing_participant_ids
+            or goal["participants"][participant_id].get("left_at")
+        )
         if not new_participant_ids:
             return goal
         schedule = _schedule(goal.get("schedule_class", "daily"), goal.get("required_periods"))
@@ -1098,6 +1115,7 @@ class MongoNativePersistence:
         target = max(1, int(inviter.get("target", 1)))
         set_fields = {}
         for participant_id in new_participant_ids:
+            previous = goal["participants"].get(participant_id, {})
             participant = {
                 "target": target,
                 "current": 0,
@@ -1108,10 +1126,12 @@ class MongoNativePersistence:
                 "completion_notifications_max_per_day": 3,
                 "completion_notification_counts": {},
                 "skipped": False,
-                "period_outcomes": {},
+                "period_outcomes": previous.get("period_outcomes", {}),
                 "joined_at": _iso(now_dt),
                 "left_at": None,
             }
+            if isinstance(previous.get("completion_reactions"), dict):
+                participant["completion_reactions"] = previous["completion_reactions"]
             goal["participants"][participant_id] = participant
             set_fields[f"participants.{participant_id}"] = participant
         goal["participant_user_ids"] = [
@@ -1374,19 +1394,19 @@ class MongoNativePersistence:
     def leave_goal(self, goal_id: str, user_id: str, now: datetime | None = None) -> None:
         now_dt = _now(now)
         goal = self._strip_id(self._goals_collection().find_one({"_id": goal_id}))
-        if not goal or user_id not in goal.get("participants", {}):
+        if not goal or not _goal_active_for_user(goal, user_id):
             raise ValueError("Goal not found.")
-        del goal["participants"][user_id]
-        goal["participant_user_ids"] = [participant_id for participant_id in goal.get("participant_user_ids", []) if participant_id != user_id]
-        if not goal["participants"]:
-            self._goals_collection().delete_one({"_id": goal_id})
-            self._cache_clear()
-        else:
-            self._goals_collection().update_one(
-                {"_id": goal_id},
-                {"$set": {"participants": goal["participants"], "participant_user_ids": goal["participant_user_ids"]}},
-            )
-            self._cache_clear()
+        self._rollover_goal_participant(goal, user_id, now_dt)
+        now_iso = _iso(now_dt)
+        goal["participants"][user_id]["left_at"] = now_iso
+        updates: dict[str, Any] = {f"participants.{user_id}.left_at": now_iso}
+        if not any(
+            isinstance(candidate, dict) and not candidate.get("left_at")
+            for candidate in goal["participants"].values()
+        ):
+            updates["archived_at"] = now_iso
+        self._goals_collection().update_one({"_id": goal_id}, {"$set": updates})
+        self._cache_clear()
         self._refresh_activity_day_for_user(user_id, now_dt.date())
 
     def account_stats(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:

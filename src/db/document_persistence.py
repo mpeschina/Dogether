@@ -770,6 +770,17 @@ class DocumentPersistence:
             ]
         return sorted(goals, key=lambda goal: goal["created_at"])
 
+    def list_goal_history_for_user(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
+        """Return active and departed goals whose history belongs to a user."""
+        self.rollover_periods(now)
+        with self._lock:
+            goals = [
+                goal
+                for goal in self._read()["goals"].values()
+                if user_id in goal.get("participants", {})
+            ]
+        return sorted(goals, key=lambda goal: goal["created_at"])
+
     def add_goal_friends(
         self,
         goal_id: str,
@@ -792,7 +803,12 @@ class DocumentPersistence:
                 raise ValueError("Goals can only be shared with accepted friends.")
 
             existing_participant_ids = set(goal.get("participants", {}))
-            new_participant_ids = sorted(requested_friend_ids - existing_participant_ids)
+            new_participant_ids = sorted(
+                participant_id
+                for participant_id in requested_friend_ids
+                if participant_id not in existing_participant_ids
+                or goal["participants"][participant_id].get("left_at")
+            )
             if not new_participant_ids:
                 return goal
 
@@ -802,6 +818,7 @@ class DocumentPersistence:
             target = max(1, int(inviter.get("target", 1)))
 
             for participant_id in new_participant_ids:
+                previous = goal["participants"].get(participant_id, {})
                 goal["participants"][participant_id] = {
                     "target": target,
                     "current": 0,
@@ -812,10 +829,14 @@ class DocumentPersistence:
                     "completion_notifications_max_per_day": 3,
                     "completion_notification_counts": {},
                     "skipped": False,
-                    "period_outcomes": {},
+                    "period_outcomes": previous.get("period_outcomes", {}),
                     "joined_at": _iso(now_dt),
                     "left_at": None,
                 }
+                if isinstance(previous.get("completion_reactions"), dict):
+                    goal["participants"][participant_id]["completion_reactions"] = previous[
+                        "completion_reactions"
+                    ]
 
             goal["participant_user_ids"] = [
                 *goal.get("participant_user_ids", []),
@@ -1124,20 +1145,22 @@ class DocumentPersistence:
             return copy.deepcopy(selected_goal) if selected_goal is not None else None
 
     def leave_goal(self, goal_id: str, user_id: str, now: datetime | None = None) -> None:
+        # Close every elapsed period before making this participant inactive so
+        # their final completed week remains available to historical reports.
+        self.rollover_periods(now)
         with self._lock:
             data = self._read()
             goal = data["goals"].get(goal_id)
-            if not goal or user_id not in goal.get("participants", {}):
+            participant = goal.get("participants", {}).get(user_id) if goal else None
+            if not isinstance(participant, dict) or participant.get("left_at"):
                 raise ValueError("Goal not found.")
             now_dt = _now(now)
-            del goal["participants"][user_id]
-            goal["participant_user_ids"] = [
-                participant_id
-                for participant_id in goal.get("participant_user_ids", [])
-                if participant_id != user_id
-            ]
-            if not goal["participants"]:
-                del data["goals"][goal_id]
+            participant["left_at"] = _iso(now_dt)
+            if not any(
+                isinstance(candidate, dict) and not candidate.get("left_at")
+                for candidate in goal["participants"].values()
+            ):
+                goal["archived_at"] = _iso(now_dt)
             _refresh_activity_day(data, user_id, now_dt.date())
             self._write(data)
 

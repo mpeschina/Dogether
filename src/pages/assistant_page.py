@@ -143,6 +143,7 @@ def render_assistant(
 
     friends = persistence.list_friends(user_id)
     goals = persistence.list_goals_for_user(user_id, now=now)
+    weekly_summary_goals = persistence.list_goal_history_for_user(user_id, now=now)
     user_state = {
         # Counts let the assistant acknowledge a healthy profile without
         # treating one friend or several goals as the same situation.
@@ -154,6 +155,7 @@ def render_assistant(
         "push_enabled": bool(push_storage and push_storage.subscriptions_for_user(user_id)),
         "completed_goal_count": _completed_goal_period_count(goals, user_id),
         "goals": goals,
+        "weekly_summary_goals": weekly_summary_goals,
         # Weekly shared-goal insights may only identify people who are already
         # approved friends of the current user.
         "friend_profiles": {friend["user_id"]: friend for friend in friends if friend.get("user_id")},

@@ -304,6 +304,57 @@ def test_week_to_week_chart_shows_selected_week_and_nineteen_prior_weeks() -> No
     assert [selected for _, _, selected in chart] == [False] * 19 + [True]
 
 
+def test_final_week_uses_removed_goal_history_and_ignores_replacement_goals() -> None:
+    selected_week = date(2026, 7, 20)
+    removed_outcomes = {
+        (selected_week + timedelta(days=offset)).isoformat(): {
+            "completed": offset < 5,
+            "fulfilled": offset < 5,
+        }
+        for offset in range(7)
+    }
+    removed_goal = {
+        "description": "Walking",
+        "participants": {
+            "alice": {
+                "left_at": "2026-07-27T09:00:00+00:00",
+                "period_outcomes": removed_outcomes,
+            }
+        },
+        "archived_at": "2026-07-27T09:00:00+00:00",
+    }
+    replacement_goal = {
+        "description": "Reading",
+        "created_at": "2026-07-27T10:00:00+00:00",
+        "participants": {
+            "alice": {
+                "period_start": "2026-07-27",
+                "period_outcomes": {},
+            }
+        },
+    }
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="assistant",
+        now=datetime(2026, 7, 27, 12, tzinfo=timezone.utc),
+        user_state={
+            "goals": [replacement_goal],
+            "weekly_summary_goals": [removed_goal, replacement_goal],
+        },
+    )
+
+    result = _analyse(context, selected_week, False)
+    details = WeeklySummaryStory()._details_turn(result)
+
+    assert result.fulfilled == 5
+    assert result.active == 7
+    assert [goal.name for goal in result.goals] == ["Walking"]
+    assert [row[0] for row in details.cards[0].rows] == ["Walking"]
+
+
 def test_week_to_week_chart_renders_missing_weeks_as_zero_bars() -> None:
     outcomes = {
         (date(2026, 7, 13) + timedelta(days=day)).isoformat(): {

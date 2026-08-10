@@ -19,7 +19,11 @@ GOAL_CREATED_INFO_SESSION_KEY = "goals_created_info"
 
 
 def _addable_friend_options(goal: dict, friend_options: dict[str, str]) -> dict[str, str]:
-    existing_participant_ids = set(goal.get("participants", {}))
+    existing_participant_ids = {
+        participant_id
+        for participant_id, participant in goal.get("participants", {}).items()
+        if isinstance(participant, dict) and not participant.get("left_at")
+    }
     return {
         label: friend_id
         for label, friend_id in friend_options.items()
