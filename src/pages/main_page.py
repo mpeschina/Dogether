@@ -41,6 +41,7 @@ from src.assistant.stories.tutorial import TUTORIAL_STORY_ID, WELCOME_NODE
 
 BALLOON_CHANCE = 0.10
 SITE_BREAK_CHANCE = 0.20
+ONBOARDING_OFFER_DISMISSED_KNOWLEDGE_KEY = "tutorial.offer.dismissed"
 BALLOON_GOAL_ID_SESSION_KEY = "balloon_goal_id"
 SITE_BREAK_GOAL_ID_SESSION_KEY = "site_break_goal_id"
 SITE_BREAK_CSS = """.goal--too-motivated {
@@ -727,7 +728,7 @@ def render_main(
                 st.session_state["assistant.destination"] = "assistant"
                 st.rerun(scope="app")
             if actions[1].button("Do not write the assistant", use_container_width=True):
-                dismissed_state = replace(assistant_state, status="dismissed")
+                dismissed_state = dismiss_tutorial_offer(assistant_state)
                 stored_state = persistence.save_assistant_state(
                     user_id,
                     dismissed_state.to_dict(),
@@ -769,4 +770,16 @@ def render_main(
 
 def tutorial_has_never_started(state: AssistantState) -> bool:
     """Return whether the initial assistant tutorial has no saved progress."""
-    return state.status == "new" and state.story is None and state.scene is None
+    return (
+        state.status == "new"
+        and state.story is None
+        and state.scene is None
+        and not state.knowledge.get(ONBOARDING_OFFER_DISMISSED_KNOWLEDGE_KEY, False)
+    )
+
+
+def dismiss_tutorial_offer(state: AssistantState) -> AssistantState:
+    """Hide the Goals-page onboarding offer without disabling Assistant flows."""
+    knowledge = dict(state.knowledge)
+    knowledge[ONBOARDING_OFFER_DISMISSED_KNOWLEDGE_KEY] = True
+    return replace(state, knowledge=knowledge)

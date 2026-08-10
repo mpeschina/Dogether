@@ -24,9 +24,15 @@ from src.pages.common_helpers import (
     _participant_sparkline_values,
 )
 from src.db.persistence_helpers import STANDARD_REACTION_EMOTES
+from src.assistant.core import AssistantContext
+from src.assistant.director import AssistantDirector
 from src.assistant.state import AssistantState
+from src.assistant.stories import default_stories
+from src.assistant.stories.tutorial import TUTORIAL_STORY_ID
 from src.pages.main_page import (
+    ONBOARDING_OFFER_DISMISSED_KNOWLEDGE_KEY,
     current_user_reaction_emote,
+    dismiss_tutorial_offer,
     display_users_for_goal,
     participant_goal_is_completed,
     participant_name_with_progress_html,
@@ -53,6 +59,30 @@ def test_tutorial_has_never_started_only_for_a_fresh_assistant_state() -> None:
         AssistantState(story="tutorial", scene="onboarding.welcome")
     ) is False
     assert tutorial_has_never_started(AssistantState(status="dismissed")) is False
+
+
+def test_dismissing_the_goals_offer_keeps_assistant_onboarding_available() -> None:
+    dismissed_offer = dismiss_tutorial_offer(AssistantState())
+
+    assert dismissed_offer.status == "new"
+    assert dismissed_offer.story is None
+    assert dismissed_offer.knowledge[ONBOARDING_OFFER_DISMISSED_KNOWLEDGE_KEY] is True
+    assert not tutorial_has_never_started(dismissed_offer)
+
+    story = AssistantDirector(object(), default_stories()).story_dispatch(
+        AssistantContext(
+            user_id="alice",
+            current_user={"user_id": "alice"},
+            state=dismissed_offer,
+            session_state={},
+            current_page_key="assistant",
+            now=datetime(2026, 8, 10, 12),
+        ),
+        None,
+    )
+
+    assert story is not None
+    assert story.story_id == TUTORIAL_STORY_ID
 
 def test_ordered_active_participant_ids_pins_current_user_first() -> None:
     goal = {
