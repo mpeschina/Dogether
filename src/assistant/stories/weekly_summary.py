@@ -45,9 +45,18 @@ def _weekly_star_evaluation(state: AssistantState, start: date, rate: float) -> 
     previous = state.events.get(WEEKLY_STAR_EVENT_ID, {})
     if isinstance(previous, dict) and previous.get("evaluated_week") == week:
         return previous, 0
+    first_star = state.stars == 0
     probability = 0.9 if rate > 80 else 0.5 if rate > 50 else 0
-    awarded = probability > 0 and random.random() < probability
-    result: dict[str, object] = {"evaluated_week": week, "awarded": awarded}
+    awarded = first_star or (probability > 0 and random.random() < probability)
+    result: dict[str, object] = {
+        "evaluated_week": week,
+        "awarded": awarded,
+        "first_star": first_star and awarded,
+    }
+    if first_star and rate < 50:
+        # This lets the presentation note remain tied to this one exceptional
+        # award, rather than appearing for later low-completion weeks.
+        result["low_completion_note"] = True
     if awarded:
         result["last_claimed_week"] = week
     return result, int(awarded)
@@ -303,6 +312,14 @@ class WeeklySummaryStory(AssistantStory):
                 ),
                 star_grant_animation=True,
             )
+            if weekly_result.get("low_completion_note"):
+                note = AssistantLine(
+                    "I do wonder whether STARs should be given for such a low completion rate."
+                )
+                changes.update(
+                    lines=(*changes["lines"], note),
+                    content=(*changes["content"], note),
+                )
         return AssistantTurn(**changes)
 
     def _opening_summary(

@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from unittest.mock import patch
 
 from src.assistant.core import AssistantCard, AssistantContext, AssistantLine, AssistantSelection
 from src.assistant.state import AssistantState
@@ -11,6 +12,7 @@ from src.assistant.stories.weekly_summary import (
     WEEKLY_SUMMARY_UNAVAILABLE_MESSAGE,
     WEEKLY_SUMMARY_STORY_ID,
     WeeklySummaryStory,
+    _weekly_star_evaluation,
     _streak_content,
 )
 from src.assistant.stories.weekly_summary_analysis import _analyse
@@ -55,6 +57,35 @@ def test_monday_automatically_analyses_last_week() -> None:
     assert turn.state_story == STANDARD_STORY_ID
     assert turn.state_scene == READY_NODE
     assert turn.state_status == "completed"
+
+
+def test_first_star_is_awarded_despite_low_completion_and_a_failed_random_roll() -> None:
+    with patch("src.assistant.stories.weekly_summary.random.random", return_value=0.99):
+        award, stars_delta = _weekly_star_evaluation(
+            AssistantState(), date(2026, 7, 20), 25
+        )
+
+    assert stars_delta == 1
+    assert award["awarded"] is True
+    assert award["first_star"] is True
+    assert award["low_completion_note"] is True
+
+
+def test_low_completion_note_is_not_attached_to_later_star_evaluations() -> None:
+    first_award, first_delta = _weekly_star_evaluation(
+        AssistantState(), date(2026, 7, 20), 25
+    )
+    state_after_first_award = AssistantState(stars=first_delta, events={"stars.weekly": first_award})
+
+    with patch("src.assistant.stories.weekly_summary.random.random", return_value=0.99):
+        later_award, later_delta = _weekly_star_evaluation(
+            state_after_first_award, date(2026, 7, 27), 25
+        )
+
+    assert later_delta == 0
+    assert later_award["awarded"] is False
+    assert later_award["first_star"] is False
+    assert "low_completion_note" not in later_award
 
 
 def test_summary_is_unavailable_until_the_account_has_a_closed_week() -> None:
@@ -256,7 +287,7 @@ def test_week_to_week_chart_shows_selected_week_and_nineteen_prior_weeks() -> No
             for day in range(7)
         })
     context = AssistantContext(
-        user_id="alice", current_user={}, state=AssistantState(), session_state={}, current_page_key="assistant",
+        user_id="alice", current_user={}, state=AssistantState(stars=1), session_state={}, current_page_key="assistant",
         now=datetime(2026, 7, 27, tzinfo=timezone.utc),
         user_state={"goals": [{"description": "Walking", "participants": {"alice": {"period_outcomes": outcomes}}}]},
     )
