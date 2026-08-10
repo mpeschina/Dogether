@@ -166,11 +166,19 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
                 if when is None or when >= start or not isinstance(raw_item, dict) or _is_excused(raw_item):
                     continue
                 week = _week_start(when)
+                if not _goal_was_present_for_four_days(
+                    goal, participant, week, week + timedelta(days=6)
+                ):
+                    continue
                 bucket = historical.setdefault(week, [0, 0])
                 bucket[0] += int(_is_completed(raw_item))
                 bucket[1] += 1
                 historical_daily.append((when, _is_completed(raw_item), True))
-        selected = _outcomes_in(outcomes, start, end)
+        selected = (
+            _outcomes_in(outcomes, start, end)
+            if _goal_was_present_for_four_days(goal, participant, start, end)
+            else []
+        )
         current_start = _date(participant.get("period_start"))
         if current_start is not None and start <= current_start <= end and not any(day == current_start for day, _ in selected):
             current = max(0, int(participant.get("current", 0) or 0))
@@ -182,7 +190,14 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
                 "current": current,
                 "target": target,
             }))
-        previous = _outcomes_in(outcomes, previous_start, previous_start + timedelta(days=6))
+        previous_end = previous_start + timedelta(days=6)
+        previous = (
+            _outcomes_in(outcomes, previous_start, previous_end)
+            if _goal_was_present_for_four_days(
+                goal, participant, previous_start, previous_end
+            )
+            else []
+        )
         goal_previous_active = sum(not _is_excused(item) for _, item in previous)
         goal_previous_done = sum(_is_completed(item) for _, item in previous)
         previous_active += goal_previous_active
@@ -269,6 +284,38 @@ def _analyse(context: AssistantContext, start: date, partial: bool) -> WeekResul
         historical_daily=tuple(historical_daily),
         shared_goals=tuple(shared_goals),
     )
+
+
+def _goal_was_present_for_four_days(
+    goal: dict[str, Any], participant: dict[str, Any], start: date, end: date
+) -> bool:
+    """Whether this user's goal membership covered four calendar dates."""
+    raw_periods = participant.get("membership_periods", [])
+    if not isinstance(raw_periods, list):
+        raw_periods = []
+    periods = [period for period in raw_periods if isinstance(period, dict)]
+    periods.append(
+        {
+            "joined_at": participant.get("joined_at") or goal.get("created_at"),
+            "left_at": participant.get("left_at"),
+        }
+    )
+    present_days: set[date] = set()
+    for period in periods:
+        joined = _local_date(period.get("joined_at"))
+        left = _local_date(period.get("left_at"))
+        # Older records without membership timestamps were historically treated
+        # as present, so keep that compatibility instead of dropping their data.
+        if joined is None and left is None:
+            return True
+        first = max(start, joined or start)
+        last = min(end, left or end)
+        if first <= last:
+            present_days.update(
+                first + timedelta(days=offset)
+                for offset in range((last - first).days + 1)
+            )
+    return len(present_days) >= 4
 
 
 def _analyse_shared_goal(
@@ -561,6 +608,15 @@ def _date(value: Any) -> date | None:
 def _datetime(value: Any) -> datetime | None:
     try: return datetime.fromisoformat(str(value))
     except ValueError: return None
+def _local_date(value: Any) -> date | None:
+    parsed = _datetime(value)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=APP_ZONE)
+    else:
+        parsed = parsed.astimezone(APP_ZONE)
+    return parsed.date()
 def _now(context: AssistantContext) -> datetime:
     value = context.now or datetime.now(APP_ZONE)
     if value.tzinfo is None:

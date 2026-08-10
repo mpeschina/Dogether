@@ -833,6 +833,17 @@ class DocumentPersistence:
                     "joined_at": _iso(now_dt),
                     "left_at": None,
                 }
+                if previous.get("left_at"):
+                    previous_memberships = previous.get("membership_periods", [])
+                    if not isinstance(previous_memberships, list):
+                        previous_memberships = []
+                    goal["participants"][participant_id]["membership_periods"] = [
+                        *previous_memberships,
+                        {
+                            "joined_at": previous.get("joined_at"),
+                            "left_at": previous.get("left_at"),
+                        },
+                    ]
                 if isinstance(previous.get("completion_reactions"), dict):
                     goal["participants"][participant_id]["completion_reactions"] = previous[
                         "completion_reactions"

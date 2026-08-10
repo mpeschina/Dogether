@@ -355,6 +355,145 @@ def test_final_week_uses_removed_goal_history_and_ignores_replacement_goals() ->
     assert [row[0] for row in details.cards[0].rows] == ["Walking"]
 
 
+def test_goal_requires_four_days_of_overlap_with_the_selected_week() -> None:
+    selected_week = date(2026, 7, 20)
+    outcomes = {
+        (selected_week + timedelta(days=offset)).isoformat(): {
+            "completed": True,
+            "fulfilled": True,
+        }
+        for offset in range(7)
+    }
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="assistant",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "goals": [
+                {
+                    "description": "Four-day goal",
+                    "created_at": "2026-07-23T12:00:00+00:00",
+                    "participants": {
+                        "alice": {
+                            "joined_at": "2026-07-23T12:00:00+00:00",
+                            "period_outcomes": outcomes,
+                        }
+                    },
+                },
+                {
+                    "description": "Three-day goal",
+                    "created_at": "2026-07-24T12:00:00+00:00",
+                    "participants": {
+                        "alice": {
+                            "joined_at": "2026-07-24T12:00:00+00:00",
+                            "period_outcomes": outcomes,
+                        }
+                    },
+                },
+            ]
+        },
+    )
+
+    result = _analyse(context, selected_week, False)
+
+    assert [goal.name for goal in result.goals] == ["Four-day goal"]
+    assert result.active == 7
+
+
+def test_departed_goal_uses_its_overlap_with_the_selected_week() -> None:
+    selected_week = date(2026, 7, 20)
+    outcomes = {
+        (selected_week + timedelta(days=offset)).isoformat(): {
+            "completed": True,
+            "fulfilled": True,
+        }
+        for offset in range(7)
+    }
+    goals = [
+        {
+            "description": name,
+            "created_at": "2026-07-01T09:00:00+00:00",
+            "participants": {
+                "alice": {
+                    "joined_at": "2026-07-01T09:00:00+00:00",
+                    "left_at": left_at,
+                    "period_outcomes": outcomes,
+                }
+            },
+        }
+        for name, left_at in (
+            ("Four-day departing goal", "2026-07-23T09:00:00+00:00"),
+            ("Three-day departing goal", "2026-07-22T09:00:00+00:00"),
+        )
+    ]
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="assistant",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={"weekly_summary_goals": goals},
+    )
+
+    result = _analyse(context, selected_week, False)
+
+    assert [goal.name for goal in result.goals] == ["Four-day departing goal"]
+    assert result.active == 7
+
+
+def test_short_overlap_is_also_excluded_from_week_to_week_comparison() -> None:
+    previous_week = date(2026, 7, 13)
+    selected_week = date(2026, 7, 20)
+    outcomes = {
+        (previous_week + timedelta(days=offset)).isoformat(): {
+            "completed": True,
+            "fulfilled": True,
+        }
+        for offset in range(7)
+    }
+    outcomes.update(
+        {
+            (selected_week + timedelta(days=offset)).isoformat(): {
+                "completed": True,
+                "fulfilled": True,
+            }
+            for offset in range(7)
+        }
+    )
+    context = AssistantContext(
+        user_id="alice",
+        current_user={},
+        state=AssistantState(),
+        session_state={},
+        current_page_key="assistant",
+        now=datetime(2026, 7, 27, tzinfo=timezone.utc),
+        user_state={
+            "goals": [
+                {
+                    "description": "Walking",
+                    "created_at": "2026-07-17T09:00:00+00:00",
+                    "participants": {
+                        "alice": {
+                            "joined_at": "2026-07-17T09:00:00+00:00",
+                            "period_outcomes": outcomes,
+                        }
+                    },
+                }
+            ]
+        },
+    )
+
+    result = _analyse(context, selected_week, False)
+
+    assert result.active == 7
+    assert result.previous_rate is None
+    assert all(week != previous_week for week, _, _ in result.history)
+
+
 def test_week_to_week_chart_renders_missing_weeks_as_zero_bars() -> None:
     outcomes = {
         (date(2026, 7, 13) + timedelta(days=day)).isoformat(): {
