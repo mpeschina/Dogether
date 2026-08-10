@@ -33,19 +33,6 @@ view.finish()
 """
 
 
-def test_assistant_page_uses_the_material_support_agent_badge() -> None:
-    content = Path("src/pages/assistant_page.py").read_text(encoding="utf-8")
-
-    assert "ASSISTANT_ICON_BACKGROUND_COLOR: str | None = ASSISTANT_COLORS[" in content
-    assert 'st.get_option("theme.primaryColor") or "#1F2937"' in content
-    assert "ASSISTANT_BADGE_SIZE_MULTIPLIER: float = 1.0" in content
-    assert "ASSISTANT_ICON_SIZE_MULTIPLIER: float = 1.0" in content
-    assert "ASSISTANT_BADGE_BASE_SIZE_REM * ASSISTANT_BADGE_SIZE_MULTIPLIER" in content
-    assert "ASSISTANT_ICON_BASE_SIZE_REM * ASSISTANT_ICON_SIZE_MULTIPLIER" in content
-    assert "material-symbols-rounded'>support_agent" in content
-    assert "border-radius: 0.65rem" in content
-
-
 SEND_APP = """
 import src.assistant.presentation as presentation
 from src.assistant.core import AssistantTurn

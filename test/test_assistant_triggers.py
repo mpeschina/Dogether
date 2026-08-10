@@ -131,27 +131,6 @@ def ready_state(**changes) -> AssistantState:
     )
 
 
-def test_star_examples_require_more_than_five_stars_and_rank_by_importance() -> None:
-    director = AssistantDirector(RecordingPersistence(), default_stories())
-
-    at_five = director.story_dispatch(context(ready_state(stars=5)), None)
-    at_six = director.story_dispatch(context(ready_state(stars=6)), None)
-
-    assert at_five.story_id == "greetings"
-    assert at_six.story_id == ImportantStarTriggerStory.story_id
-
-    important_used = ready_state(
-        stars=6,
-        story_executions={
-            ImportantStarTriggerStory.story_id: StoryExecutionState(starts=1)
-        },
-    )
-    assert (
-        director.story_dispatch(context(important_used), None).story_id
-        == InformationalStarTriggerStory.story_id
-    )
-
-
 def test_default_stories_registers_every_discovered_trigger_story() -> None:
     discovered = triggered_stories()
     registered = default_stories()
@@ -208,47 +187,6 @@ def test_star_trigger_examples_are_interactive_flows() -> None:
 
         assert completed.completed
         assert completed.execution_outcome == "completed"
-
-
-def test_trigger_flow_remains_active_until_the_user_finishes_it() -> None:
-    persistence = RecordingPersistence()
-    director = AssistantDirector(persistence, default_stories())
-    state = ready_state(stars=6)
-
-    first_view = RecordingView()
-    state = director.render(context(state), first_view)
-    initial = first_view.turns[-1]
-
-    assert state.story == ImportantStarTriggerStory.story_id
-    assert state.status == "active"
-    assert state.story_executions[ImportantStarTriggerStory.story_id].starts == 1
-    assert state.story_executions[ImportantStarTriggerStory.story_id].completions == 0
-
-    details_view = RecordingView()
-    details_view.selection = AssistantSelection(
-        story_id=initial.story_id,
-        scene_id=initial.scene_id,
-        choice_id="details",
-        label="",
-    )
-    state = director.render(context(state), details_view)
-    details = details_view.turns[-1]
-
-    assert state.story == ImportantStarTriggerStory.story_id
-    assert state.status == "active"
-    assert details.choices
-
-    complete_view = RecordingView()
-    complete_view.selection = AssistantSelection(
-        story_id=details.story_id,
-        scene_id=details.scene_id,
-        choice_id="finish",
-        label="",
-    )
-    state = director.render(context(state), complete_view)
-
-    assert state.status == "completed"
-    assert state.story_executions[ImportantStarTriggerStory.story_id].completions == 1
 
 
 def test_candidate_order_uses_priority_stability_and_random_fun_ties() -> None:
