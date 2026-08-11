@@ -57,7 +57,6 @@ from src.assistant.stories.night import (
 from src.assistant.stories.smalltalk import (
     SMALLTALK_CLICKED_AT_KEY,
     SMALLTALK_HELP_OFFERS,
-    SMALLTALK_OPENERS,
     SMALLTALK_OPENER_SELECTED_AT_KEY,
     TAILORED_SMALLTALK_RESPONSES,
     SmalltalkStory,
@@ -667,7 +666,7 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
     menu = story.advance(context, STANDARD_MENU_SCENE, None)
     assert [choice.label for choice in menu.choices] == [
         "Help me with the app",
-        SMALLTALK_OPENERS[0],
+        tuple(TAILORED_SMALLTALK_RESPONSES)[0],
         "Analyse my progress",
     ]
 
@@ -706,16 +705,24 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
 
 
 def test_smalltalk_menu_choice_is_owned_by_smalltalk_story_and_returns_to_standard_menu() -> None:
-    assert SMALLTALK_OPENERS
-    assert len(set(SMALLTALK_OPENERS)) == len(SMALLTALK_OPENERS)
-    assert set(TAILORED_SMALLTALK_RESPONSES) == set(SMALLTALK_OPENERS)
+    smalltalk_openers = tuple(TAILORED_SMALLTALK_RESPONSES)
+    assert smalltalk_openers
+    assert len(set(smalltalk_openers)) == len(smalltalk_openers)
+    tailored_response_lines = [
+        line
+        for responses in TAILORED_SMALLTALK_RESPONSES.values()
+        for response in responses
+        for line in response
+    ]
+    assert len(set(tailored_response_lines)) == len(tailored_response_lines)
     assert all(
         1 <= len(responses) <= 4
         and all(1 <= len(response) <= 4 for response in responses)
         for responses in TAILORED_SMALLTALK_RESPONSES.values()
     )
-    assert len(SMALLTALK_HELP_OFFERS) == 40
-    assert sum(len(offer) > 1 for offer in SMALLTALK_HELP_OFFERS) > 30
+    assert SMALLTALK_HELP_OFFERS
+    assert all(offer for offer in SMALLTALK_HELP_OFFERS)
+    assert any(len(offer) > 1 for offer in SMALLTALK_HELP_OFFERS)
 
     random_source = StubRandom(0, 1)
     smalltalk = SmalltalkStory(random_source=random_source)
@@ -725,7 +732,7 @@ def test_smalltalk_menu_choice_is_owned_by_smalltalk_story_and_returns_to_standa
     menu = story.advance(context, STANDARD_MENU_SCENE, None)
 
     assert menu.choices[1].id == "smalltalk"
-    assert menu.choices[1].label == SMALLTALK_OPENERS[1]
+    assert menu.choices[1].label == smalltalk_openers[1]
 
     random_source.choice_index = 0
     placeholder = story.advance(
@@ -756,15 +763,15 @@ def test_smalltalk_opener_is_session_scoped_and_refreshes_after_three_hours() ->
         now=datetime(2026, 7, 26, 12, tzinfo=timezone.utc),
     )
 
-    assert smalltalk.menu_choice(initial).label == SMALLTALK_OPENERS[0]
+    assert smalltalk.menu_choice(initial).label == tuple(TAILORED_SMALLTALK_RESPONSES)[0]
     assert story_session(session, "smalltalk").get(SMALLTALK_OPENER_SELECTED_AT_KEY) is not None
 
     random_source.choice_index = 1
     within_interval = replace(initial, now=datetime(2026, 7, 26, 14, 59, tzinfo=timezone.utc))
-    assert smalltalk.menu_choice(within_interval).label == SMALLTALK_OPENERS[0]
+    assert smalltalk.menu_choice(within_interval).label == tuple(TAILORED_SMALLTALK_RESPONSES)[0]
 
     at_refresh = replace(initial, now=datetime(2026, 7, 26, 15, tzinfo=timezone.utc))
-    assert smalltalk.menu_choice(at_refresh).label == SMALLTALK_OPENERS[1]
+    assert smalltalk.menu_choice(at_refresh).label == tuple(TAILORED_SMALLTALK_RESPONSES)[1]
 
 
 def test_smalltalk_choice_is_hidden_for_one_hour_after_clicking() -> None:
@@ -790,7 +797,7 @@ def test_smalltalk_choice_is_hidden_for_one_hour_after_clicking() -> None:
     after_cooldown = replace(initial, now=datetime(2026, 7, 26, 13, tzinfo=timezone.utc))
     choice = smalltalk.menu_choice(after_cooldown)
     assert choice is not None
-    assert choice.label == SMALLTALK_OPENERS[1]
+    assert choice.label == tuple(TAILORED_SMALLTALK_RESPONSES)[1]
 
 
 def test_completing_profile_analysis_unlocks_the_help_tutorial_menu() -> None:

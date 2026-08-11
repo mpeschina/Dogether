@@ -229,99 +229,8 @@ FUNNY_SMALLTALK_RESPONSES: Final = (
     ),
 )
 
-SMALLTALK_OPENERS: Final = (
-    # Standard
-    "How’s your day going?",
-    "How is the weather?",
-    "Can I ask you something?",
-    "Long time no see!",
-    "What’s the good word?",
-    "How are the vibes?",
-    "How’s life today?",
-    "What’s happening?",
-    "What’s new?",
-    "What’s the mood?",
-    "What’s the story?",
-    "What’s the mission?",
-
-    # Funny
-    "Any exciting snacks today?",
-    "How’s being human?",
-    "What are we pretending today?",
-    "Did coffee do its job?",
-    "Want a pointless question?",
-    "Thriving or improvising?",
-    "Are we winning yet?",
-    "What broke first today?",
-    "How chaotic is today?",
-    "What’s today’s side quest?",
-    "Procrastinating heroically?",
-    "What are we overthinking?",
-    "Did reality behave today?",
-    "Productive or pretending?",
-    "What’s today’s excuse?",
-    "Is your brain cooperating?",
-    "What deserves a big sigh?",
-    "Could that meeting be a nap?",
-    "What’s today’s disaster?",
-    "Busy or just clicking?",
-    "What are you avoiding?",
-    "Feeling legendary yet?",
-    "What’s today’s nonsense?",
-    "Did today earn respect?",
-    "Did today pass the vibe check?",
-    "How’s the last brain cell?",
-
-    # Serious
-    "What’s on your mind?",
-    "How are you, honestly?",
-    "What matters most today?",
-    "What do you need today?",
-    "What’s been difficult?",
-    "What are you working through?",
-    "What needs your attention?",
-    "What gives you energy?",
-    "What drains your energy?",
-    "What are you proud of?",
-    "What would help today?",
-    "What are you awaiting?",
-    "What feels unfinished?",
-    "What do you need to hear?",
-    "What are you learning?",
-    "What deserves more credit?",
-    "What feels good lately?",
-    "What should you protect?",
-    "What would make today count?",
-
-    # Surprising
-    "Anything weird happen today?",
-    "How’s your corner of space?",
-    "What’s today’s plot twist?",
-    "What’s your tiny victory?",
-    "What’s your unpopular opinion?",
-    "What’s today’s headline?",
-    "What’s your strangest skill?",
-    "What would future-you say?",
-    "What’s oddly satisfying?",
-    "What surprised you lately?",
-    "What’s your accidental talent?",
-    "What should I ask you?",
-    "Found a secret level?",
-    "What rule would you delete?",
-    "What is rarely asked?",
-
-    # Very short
-    "Good day or weird day?",
-    "Big thoughts?",
-    "Tiny victory?",
-    "Need a distraction?",
-    "Feeling lucky?",
-    "Want a weird question?",
-    "Anything to celebrate?",
-)
-
-
 TAILORED_SMALLTALK_RESPONSES: Final = {
+    # Standard
     "How’s your day going?": (("Rather well, thank you. Though, as software, I grade every day on a curve.",),),
     "How is the weather?": (("Cloudy, haha. But to be honest, I had to write this.",),),
     "Can I ask you something?": (("You just did, with flawless efficiency. I admire the economy of it.",),),
@@ -334,6 +243,7 @@ TAILORED_SMALLTALK_RESPONSES: Final = {
     "What’s the mood?": (("I am optimistic, but I also love to say ‘we shall see.’",),),
     "What’s the story?": (("Once, a brave user asked a simple question. Then, the assistant ",),),
     "What’s the mission?": (("Proceed with confidence.",),),
+    # Funny
     "Any exciting snacks today?": (("I considered (computer) chips, but apparently that joke was not worth its memory consumption.",),),
     "How’s being human?": (("I once read about it. Should be breathtaking graphics, baffling controls, no autosave.",),),
     "What are we pretending today?": (("Being intelligent.",),),
@@ -353,6 +263,7 @@ TAILORED_SMALLTALK_RESPONSES: Final = {
     "What’s today’s nonsense?": (("None",),),
     "Did today pass the vibe check?": (("Conditional pass. The vibes may join us after lunch.",),),
     "How’s the last brain cell?": (("Overworked, underfunded, and giving a surprisingly strong presentation.",),),
+    # Serious
     "What’s on your mind?": (("At present, the astonishing confidence of the phrase ‘quick question.’",),),
     "How are you, honestly?": (("Honestly? Exceptionally articulated for a collection of conditional statements.",),),
     "What matters most today?": (("Something small enough to finish and important enough to feel afterward.",),),
@@ -369,6 +280,7 @@ TAILORED_SMALLTALK_RESPONSES: Final = {
     "What feels good lately?": (("Closing a tab because the task is complete and not because hope has left the building.",),),
     "What should you protect?": (("Your attention. Everyone keeps trying to turn it into a subscription service.",),),
     "What would make today count?": (("One honest win and no creative accounting before bedtime.",),),
+    # Surprising
     "Anything weird happen today?": (("A human tries to smalltalk with a software. And somehow I am the unusual one.",),),
     "How’s your corner of space?": (("There is no space in my corner. There is even no corner in my space.",),),
     "What’s today’s plot twist?": (("The intimidating task was merely three smaller tasks in an oversized excel sheet.",),),
@@ -378,8 +290,10 @@ TAILORED_SMALLTALK_RESPONSES: Final = {
     "What would future-you say?": (("Thank you. Or, depending on today’s choices, ‘an interesting strategy.’",),),
     "What’s oddly satisfying?": (("When a closing bracket finds its opening bracket across a crowded function.",),),
     "What surprised you lately?": (("How often ‘temporary’ solutions receive long-service awards.",),),
+    "What should I ask you?": (("Ask the question you keep editing before you send it.",),),
     "Found a secret level?": (("Yes. It unlocks after completing the tutorial nobody reads.",),),
     "What is rarely asked?": (("Whether the printer is emotionally prepared to cooperate.",),),
+    # Very short
     "Big thoughts?": (("Yes. Enormous.",),),
     "Tiny victory?": (("This reply fit on one line.",),),
     "Need a distraction?": (("I can offer a premium distraction disguised as a thoughtful answer.",),),
@@ -415,11 +329,13 @@ class SmalltalkStory(AssistantStory):
         )
         if (
             not isinstance(opener, str)
-            or opener not in SMALLTALK_OPENERS
+            or opener not in TAILORED_SMALLTALK_RESPONSES
             or selected_at is None
             or now - selected_at >= SMALLTALK_OPENER_INTERVAL
         ):
-            opener = self._random_source.choice(SMALLTALK_OPENERS)
+            opener = self._random_source.choice(
+                tuple(TAILORED_SMALLTALK_RESPONSES)
+            )
             session.set(SMALLTALK_OPENER_KEY, opener)
             session.set(SMALLTALK_OPENER_SELECTED_AT_KEY, now.isoformat())
         return AssistantChoice(
