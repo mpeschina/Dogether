@@ -47,6 +47,18 @@ class AssistantSettingsStreamlit:
     def button(self, _label: str, **_kwargs: object) -> bool:
         return False
 
+    def selectbox(self, _label: str, options: list[str], **_kwargs: object) -> str:
+        return options[0]
+
+    def container(self, **_kwargs: object):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
 
 def test_debug_account_status_reflects_the_persisted_profile_flag() -> None:
     assert debug_account_status({"debug_info": True}) == "Debug account: enabled"
@@ -69,7 +81,7 @@ def test_assistant_settings_requires_debug_info(monkeypatch) -> None:
     assert fake_st.subheaders == []
 
     account_page.render_assistant_settings(object(), {"debug_info": True}, "alice")
-    assert fake_st.subheaders == ["Assistant (Prototype)"]
+    assert fake_st.subheaders == ["Assistant (Prototype)", "Assistant story player"]
 
 
 def at(value: str) -> datetime:

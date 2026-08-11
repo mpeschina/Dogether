@@ -72,6 +72,18 @@ def test_first_star_is_awarded_despite_low_completion_and_a_failed_random_roll()
     assert award["low_completion_note"] is True
 
 
+def test_weekly_star_tutorial_choice_is_hidden_at_five_stars() -> None:
+    state = AssistantState(stars=5)
+    with patch("src.assistant.stories.weekly_summary.random.random", return_value=0.1):
+        turn = WeeklySummaryStory().advance(
+            _context(datetime(2026, 7, 27, tzinfo=timezone.utc), state),
+            SELECT_SCENE,
+            None,
+        )
+
+    assert [choice.id for choice in turn.choices] == ["acknowledge_star"]
+
+
 def test_low_completion_note_is_not_attached_to_later_star_evaluations() -> None:
     first_award, first_delta = _weekly_star_evaluation(
         AssistantState(), date(2026, 7, 20), 25

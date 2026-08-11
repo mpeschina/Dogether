@@ -33,6 +33,7 @@ UNAVAILABLE_HINT_SCENE: Final = "weekly.unavailable_hint"
 WEEK_TO_WEEK_CHART_WEEKS: Final = 20
 WEEKLY_SUMMARY_UNAVAILABLE_MESSAGE: Final = "Currently Unavailable"
 WEEKLY_STAR_REWARD_UNLOCKED_KNOWLEDGE_KEY: Final = "stars.weekly_rewarded"
+STAR_TUTORIAL_MAX_STARS: Final = 5
 
 # Development-only switch: each displayed report earns a STAR, includin
 # repeated views of the same partial or final week.
@@ -65,6 +66,13 @@ def _weekly_star_evaluation(state: AssistantState, start: date, rate: float) -> 
 def _debug_star_awards_enabled(context: AssistantContext) -> bool:
     """Keep the source-level test switch restricted to debug profiles."""
     return DEBUG_AWARD_STAR_EVERY_REPORT and debug_info_enabled(context.current_user)
+
+
+def _star_award_choices(state: AssistantState) -> tuple[AssistantChoice, ...]:
+    choices = [AssistantChoice("acknowledge_star", "Nice!")]
+    if state.stars < STAR_TUTORIAL_MAX_STARS:
+        choices.append(AssistantChoice("explain_stars", "What are STARs?"))
+    return tuple(choices)
 
 
 def _weekly_summary_unlock_at(context: AssistantContext) -> datetime | None:
@@ -207,7 +215,11 @@ class WeeklySummaryStory(AssistantStory):
                     result,
                     weekly_update=acknowledged,
                 )
-            if selection and selection.choice_id == "explain_stars":
+            if (
+                selection
+                and selection.choice_id == "explain_stars"
+                and context.state.stars < STAR_TUTORIAL_MAX_STARS
+            ):
                 weekly = context.state.events.get(WEEKLY_STAR_EVENT_ID, {})
                 acknowledged = dict(weekly) if isinstance(weekly, dict) else {}
                 acknowledged["acknowledged"] = True
@@ -226,10 +238,7 @@ class WeeklySummaryStory(AssistantStory):
             return AssistantTurn(
                 self.story_id, STAR_AWARD_SCENE,
                 lines=(AssistantLine("⭐ A STAR for the week."),),
-                choices=(
-                    AssistantChoice("acknowledge_star", "Nice!"),
-                    AssistantChoice("explain_stars", "What are STARs?"),
-                ),
+                choices=_star_award_choices(context.state),
                 star_grant_animation=True,
                 state_story=self.story_id, state_scene=STAR_AWARD_SCENE, state_status="active",
             )
@@ -306,10 +315,7 @@ class WeeklySummaryStory(AssistantStory):
             changes.update(
                 lines=(*changes["lines"], AssistantLine("⭐ A STAR for the week.")),
                 content=(*changes["content"], AssistantLine("⭐ A STAR for the week.")),
-                choices=(
-                    AssistantChoice("acknowledge_star", "Nice!"),
-                    AssistantChoice("explain_stars", "What are STARs?"),
-                ),
+                choices=_star_award_choices(context.state),
                 star_grant_animation=True,
             )
             if weekly_result.get("low_completion_note"):

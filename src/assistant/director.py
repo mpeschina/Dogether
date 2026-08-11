@@ -108,15 +108,22 @@ class AssistantDirector:
         state_changed = False
         save_durably = False
         greeting_has_played = False
+        standard_menu_requested = False
         started_this_render: set[str] = set()
 
         for _ in range(MAX_AUTOMATIC_TURNS):
             effective_context = self._context_with_state(context, state)
-            story, selected_triggered_story = self._story_dispatch(
-                effective_context,
-                selection,
-                skip_greeting=greeting_has_played,
-            )
+            if standard_menu_requested and selection is None:
+                story, selected_triggered_story = (
+                    self.stories.get(STANDARD_STORY_ID),
+                    False,
+                )
+            else:
+                story, selected_triggered_story = self._story_dispatch(
+                    effective_context,
+                    selection,
+                    skip_greeting=greeting_has_played,
+                )
             if story is None:
                 break
             scene_id = (
@@ -145,7 +152,12 @@ class AssistantDirector:
                 break
 
             view.present(turn)
-            greeting_has_played = greeting_has_played or story.story_id == GREETINGS_STORY_ID
+            greeting_has_played = (
+                greeting_has_played
+                or story.story_id == GREETINGS_STORY_ID
+                or turn.skip_greeting
+            )
+            standard_menu_requested = turn.open_standard_menu
             updated_state = apply_turn(state, turn)
             if starting_triggered:
                 updated_state = self.trigger_execution.record_start(
@@ -387,6 +399,7 @@ def apply_turn(state: AssistantState, turn: AssistantTurn) -> AssistantState:
         story=turn.state_story if turn.state_story is not None else state.story,
         scene=turn.state_scene if turn.state_scene is not None else state.scene,
         status=turn.state_status if turn.state_status is not None else state.status,
+        mode=turn.state_mode if turn.state_mode is not None else state.mode,
     )
 
 
