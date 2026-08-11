@@ -240,10 +240,12 @@ def display_users_for_goal(
     goal: dict,
     users: dict[str, dict],
     friends: list[dict],
+    viewer_user_id: str,
 ) -> dict[str, dict]:
     """Return profiles safe to display for participants and reaction senders."""
     display_users = dict(users)
     friends_by_id = {friend["user_id"]: friend for friend in friends if friend.get("user_id")}
+    visible_sender_ids = {*friends_by_id, viewer_user_id}
     participants = goal.get("participants", {})
     departed_user_ids = {
         participant_id
@@ -264,6 +266,20 @@ def display_users_for_goal(
             )
     for departed_user_id in departed_user_ids:
         display_users[departed_user_id] = friends_by_id.get(departed_user_id, {"name": "unknown"})
+
+    # A reaction can outlive a friendship, and an active participant might no
+    # longer be a friend. Do not expose either person's profile in reaction
+    # details unless it belongs to the viewer or a current friend.
+    for participant in participants.values():
+        reactions = participant.get("completion_reactions", {})
+        if not isinstance(reactions, dict):
+            continue
+        for period_reactions in reactions.values():
+            if not isinstance(period_reactions, dict):
+                continue
+            for reacting_user_id in period_reactions:
+                if reacting_user_id not in visible_sender_ids:
+                    display_users[reacting_user_id] = {"name": "unknown"}
     return display_users
 
 
@@ -581,7 +597,7 @@ def render_goal_card(
     all_participant_ids = sorted(goal.get("participants", {}))
     users = persistence.users_by_ids(all_participant_ids)
     friends = persistence.list_friends(user_id)
-    users = display_users_for_goal(goal, users, friends)
+    users = display_users_for_goal(goal, users, friends, user_id)
     friend_ids = {friend["user_id"] for friend in friends}
 
     with st.container(border=True):

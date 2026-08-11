@@ -162,6 +162,7 @@ def test_display_users_for_goal_uses_friend_profile_for_departed_participant() -
         goal,
         {"alice": {"name": "Alice"}, "bob": {"name": "Old Bob"}},
         [{"user_id": "bob", "name": "Bob"}],
+        "alice",
     )
 
     assert users["alice"] == {"name": "Alice"}
@@ -171,7 +172,7 @@ def test_display_users_for_goal_uses_friend_profile_for_departed_participant() -
 def test_display_users_for_goal_hides_departed_non_friend_identity() -> None:
     goal = {"participants": {"bob": {"left_at": "2026-06-01T10:00:00+00:00"}}}
 
-    users = display_users_for_goal(goal, {"bob": {"name": "Bob"}}, [])
+    users = display_users_for_goal(goal, {"bob": {"name": "Bob"}}, [], "alice")
 
     assert users["bob"] == {"name": "unknown"}
 
@@ -190,6 +191,7 @@ def test_display_users_for_goal_uses_friends_for_reactions_from_removed_particip
         goal,
         {"alice": {"name": "Alice"}},
         [{"user_id": "bob", "name": "Bob"}],
+        "alice",
     )
 
     assert users["bob"] == {"user_id": "bob", "name": "Bob"}
@@ -205,9 +207,31 @@ def test_display_users_for_goal_hides_reactions_from_removed_non_friends() -> No
         }
     }
 
-    users = display_users_for_goal(goal, {"alice": {"name": "Alice"}}, [])
+    users = display_users_for_goal(goal, {"alice": {"name": "Alice"}}, [], "alice")
 
     assert users["bob"] == {"name": "unknown"}
+
+
+def test_display_users_for_goal_hides_active_non_friend_reaction_sender_identity() -> None:
+    goal = {
+        "participants": {
+            "alice": {
+                "left_at": None,
+                "completion_reactions": {"2026-06-01": {"charlie": {"emote": "👍"}}},
+            },
+            "charlie": {"left_at": None},
+        }
+    }
+
+    users = display_users_for_goal(
+        goal,
+        {"alice": {"name": "Alice"}, "charlie": {"name": "Charlie", "email": "charlie@example.com"}},
+        [],
+        "alice",
+    )
+
+    assert users["charlie"] != {"name": "Charlie", "email": "charlie@example.com"}
+    assert "email" not in users["charlie"]
 
 
 def test_participant_progress_label_uses_compact_current_target() -> None:
