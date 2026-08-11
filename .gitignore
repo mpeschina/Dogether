@@ -4,6 +4,9 @@ backups/
 *.py[cod]
 *$py.class
 
+# Streamlit agent skills (environment-specific symlinks)
+.agents/skills/developing-with-streamlit
+
 # C extensions
 *.so
 
