@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Callable, Literal, Mapping, Protocol
 
-from src.assistant.state import AssistantState
+from src.assistant.state import AssistantMode, AssistantState
 
 
 ControlKind = Literal["choices", "send"]
@@ -145,6 +145,8 @@ class AssistantTurn:
     destination_delay: float = 0  # Seconds to wait before opening the destination.
     completed: bool = False  # Whether to save state durably.
     continue_flow: bool = False  # Whether to advance again immediately.
+    skip_greeting: bool = False  # Whether the next automatic turn bypasses Greetings.
+    open_standard_menu: bool = False  # Whether the next turn must be the standard menu.
     advance_sequences: tuple[str, ...] = ()  # Sequences to increment.
     stars_delta: int = 0  # Durable STAR increment applied with this turn.
     star_grant_animation: bool = False  # One-shot presentation effect.
@@ -154,6 +156,7 @@ class AssistantTurn:
     state_story: str | None = None  # Next active story. where the assistant should resume on a later rerun or page return.
     state_scene: str | None = None  # Next active scene. where the assistant should resume on a later rerun or page return.
     state_status: str | None = None  # Next conversation status. the saved lifecycle state, such as active, paused, or completed.
+    state_mode: AssistantMode | None = None  # Optional durable Assistant-mode transition.
     execution_outcome: StoryExecutionOutcome | None = None
 
     def __post_init__(self) -> None:

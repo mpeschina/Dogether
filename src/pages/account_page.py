@@ -9,6 +9,11 @@ from typing import Any
 import streamlit as st
 
 from src.assistant.state import AssistantMode, AssistantState, clear_transient_assistant_state
+from src.assistant.stories.debug import (
+    debug_story_label,
+    debug_story_options,
+    select_debug_story,
+)
 from src.assistant.stories.personal_highlight_tutorial import personal_highlights_unlocked
 from src.assistant.story_session import clear_story_sessions, story_session
 from src.assistant.stories.greetings import (
@@ -222,6 +227,54 @@ def render_assistant_settings(
     if st.button("Clear smalltalk", key=f"clear_smalltalk_session_{user_id}"):
         clear_smalltalk_session(st.session_state)
         st.rerun()
+
+    render_assistant_story_player(persistence, current_user, user_id, now=now)
+
+
+def render_assistant_story_player(
+    persistence: Persistence,
+    current_user: dict,
+    user_id: str,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Offer debug accounts a session-only player for every Assistant story."""
+    if not debug_info_enabled(current_user):
+        return
+
+    stories = debug_story_options()
+    if not stories:
+        return
+    with st.container(border=True):
+        st.subheader("Assistant story player")
+        st.caption(
+            "Previews use sample prerequisites where needed and do not save story progress or rewards."
+        )
+        story_ids = list(stories)
+        selected_story_id = st.selectbox(
+            "Story to preview",
+            story_ids,
+            format_func=debug_story_label,
+            key=f"assistant_story_preview_{user_id}",
+        )
+        if st.button(
+            "Play selected story",
+            icon=":material/play_arrow:",
+            key=f"play_assistant_story_{user_id}",
+        ):
+            reset_assistant_session_state(st.session_state, user_id)
+            if not select_debug_story(st.session_state, selected_story_id):
+                st.error("That Assistant story is no longer available.")
+                return
+            preview_state = AssistantState.from_profile(current_user).with_mode(
+                AssistantMode.SPECIAL
+            )
+            stored_state = persistence.save_assistant_state(
+                user_id, preview_state.to_dict(), now=now
+            )
+            current_user["assistant_state"] = stored_state
+            st.session_state["assistant.destination"] = "assistant"
+            st.rerun()
 
 
 def greeting_debug_info(session_state: MutableMapping[str, object]) -> dict[str, object]:
