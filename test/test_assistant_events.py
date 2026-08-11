@@ -55,10 +55,11 @@ from src.assistant.stories.night import (
     NightStory,
 )
 from src.assistant.stories.smalltalk import (
-    FUNNY_SMALLTALK_RESPONSES,
     SMALLTALK_CLICKED_AT_KEY,
+    SMALLTALK_HELP_OFFERS,
     SMALLTALK_OPENERS,
     SMALLTALK_OPENER_SELECTED_AT_KEY,
+    TAILORED_SMALLTALK_RESPONSES,
     SmalltalkStory,
 )
 from src.assistant.stories.standard import (
@@ -707,8 +708,17 @@ def test_standard_menu_starts_tutorial_and_tracks_knowledge() -> None:
 def test_smalltalk_menu_choice_is_owned_by_smalltalk_story_and_returns_to_standard_menu() -> None:
     assert SMALLTALK_OPENERS
     assert len(set(SMALLTALK_OPENERS)) == len(SMALLTALK_OPENERS)
+    assert set(TAILORED_SMALLTALK_RESPONSES) == set(SMALLTALK_OPENERS)
+    assert all(
+        1 <= len(responses) <= 4
+        and all(1 <= len(response) <= 4 for response in responses)
+        for responses in TAILORED_SMALLTALK_RESPONSES.values()
+    )
+    assert len(SMALLTALK_HELP_OFFERS) == 40
+    assert sum(len(offer) > 1 for offer in SMALLTALK_HELP_OFFERS) > 30
 
-    smalltalk = SmalltalkStory(random_source=StubRandom(0, 1))
+    random_source = StubRandom(0, 1)
+    smalltalk = SmalltalkStory(random_source=random_source)
     story = StandardStory(smalltalk_story=smalltalk)
     state = AssistantState(story=STANDARD_STORY_ID, scene=READY_NODE, status="completed")
     context = context_for(state)
@@ -717,27 +727,23 @@ def test_smalltalk_menu_choice_is_owned_by_smalltalk_story_and_returns_to_standa
     assert menu.choices[1].id == "smalltalk"
     assert menu.choices[1].label == SMALLTALK_OPENERS[1]
 
+    random_source.choice_index = 0
     placeholder = story.advance(
         context,
         STANDARD_MENU_SCENE,
         selection(STANDARD_STORY_ID, STANDARD_MENU_SCENE, "smalltalk", menu.choices[1].label),
     )
-    assert [line.text for line in placeholder.lines] == [
-        *FUNNY_SMALLTALK_RESPONSES[1],
-    ]
+    expected_tailored_response = (
+        *TAILORED_SMALLTALK_RESPONSES[menu.choices[1].label][0],
+        *SMALLTALK_HELP_OFFERS[0],
+    )
+    assert tuple(line.text for line in placeholder.lines) == expected_tailored_response
     assert [choice.id for choice in placeholder.choices] == ["help", "weekly_summary"]
     assert placeholder.story_id == STANDARD_STORY_ID
     assert placeholder.scene_id == STANDARD_MENU_SCENE
     returned_state = apply_turn(state, placeholder)
     assert returned_state.story == STANDARD_STORY_ID
     assert returned_state.scene == STANDARD_MENU_SCENE
-
-    ordinary_smalltalk = SmalltalkStory(random_source=StubRandom(0.9, 0))
-    ordinary = ordinary_smalltalk.advance(context, None, None)
-    assert [line.text for line in ordinary.lines] == [
-        "Smalltalk is currently unavailable.",
-    ]
-
 
 def test_smalltalk_opener_is_session_scoped_and_refreshes_after_three_hours() -> None:
     random_source = StubRandom(0, 0)
