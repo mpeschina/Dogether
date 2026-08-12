@@ -135,21 +135,21 @@ VARIANTS: Final = (
                 "🎉 🎉 🎉",
                 choices=(("launch", "*admire the flying confetti*"), ("tasteful", "Ok, but thats just a standard emote..")),
                 replies={
-                    "launch": ("Confetti deployed with great enthusiasm.",),########################## here!
+                    "launch": ("Confetti deployed with great enthusiasm.",),
                     "tasteful": ("One tasteful piece has been released.",),
                 },
             ),
             _beat(
                 "You are making real things happen.",
-                choices=(("acknowledge", "I can feel that."),),
+                choices=(("acknowledge", "I can feel that."),("noAck", "I am unsure about this."),),
             ),
             _beat(
-                "That deserves a small parade.",
-                "The parade is mostly paperwork.",
-                choices=(("parade", "Let's authorize the parade."),),
+                "You deserve to be celebrated.",
+                "I would throw you a celebration party, but the paperwork is overwhelming.",
+                choices=(("parade", "Thank you so much, that really helps me."),),
             ),
         ),
-        ("Parade authorized. You remain the guest of honor.",),
+        ("You are the guest of honor and you earned it.","Anything further?"),
     ),
     CelebrationVariant(
         "executive_briefing",
@@ -215,7 +215,7 @@ VARIANTS: Final = (
         ),
         ("My spotlight remains available whenever you need it.", "How can I help you today?", ),
     ),
-    CelebrationVariant(
+    CelebrationVariant(########################## here!
         "tiny_trophy",
         (
             _beat(
