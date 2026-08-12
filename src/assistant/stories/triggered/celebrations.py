@@ -185,7 +185,7 @@ VARIANTS: Final = (
         ),
         ("Keep the momentum. It suits you.", "Anything else?"),
     ),
-    CelebrationVariant(
+    CelebrationVariant(########################## play this one here!
         "goal_spotlight",
         (
             _beat(
@@ -218,7 +218,7 @@ VARIANTS: Final = (
         ),
         ("My spotlight remains available whenever you need it.", "How can I help you today?", ),
     ),
-    CelebrationVariant(########################## here!
+    CelebrationVariant(
         "tiny_trophy",
         (
             _beat(
