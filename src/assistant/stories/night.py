@@ -128,7 +128,10 @@ class NightStory(AssistantStory):
             choices=(
                 AssistantChoice("go_to_bed", "You are right, I will also go to bed now"),
                 AssistantChoice(
-                    "leave_quietly", "Leave chat without a saying", style="italic"
+                    "leave_quietly",
+                    "Leave chat without a saying",
+                    style="italic",
+                    record_selection=False,
                 ),
             ),
             state_status="paused",

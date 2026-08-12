@@ -1,9 +1,10 @@
+import pytest
 from streamlit.testing.v1 import AppTest
 from datetime import date
 
 import src.assistant.presentation as presentation
 from pathlib import Path
-from src.assistant.core import AssistantCard
+from src.assistant.core import AssistantCard, AssistantChoice
 
 
 CHOICE_APP = """
@@ -128,6 +129,11 @@ view.finish()
 
     app.button[1].click().run()
     assert app.session_state.filtered_state["assistant.transcript"] == [("assistant", "Done")]
+
+
+def test_italic_choice_must_not_be_recorded_in_the_user_transcript() -> None:
+    with pytest.raises(ValueError, match="must not be recorded"):
+        AssistantChoice("act", "say nothing", style="italic")
 
 
 def test_choice_button_renders_literal_asterisks() -> None:

@@ -78,6 +78,8 @@ class AssistantChoice:
     def __post_init__(self) -> None:
         if not self.id:
             raise ValueError("Assistant choice IDs must be non-empty.")
+        if self.style == "italic" and self.record_selection:
+            raise ValueError("Italic choices are actions and must not be recorded in the transcript.")
 
 
 @dataclass(frozen=True)

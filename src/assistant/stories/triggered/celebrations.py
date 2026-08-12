@@ -52,13 +52,14 @@ def _beat(
 
 
 def _player_choice(choice_id: str, label: str) -> AssistantChoice:
-    """Render starred player actions as italic choices, not command labels."""
+    """Render starred player actions as non-transcript italic choices."""
     is_action = label.startswith("*") and label.endswith("*")
     visible_label = label[1:-1] if is_action else label
     return AssistantChoice(
         choice_id,
         visible_label,
         style="italic" if is_action else "default",
+        record_selection=not is_action,
     )
 
 
@@ -97,7 +98,7 @@ VARIANTS: Final = (
             _beat(
                 "Metric one: you kept showing up.",
                 "Metric two: you work on your goals.",
-                choices=(("verify", "Ok"), ("celebrate", "That calls for a celebration!")),
+                choices=(("verify", "Okay, got it."), ("celebrate", "That calls for a celebration!")),
                 replies={
                     "verify": ("You are impressive.",),
                     "celebrate": ("I entered the request for celebration in column E.",),
@@ -106,7 +107,7 @@ VARIANTS: Final = (
             _beat(
                 "Ah, there is a third metric.",
                 "It is called 'momentum'.",
-                choices=(("question", "And how is my progress in the this metric?"),("deny", "Ok"),),
+                choices=(("question", "And how is my progress in the this metric?"),("deny", "Okay, got it."),),
                 replies={
                     "question": ("Awesome, you have the biggest momentum I have ever seen!",),
                     "deny": ("Ok, anyhow. Lets move to the end.",),
@@ -208,9 +209,6 @@ VARIANTS: Final = (
             _beat(
                 "Great.",
                 "I am enthusiastically on board to help you out.",
-                choices=(("thanks", "Thank you."),),
-            ),
-            _beat(
                 "Spotlight dimming to a flattering glow.",
                 choices=(("finish", "*step out of the spotlight*"),),
             ),

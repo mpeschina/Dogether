@@ -215,8 +215,10 @@ def test_player_options_are_spoken_lines_or_italic_actions() -> None:
                 if raw_label.startswith("*"):
                     assert choice.style == "italic"
                     assert choice.label == raw_label[1:-1]
+                    assert choice.record_selection is False
                 else:
                     assert choice.style == "default"
+                    assert choice.record_selection is True
                     assert choice.label[-1] in ".?!"
                     assert len(choice.label.split()) >= 2
 

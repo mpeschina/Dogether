@@ -1206,6 +1206,7 @@ def test_night_story_uses_the_special_progress_pattern_and_finishes() -> None:
     assert acknowledgement.lines == ()
     assert [choice.id for choice in acknowledgement.choices] == ["go_to_bed", "leave_quietly"]
     assert acknowledgement.choices[1].style == "italic"
+    assert acknowledgement.choices[1].record_selection is False
 
     exit_turn = story.advance(
         context_for(state, session_state=session),
