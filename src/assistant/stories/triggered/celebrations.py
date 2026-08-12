@@ -145,12 +145,12 @@ VARIANTS: Final = (
         "executive_briefing",
         (
             _beat(
-                "Executive summary:",
+                "Here is the Executive summary",
                 "You are doing remarkably well.",
                 choices=(("details", "Tell me more."), ("nod", "*nod professionally*")),
                 replies={
                     "details": ("Details are encouragingly specific.",),
-                    "nod": ("Professional nod received.",),
+                    "nod": ("*nod well received*.",),
                 },
             ),
             _beat(
@@ -158,17 +158,16 @@ VARIANTS: Final = (
                 choices=(("continue", "That feels true."),),
             ),
             _beat(
-                "That is not an accident.",
-                "That is you building trust with yourself.",
+                "That is not an accident. That is you building trust with yourself.",
                 choices=(("record", "I'll remember that."), ("smile", "*let that sink in*")),
                 replies={
-                    "record": ("Recorded under: excellent self-leadership.",),
+                    "record": ("Its good to remember your excellent self-leadership.",),
                     "smile": ("A very appropriate response.",),
                 },
             ),
             _beat(
-                "The executive team is one proud assistant.",
-                choices=(("close", "That's a good summary."),),
+                "I am your proud assistant and serve as your executive team!",
+                choices=(("close", "Thank you."),),
             ),
         ),
         ("Keep the momentum. It suits you."),
