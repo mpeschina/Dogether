@@ -155,6 +155,19 @@ def test_every_choice_rejoins_the_same_linear_celebration_flow(story_id: str) ->
     assert turn.execution_outcome == "completed"
 
 
+@pytest.mark.parametrize("variant", VARIANTS, ids=lambda variant: variant.identifier)
+def test_celebration_finales_are_rendered_as_complete_messages(variant) -> None:
+    story = triggered_stories()[f"celebration.{variant.identifier}"]
+    current = context()
+    turn = story.advance(current, None, None)
+
+    while not turn.completed:
+        turn = story.advance(current, turn.scene_id, selection(turn, turn.choices[0].id))
+
+    rendered_finale = tuple(line.text for line in turn.lines[-len(variant.finale) :])
+    assert rendered_finale == variant.finale
+
+
 def test_goal_aware_variants_use_the_known_goal_without_storing_user_answers() -> None:
     story = triggered_stories()[CELEBRATION_STORY_IDS[4]]
     current = context(

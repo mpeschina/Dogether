@@ -139,7 +139,7 @@ VARIANTS: Final = (
                 choices=(("parade", "Let's authorize the parade."),),
             ),
         ),
-        ("Parade authorized. You remain the guest of honor."),
+        ("Parade authorized. You remain the guest of honor.",),
     ),
     CelebrationVariant(
         "executive_briefing",
@@ -170,7 +170,7 @@ VARIANTS: Final = (
                 choices=(("close", "Thank you."),),
             ),
         ),
-        ("Keep the momentum. It suits you."),
+        ("Keep the momentum. It suits you.",),
     ),
     CelebrationVariant(
         "goal_spotlight",
@@ -210,7 +210,7 @@ VARIANTS: Final = (
                 choices=(("finish", "*step out of the spotlight*"),),
             ),
         ),
-        ("The spotlight remains available whenever you need it."),
+        ("The spotlight remains available whenever you need it.",),
     ),
     CelebrationVariant(
         "tiny_trophy",
@@ -230,7 +230,7 @@ VARIANTS: Final = (
                 choices=(("continue", "I needed to hear that."),),
             ),
         ),
-        ("The trophy will pretend it is not proud of you."),
+        ("The trophy will pretend it is not proud of you.",),
     ),
     CelebrationVariant(
         "mission_control",
@@ -269,7 +269,7 @@ VARIANTS: Final = (
                 choices=(("finish", "*give a little salute*"),),
             ),
         ),
-        ("Trajectory saved: promising."),
+        ("Trajectory saved: promising.",),
     ),
     CelebrationVariant(
         "goal_clinic",
@@ -319,7 +319,7 @@ VARIANTS: Final = (
                 choices=(("leave", "Thank you, doctor."),),
             ),
         ),
-        ("Appointment complete. You are doing better than you think."),
+        ("Appointment complete. You are doing better than you think.",),
     ),
     CelebrationVariant(
         "evidence_locker",
@@ -346,7 +346,7 @@ VARIANTS: Final = (
                 choices=(("verdict", "I'm ready for the verdict."),),
             ),
         ),
-        ("Verdict: keep being exactly this persistent."),
+        ("Verdict: keep being exactly this persistent.",),
     ),
     CelebrationVariant(
         "breakroom_legend",
@@ -399,7 +399,7 @@ VARIANTS: Final = (
                 choices=(("finish", "I feel pretty good about that."),),
             ),
         ),
-        ("Breakroom consensus: you are doing great."),
+        ("Breakroom consensus: you are doing great.",),
     ),
     CelebrationVariant(
         "focus_ping",
@@ -435,7 +435,7 @@ VARIANTS: Final = (
                 choices=(("go", "I'll choose what matters."),),
             ),
         ),
-        ("Ping complete. Your priorities are in capable hands."),
+        ("Ping complete. Your priorities are in capable hands.",),
     ),
     CelebrationVariant(
         "customer_success",
@@ -471,7 +471,7 @@ VARIANTS: Final = (
                 choices=(("end", "Thank you for calling."),),
             ),
         ),
-        ("Call complete. Satisfaction remains high."),
+        ("Call complete. Satisfaction remains high.",),
     ),
     CelebrationVariant(
         "micro_documentary",
@@ -522,7 +522,7 @@ VARIANTS: Final = (
                 choices=(("finish", "That was a good film."),),
             ),
         ),
-        ("A moving picture, featuring genuinely moving forward."),
+        ("A moving picture, featuring genuinely moving forward.",),
     ),
     CelebrationVariant(
         "helpdesk_ticket",
@@ -545,7 +545,7 @@ VARIANTS: Final = (
                 choices=(("apply", "I'll try that."),),
             ),
         ),
-        ("Ticket closed. Your progress remains open for business."),
+        ("Ticket closed. Your progress remains open for business.",),
     ),
     CelebrationVariant(
         "award_ceremony",
@@ -587,7 +587,7 @@ VARIANTS: Final = (
                 choices=(("applause", "*take in the applause*"),),
             ),
         ),
-        ("Ceremony adjourned. Your future is applauding too."),
+        ("Ceremony adjourned. Your future is applauding too.",),
     ),
 )
 
