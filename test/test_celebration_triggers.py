@@ -12,6 +12,7 @@ from src.assistant.stories.greetings import GREETINGS_STORY_ID, GreetingsStory
 from src.assistant.stories.standard import StandardStory
 from src.assistant.stories.triggered import triggered_stories
 from src.assistant.stories.triggered.celebrations import (
+    CELEBRATION_WAIT,
     CELEBRATION_STORY_IDS,
     VARIANTS,
 )
@@ -25,7 +26,7 @@ def context(
     *,
     state: AssistantState | None = None,
     user_state: dict | None = None,
-    created_at: object = (NOW - timedelta(days=8)).isoformat(),
+    created_at: object = (NOW - CELEBRATION_WAIT).isoformat(),
     now: datetime = NOW,
 ):
     return AssistantContext(
@@ -113,15 +114,21 @@ def test_celebrations_need_a_progress_signal_and_wait_eight_hours_after_triggere
 @pytest.mark.parametrize(
     ("created_at", "now", "expected"),
     (
-        ((NOW - timedelta(days=8) + timedelta(microseconds=1)).isoformat(), NOW, False),
-        ((NOW - timedelta(days=8)).isoformat(), NOW, True),
-        ((NOW - timedelta(days=8)).astimezone(timezone(timedelta(hours=2))).isoformat(), NOW, True),
+        ((NOW - CELEBRATION_WAIT + timedelta(microseconds=1)).isoformat(), NOW, False),
+        ((NOW - CELEBRATION_WAIT).isoformat(), NOW, True),
+        (
+            (NOW - CELEBRATION_WAIT)
+            .astimezone(timezone(timedelta(hours=2)))
+            .isoformat(),
+            NOW,
+            True,
+        ),
         (None, NOW, False),
         ("not-a-date", NOW, False),
-        ((NOW - timedelta(days=8)).replace(tzinfo=None).isoformat(), NOW, False),
+        ((NOW - CELEBRATION_WAIT).replace(tzinfo=None).isoformat(), NOW, False),
     ),
 )
-def test_celebrations_start_only_after_eight_days_with_a_timezone_aware_join_time(
+def test_celebrations_start_only_after_the_wait_with_a_timezone_aware_join_time(
     created_at: object, now: datetime, expected: bool
 ) -> None:
     story = triggered_stories()[CELEBRATION_STORY_IDS[0]]
