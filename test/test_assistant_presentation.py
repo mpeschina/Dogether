@@ -70,6 +70,74 @@ def test_response_generator_preserves_line_breaks() -> None:
     ) == message
 
 
+def test_finish_can_omit_the_disabled_chat_interface(monkeypatch) -> None:
+    rendered_inputs: list[dict] = []
+    monkeypatch.setattr(
+        presentation.st,
+        "chat_input",
+        lambda *_args, **kwargs: rendered_inputs.append(kwargs),
+    )
+
+    view = object.__new__(presentation.StreamlitAssistantView)
+    view.input_rendered = False
+    view.show_disabled_chat_interface = False
+    view._finished = False
+    view._scroll_and_position_controls = lambda: None
+
+    view.finish()
+
+    assert rendered_inputs == []
+    assert view.input_rendered is False
+
+
+@pytest.mark.parametrize(
+    ("story_id", "expected_input_count"),
+    (("tutorial", 1), ("standard", 0)),
+)
+def test_story_type_can_enable_the_disabled_chat_interface(
+    story_id: str, expected_input_count: int
+) -> None:
+    app_source = f"""
+import src.assistant.presentation as presentation
+from src.assistant.core import AssistantTurn
+
+view = presentation.StreamlitAssistantView(
+    show_disabled_chat_interface=False,
+    disabled_chat_story_ids=("tutorial",),
+)
+view.present(AssistantTurn(story_id={story_id!r}, scene_id="start"))
+view.finish()
+"""
+
+    app = AppTest.from_string(app_source, default_timeout=10).run()
+
+    assert not app.exception
+    assert len(app.chat_input) == expected_input_count
+
+
+def test_controls_align_with_transcript_and_clear_disabled_chat(monkeypatch) -> None:
+    rendered_iframes: list[str] = []
+    monkeypatch.setattr(
+        presentation.st,
+        "iframe",
+        lambda body, **_kwargs: rendered_iframes.append(body),
+    )
+
+    presentation.StreamlitAssistantView._scroll_and_position_controls()
+
+    script = rendered_iframes[0]
+    assert 'data-testid="stMainBlockContainer"' in script
+    assert 'data-testid="stAppViewContainer"' in script
+    assert "choiceBar.style.bottom" in script
+    assert "choiceBar.style.paddingBottom = chatInput ? '0.75rem' : ''" in script
+    assert "choiceBar.style.left" in script
+    assert "choiceBar.style.width" in script
+    assert "choiceBar.style.transform" in script
+    assert "addEventListener('resize', positionControls)" in script
+    assert "ResizeObserver(positionControls)" in script
+    assert "observer.observe(appView)" in script
+
+
 def test_assistant_message_renderer_emits_a_break_for_each_line(monkeypatch) -> None:
     rendered: list[str] = []
     monkeypatch.setattr(

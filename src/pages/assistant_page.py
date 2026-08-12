@@ -10,6 +10,7 @@ from src.assistant.director import AssistantDirector
 from src.assistant.state import AssistantState, transient_assistant_state_for_user
 from src.assistant.presentation import StreamlitAssistantView, clear_transcript_for_new_help_visit
 from src.assistant.stories.information import information_completed
+from src.assistant.stories.tutorial import TUTORIAL_STORY_ID
 from src.assistant.stories import default_stories
 from src.friends.share_links import create_friend_share_link
 from src.db.persistence import Persistence
@@ -105,6 +106,15 @@ def _assistant_star_count_markup(stars: int) -> str:
     return f"<span class='assistant-star-count'>&#9733; {stars}</span>" if stars > 5 else ""
 
 
+def _show_disabled_chat_interface(
+    state: AssistantState,
+) -> bool:
+    """Return whether this visit needs the non-interactive chat affordance."""
+    if state.stars <= 0:
+        return True
+    return state.story == TUTORIAL_STORY_ID
+
+
 def render_assistant(
     persistence: Persistence,
     current_user: dict,
@@ -176,7 +186,10 @@ def render_assistant(
             user_id, now=now
         ),
     )
-    view = StreamlitAssistantView()
+    view = StreamlitAssistantView(
+        show_disabled_chat_interface=_show_disabled_chat_interface(state),
+        disabled_chat_story_ids=(TUTORIAL_STORY_ID,),
+    )
     director = AssistantDirector(persistence, default_stories())
     director.render(context, view)
     if st.session_state.get("assistant.destination"):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import re
 import time
-from collections.abc import Iterator, MutableMapping
+from collections.abc import Collection, Iterator, MutableMapping
 from html import escape
 from typing import Any
 
@@ -76,8 +76,15 @@ def response_generator(
 class StreamlitAssistantView:
     """Transcript renderer and owner of the single active control round."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        show_disabled_chat_interface: bool = True,
+        disabled_chat_story_ids: Collection[str] = (),
+    ) -> None:
         self.input_rendered = False
+        self.show_disabled_chat_interface = show_disabled_chat_interface
+        self._disabled_chat_story_ids = frozenset(disabled_chat_story_ids)
         self.selection = self._take_pending_selection()
         self._finished = False
         self._transcript: list[tuple[str, Any]] = st.session_state.setdefault(
@@ -99,6 +106,8 @@ class StreamlitAssistantView:
         self._control_bar = st.empty()
         active_control = st.session_state.get(ACTIVE_CONTROL_KEY)
         if isinstance(active_control, dict):
+            if active_control.get("story_id") in self._disabled_chat_story_ids:
+                self.show_disabled_chat_interface = True
             self._render_control(active_control)
 
     @property
@@ -110,6 +119,8 @@ class StreamlitAssistantView:
 
     def present(self, turn: AssistantTurn) -> None:
         """Commit and animate one turn, then expose its next control."""
+        if turn.story_id in self._disabled_chat_story_ids:
+            self.show_disabled_chat_interface = True
         self.clear_control()
         if turn.lines:
             self._transcript[:] = [
@@ -185,7 +196,7 @@ class StreamlitAssistantView:
         if self._finished:
             return
         self._finished = True
-        if not self.input_rendered:
+        if self.show_disabled_chat_interface and not self.input_rendered:
             st.chat_input(
                 "Message the assistant",
                 disabled=True,
@@ -501,7 +512,9 @@ class StreamlitAssistantView:
               }
               [class*="st-key-assistant-choice-bar-"] {
                 animation: assistant-choice-fade-in CHOICE_FADE_IN_DURATION_MS ease-out both;
-                bottom: 5.25rem;
+                bottom: 0;
+                padding-bottom: 3rem;
+                width: min(calc(100% - 2rem), 1100px);
               }
               [class*="st-key-assistant-choice-option-"][class*="-italic"] button {
                 font-style: italic;
@@ -518,6 +531,7 @@ class StreamlitAssistantView:
                   max-height: calc(100dvh - 4.5rem);
                   overflow-y: auto;
                   overscroll-behavior: contain;
+                  padding-bottom: 0.75rem;
                 }
                 [class*="st-key-assistant-choice-bar-"][class*="-grid"] [data-testid="stHorizontalBlock"] {
                   display: grid !important;
@@ -584,15 +598,45 @@ class StreamlitAssistantView:
                 const choiceBar = parentDocument.querySelector(
                   '[class*="st-key-assistant-choice-bar-"]'
                 );
+                const transcript = parentDocument.querySelector(
+                  '[data-testid="stMainBlockContainer"]'
+                );
+                const appView = parentDocument.querySelector(
+                  '[data-testid="stAppViewContainer"]'
+                );
                 const chatInput = parentDocument.querySelector(
                   '[data-testid="stChatInput"]'
                 );
-                if (choiceBar && chatInput) {
-                  const bounds = chatInput.getBoundingClientRect();
-                  choiceBar.style.left = `${bounds.left}px`;
-                  choiceBar.style.width = `${bounds.width}px`;
-                  choiceBar.style.bottom = `calc(${parentWindow.innerHeight - bounds.top}px + 0.5rem)`;
+                if (choiceBar && transcript) {
+                  const bounds = transcript.getBoundingClientRect();
+                  const appBounds = appView
+                    ? appView.getBoundingClientRect()
+                    : { left: 0, right: parentWindow.innerWidth, width: parentWindow.innerWidth };
+                  const availableLeft = appBounds.left + 16;
+                  const availableRight = appBounds.right - 16;
+                  const availableWidth = Math.max(0, availableRight - availableLeft);
+                  const isMobile = parentWindow.innerWidth <= 640;
+                  const width = isMobile
+                    ? Math.min(bounds.width, availableWidth)
+                    : Math.min(1100, availableWidth);
+                  const center = bounds.left + bounds.width / 2;
+                  const unclampedLeft = center - width / 2;
+                  const left = Math.max(
+                    availableLeft,
+                    Math.min(unclampedLeft, availableRight - width)
+                  );
+                  choiceBar.style.left = `${left}px`;
+                  choiceBar.style.width = `${width}px`;
                   choiceBar.style.transform = 'none';
+                }
+                if (choiceBar) {
+                  choiceBar.style.paddingBottom = chatInput ? '0.75rem' : '';
+                  if (chatInput) {
+                    const bounds = chatInput.getBoundingClientRect();
+                    choiceBar.style.bottom = `${parentWindow.innerHeight - bounds.top}px`;
+                  } else {
+                    choiceBar.style.bottom = '';
+                  }
                 }
               };
               const scrollToBottom = () => {
@@ -606,6 +650,31 @@ class StreamlitAssistantView:
                   top: parentDocument.body.scrollHeight
                 });
               };
+              if (parentWindow.__dogetherAssistantPositionControls) {
+                parentWindow.removeEventListener(
+                  'resize',
+                  parentWindow.__dogetherAssistantPositionControls
+                );
+              }
+              parentWindow.__dogetherAssistantPositionControls = positionControls;
+              parentWindow.addEventListener('resize', positionControls);
+              if (parentWindow.__dogetherAssistantControlsResizeObserver) {
+                parentWindow.__dogetherAssistantControlsResizeObserver.disconnect();
+              }
+              const transcript = parentDocument.querySelector(
+                '[data-testid="stMainBlockContainer"]'
+              );
+              const appView = parentDocument.querySelector(
+                '[data-testid="stAppViewContainer"]'
+              );
+              if (transcript && parentWindow.ResizeObserver) {
+                const observer = new parentWindow.ResizeObserver(positionControls);
+                observer.observe(transcript);
+                if (appView) {
+                  observer.observe(appView);
+                }
+                parentWindow.__dogetherAssistantControlsResizeObserver = observer;
+              }
               requestAnimationFrame(() => setTimeout(() => {
                 positionControls();
                 scrollToBottom();
