@@ -69,63 +69,72 @@ VARIANTS: Final = (
         "applause_window",
         (
             _beat(
-                "Excuse the interruption.",
-                "A tiny applause window opened.",
+                "Hey, excuse the interruption.",
+                "I have a tiny applause for You as my preferred User",
+                "👏",
                 choices=(("accept", "Thank you for the applause."), ("modest", "*look down modestly*")),
                 replies={
-                    "accept": ("Applause accepted.",),
-                    "modest": ("Modesty noted. Applause continues.",),
+                    "accept": ("Your welcome!",),
+                    "modest": ("Modesty noted.",),
                 },
             ),
             _beat(
-                "You earned this moment.",
+                "You earned this.",
                 choices=(("continue", "That was lovely."),),
             ),
         ),
-        ("Progress has excellent taste.",),
+        ("Progress has an excellent taste.",),
     ),
     CelebrationVariant(
         "spreadsheet_audit",
         (
             _beat(
-                "Corporate morale report: glowing.",
+                "I have a corporate morale report regarding your progress:",
+                "Its glowing!",
                 "The charts are doing jazz hands.",
-                choices=(("inspect", "Show me the findings."),),
+                choices=(("inspect", "Show it to me, please."),),
             ),
             _beat(
                 "Metric one: you kept showing up.",
-                "Metric two: that matters.",
-                choices=(("verify", "I believe you."), ("celebrate", "That calls for a celebration.")),
+                "Metric two: you work on your goals.",
+                choices=(("verify", "Ok"), ("celebrate", "That calls for a celebration!")),
                 replies={
-                    "verify": ("Verification complete. Still impressive.",),
-                    "celebrate": ("Celebration entered in column B.",),
+                    "verify": ("You are impressive.",),
+                    "celebrate": ("I entered the request for celebration in column E.",),
                 },
             ),
             _beat(
-                "There is a third metric.",
-                "It is called momentum.",
-                choices=(("approve", "I approve this report."),),
+                "Ah, there is a third metric.",
+                "It is called 'momentum'.",
+                choices=(("question", "And how is my progress in the this metric?"),("deny", "Ok"),),
+                replies={
+                    "question": ("Awesome, you have the biggest momentum I have ever seen!",),
+                    "deny": ("Ok, anyhow. Lets move to the end.",),
+                },
             ),
             _beat(
-                "The report recommends confidence.",
-                choices=(("adopt", "I'll take that recommendation."),),
+                "Furthermore",
+                "The report recommends confidence in yourself.",
+                choices=(("adopt", "I will be confident in myself."),),
             ),
             _beat(
-                "I have highlighted it in optimistic yellow.",
-                choices=(("file", "*file it with a smile*"),),
+                "Thank you. I have highlighted that in an optimistic yellow in the Excel sheet.",
+                choices=(("file", "*smile*"),),
             ),
         ),
-        ("Your effort is officially above baseline.", "Baseline is delighted."),
+        ("Your effort is now officially above baseline.",),
     ),
     CelebrationVariant(
         "confetti_procurement",
         (
             _beat(
-                "Confetti request approved.",
-                "Budget: emotionally unlimited.",
-                choices=(("launch", "*throw confetti into the air*"), ("tasteful", "A tasteful amount sounds right.")),
+                "Hey there. I have excellent News!",
+                "My recent Confetti request was approved. Attention and be careful",
+                "Here it comes",
+                "🎉 🎉 🎉",
+                choices=(("launch", "*admire the flying confetti*"), ("tasteful", "Ok, but thats just a standard emote..")),
                 replies={
-                    "launch": ("Confetti deployed with great enthusiasm.",),
+                    "launch": ("Confetti deployed with great enthusiasm.",),########################## here!
                     "tasteful": ("One tasteful piece has been released.",),
                 },
             ),
