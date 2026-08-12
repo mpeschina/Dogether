@@ -531,7 +531,7 @@ class StreamlitAssistantView:
                   max-height: calc(100dvh - 4.5rem);
                   overflow-y: auto;
                   overscroll-behavior: contain;
-                  padding-bottom: 4rem;
+                  padding-bottom: 3.8rem;
                 }
                 [class*="st-key-assistant-choice-bar-"][class*="-grid"] [data-testid="stHorizontalBlock"] {
                   display: grid !important;
