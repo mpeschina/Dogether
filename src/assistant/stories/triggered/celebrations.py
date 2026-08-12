@@ -21,7 +21,7 @@ from src.assistant.triggers import (
 
 
 CELEBRATION_STORY_PREFIX: Final = "celebration"
-ANY_TRIGGERED_STORY_SPACING: Final = timedelta(hours=8)
+ANY_TRIGGERED_STORY_SPACING: Final = timedelta(hours=28)
 CELEBRATION_WAIT: Final = timedelta(days=12)
 
 
