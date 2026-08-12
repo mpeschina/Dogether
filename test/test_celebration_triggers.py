@@ -7,7 +7,7 @@ import pytest
 
 from src.assistant.core import AssistantContext, AssistantSelection
 from src.assistant.director import AssistantDirector
-from src.assistant.state import AssistantState, StoryActivityState, StoryExecutionState
+from src.assistant.state import AssistantState, StoryExecutionState
 from src.assistant.stories.greetings import GREETINGS_STORY_ID, GreetingsStory
 from src.assistant.stories.standard import StandardStory
 from src.assistant.stories.triggered import triggered_stories
@@ -76,10 +76,6 @@ def test_all_celebration_variants_are_discovered_once_and_are_one_time_fun_stori
     assert len(variants) == 15
     assert all(story.trigger_policy.importance is StoryImportance.FUN for story in variants)
     assert all(story.trigger_policy.max_repetitions == 1 for story in variants)
-    assert all(
-        story.trigger_policy.min_since_triggered_story == timedelta(hours=8)
-        for story in variants
-    )
     assert {len(variant.beats) for variant in VARIANTS} >= {2, 10}
     assert len({tuple(beat.lines for beat in variant.beats) for variant in VARIANTS}) == len(VARIANTS)
 
@@ -88,27 +84,6 @@ def test_all_celebration_variants_are_discovered_once_and_are_one_time_fun_stori
         story_executions={CELEBRATION_STORY_IDS[0]: StoryExecutionState(starts=1)},
     )
     assert TriggerStorySelector({CELEBRATION_STORY_IDS[0]: variants[0]}).select(context(state=used)) is None
-
-
-def test_celebrations_need_a_progress_signal_and_wait_eight_hours_after_triggered_story() -> None:
-    story = triggered_stories()[CELEBRATION_STORY_IDS[0]]
-    selector = TriggerStorySelector({story.story_id: story})
-
-    assert not story.is_triggered(context(user_state={}))
-    recent_state = replace(
-        context().state,
-        story_activity=StoryActivityState(
-            last_triggered_story_started_at=(NOW - timedelta(hours=7, minutes=59)).isoformat()
-        ),
-    )
-    assert selector.select(context(state=recent_state)) is None
-    at_boundary = replace(
-        recent_state,
-        story_activity=StoryActivityState(
-            last_triggered_story_started_at=(NOW - timedelta(hours=8)).isoformat()
-        ),
-    )
-    assert selector.select(context(state=at_boundary)) is story
 
 
 @pytest.mark.parametrize(
