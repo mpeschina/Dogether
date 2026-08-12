@@ -187,6 +187,8 @@ def render_assistant_settings(
         "Special runs a selected debug Assistant flow."
     )
 
+    render_assistant_story_player(persistence, current_user, user_id, now=now)
+
     state = AssistantState.from_profile(current_user)
     st.caption("Current assistant state")
     st.json(state.to_dict())
@@ -227,8 +229,6 @@ def render_assistant_settings(
     if st.button("Clear smalltalk", key=f"clear_smalltalk_session_{user_id}"):
         clear_smalltalk_session(st.session_state)
         st.rerun()
-
-    render_assistant_story_player(persistence, current_user, user_id, now=now)
 
 
 def render_assistant_story_player(

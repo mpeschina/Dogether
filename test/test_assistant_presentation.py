@@ -258,6 +258,15 @@ def test_small_assistant_line_is_rendered_at_half_size_and_persists_in_history(m
     assert all("font-size:0.5em" in body for body in rendered)
 
 
+def test_assistant_action_markup_is_italic_in_the_transcript(monkeypatch) -> None:
+    rendered: list[str] = []
+    monkeypatch.setattr(presentation.st, "markdown", lambda body, **_: rendered.append(body))
+
+    presentation.StreamlitAssistantView._render_assistant_message("*an action*")
+
+    assert "<em>an action</em>" in rendered[0]
+
+
 def test_send_control_records_submitted_message_and_uses_turn_placeholder() -> None:
     app_source = """
 import src.assistant.presentation as presentation

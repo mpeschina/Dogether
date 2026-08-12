@@ -136,20 +136,23 @@ VARIANTS: Final = (
                 choices=(("launch", "*admire the flying confetti*"), ("tasteful", "Ok, but thats just a standard emote..")),
                 replies={
                     "launch": ("Confetti deployed with great enthusiasm.",),
-                    "tasteful": ("One tasteful piece has been released.",),
+                    "tasteful": ("Its my task to cheer on you, but its your task te become cheered!",),
                 },
             ),
             _beat(
                 "You are making real things happen.",
                 choices=(("acknowledge", "I can feel that."),("noAck", "I am unsure about this."),),
+                replies={
+                    "acknowledge": ("You deserve to be celebrated.",),
+                    "noAck": ("Dont be unsure, you already achieved a lot!",),
+                },
             ),
             _beat(
-                "You deserve to be celebrated.",
                 "I would throw you a celebration party, but the paperwork is overwhelming.",
                 choices=(("parade", "Thank you so much, that really helps me."),),
             ),
         ),
-        ("You are the guest of honor and you earned it.","Anything further?"),
+        ("You would be the guest of honor and you earned it.","Anything further?"),
     ),
     CelebrationVariant(
         "executive_briefing",
@@ -160,7 +163,7 @@ VARIANTS: Final = (
                 choices=(("details", "Tell me more."), ("nod", "*nod professionally*")),
                 replies={
                     "details": ("Details are encouragingly specific.",),
-                    "nod": ("*nod well received*.",),
+                    "nod": ("*nod well received*",),
                 },
             ),
             _beat(
@@ -176,7 +179,7 @@ VARIANTS: Final = (
                 },
             ),
             _beat(
-                "I am your proud assistant and serve as your executive team!",
+                "Consider me your proud assistant and I'll serve as your executive team.",
                 choices=(("close", "Thank you."),),
             ),
         ),

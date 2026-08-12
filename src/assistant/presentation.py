@@ -417,6 +417,9 @@ class StreamlitAssistantView:
     ) -> None:
         target = st if placeholder is None else placeholder
         safe_message = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escape(message))
+        safe_message = re.sub(
+            r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<em>\1</em>", safe_message
+        )
         formatted_message = safe_message.replace("\n", "<br />")
         target.markdown(
             f"<div class='assistant-message' style='font-size:{font_scale}em'><p>{formatted_message}</p></div>",
