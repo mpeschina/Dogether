@@ -148,18 +148,18 @@ VARIANTS: Final = (
                 choices=(("parade", "Let's authorize the parade."),),
             ),
         ),
-        ("Parade authorized. You remain the guest of honor."),
+        ("Parade authorized. You remain the guest of honor.",),
     ),
     CelebrationVariant(
         "executive_briefing",
         (
             _beat(
-                "Executive summary:",
+                "Here is the Executive summary",
                 "You are doing remarkably well.",
                 choices=(("details", "Tell me more."), ("nod", "*nod professionally*")),
                 replies={
                     "details": ("Details are encouragingly specific.",),
-                    "nod": ("Professional nod received.",),
+                    "nod": ("*nod well received*.",),
                 },
             ),
             _beat(
@@ -167,60 +167,55 @@ VARIANTS: Final = (
                 choices=(("continue", "That feels true."),),
             ),
             _beat(
-                "That is not an accident.",
-                "That is you building trust with yourself.",
+                "That is not an accident. That is you building trust with yourself.",
                 choices=(("record", "I'll remember that."), ("smile", "*let that sink in*")),
                 replies={
-                    "record": ("Recorded under: excellent self-leadership.",),
+                    "record": ("Its good to remember your excellent self-leadership.",),
                     "smile": ("A very appropriate response.",),
                 },
             ),
             _beat(
-                "The executive team is one proud assistant.",
-                choices=(("close", "That's a good summary."),),
+                "I am your proud assistant and serve as your executive team!",
+                choices=(("close", "Thank you."),),
             ),
         ),
-        ("Keep the momentum. It suits you."),
+        ("Keep the momentum. It suits you.", "Anything else?"),
     ),
     CelebrationVariant(
         "goal_spotlight",
         (
             _beat(
                 "Spotlight activated.",
-                "Your goals have noticed.",
-                choices=(("look", "*step into the spotlight*"),),
+                choices=(("look", "*step into the spotlight*"),("look2", "*feel yourself illuminated in the dark*")),
             ),
             _beat(
                 "{goal_status}",
                 choices=(("receive", "I appreciate the update."), ("focus", "I'll give it my focus.")),
                 replies={
-                    "receive": ("Update received with excellent posture.",),
-                    "focus": ("Focus mode looks good on you.",),
+                    "receive": ("Your welcome. You have excellent manners.",),
+                    "focus": ("Perfect. Focus mode looks good on you.",),
                 },
             ),
             _beat(
-                "Goals are not judging you.",
+                "Your goals are not judging you.",
                 "They are rooting for you.",
                 choices=(("believe", "I believe that."),),
             ),
             _beat(
-                "You gave this priority real attention.",
-                choices=(("continue", "I'll keep showing up."),),
+                "Focus your attention on your goals",
+                choices=(("continue", "I keep showing up. I promise!"),),
             ),
             _beat(
-                "That focus is building something meaningful.",
+                "Great.",
+                "I am enthusiastically on board to help you out.",
                 choices=(("thanks", "Thank you."),),
-            ),
-            _beat(
-                "I am enthusiastically on board.",
-                choices=(("wrap", "I feel encouraged."),),
             ),
             _beat(
                 "Spotlight dimming to a flattering glow.",
                 choices=(("finish", "*step out of the spotlight*"),),
             ),
         ),
-        ("The spotlight remains available whenever you need it."),
+        ("My spotlight remains available whenever you need it.", "How can I help you today?", ),
     ),
     CelebrationVariant(
         "tiny_trophy",
@@ -240,7 +235,7 @@ VARIANTS: Final = (
                 choices=(("continue", "I needed to hear that."),),
             ),
         ),
-        ("The trophy will pretend it is not proud of you."),
+        ("The trophy will pretend it is not proud of you.",),
     ),
     CelebrationVariant(
         "mission_control",
@@ -279,7 +274,7 @@ VARIANTS: Final = (
                 choices=(("finish", "*give a little salute*"),),
             ),
         ),
-        ("Trajectory saved: promising."),
+        ("Trajectory saved: promising.",),
     ),
     CelebrationVariant(
         "goal_clinic",
@@ -329,7 +324,7 @@ VARIANTS: Final = (
                 choices=(("leave", "Thank you, doctor."),),
             ),
         ),
-        ("Appointment complete. You are doing better than you think."),
+        ("Appointment complete. You are doing better than you think.",),
     ),
     CelebrationVariant(
         "evidence_locker",
@@ -356,7 +351,7 @@ VARIANTS: Final = (
                 choices=(("verdict", "I'm ready for the verdict."),),
             ),
         ),
-        ("Verdict: keep being exactly this persistent."),
+        ("Verdict: keep being exactly this persistent.",),
     ),
     CelebrationVariant(
         "breakroom_legend",
@@ -409,7 +404,7 @@ VARIANTS: Final = (
                 choices=(("finish", "I feel pretty good about that."),),
             ),
         ),
-        ("Breakroom consensus: you are doing great."),
+        ("Breakroom consensus: you are doing great.",),
     ),
     CelebrationVariant(
         "focus_ping",
@@ -445,7 +440,7 @@ VARIANTS: Final = (
                 choices=(("go", "I'll choose what matters."),),
             ),
         ),
-        ("Ping complete. Your priorities are in capable hands."),
+        ("Ping complete. Your priorities are in capable hands.",),
     ),
     CelebrationVariant(
         "customer_success",
@@ -481,7 +476,7 @@ VARIANTS: Final = (
                 choices=(("end", "Thank you for calling."),),
             ),
         ),
-        ("Call complete. Satisfaction remains high."),
+        ("Call complete. Satisfaction remains high.",),
     ),
     CelebrationVariant(
         "micro_documentary",
@@ -532,7 +527,7 @@ VARIANTS: Final = (
                 choices=(("finish", "That was a good film."),),
             ),
         ),
-        ("A moving picture, featuring genuinely moving forward."),
+        ("A moving picture, featuring genuinely moving forward.",),
     ),
     CelebrationVariant(
         "helpdesk_ticket",
@@ -555,7 +550,7 @@ VARIANTS: Final = (
                 choices=(("apply", "I'll try that."),),
             ),
         ),
-        ("Ticket closed. Your progress remains open for business."),
+        ("Ticket closed. Your progress remains open for business.",),
     ),
     CelebrationVariant(
         "award_ceremony",
@@ -597,7 +592,7 @@ VARIANTS: Final = (
                 choices=(("applause", "*take in the applause*"),),
             ),
         ),
-        ("Ceremony adjourned. Your future is applauding too."),
+        ("Ceremony adjourned. Your future is applauding too.",),
     ),
 )
 
