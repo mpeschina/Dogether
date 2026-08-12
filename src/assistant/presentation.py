@@ -641,14 +641,23 @@ class StreamlitAssistantView:
               };
               const scrollToBottom = () => {
                 const container = parentDocument.querySelector(
-                  '[data-testid="stAppViewContainer"]'
+                  '[data-testid="stAppScrollToBottomContainer"], [data-testid="stMain"]'
                 );
                 if (container) {
-                  container.scrollTo({ top: container.scrollHeight });
+                  container.scrollTo({
+                    top: container.scrollHeight,
+                    behavior: 'auto'
+                  });
+                  return;
                 }
-                parentWindow.scrollTo({
-                  top: parentDocument.body.scrollHeight
-                });
+                const fallback = parentDocument.scrollingElement;
+                if (fallback) {
+                  fallback.scrollTop = fallback.scrollHeight;
+                }
+              };
+              const syncLayout = () => {
+                positionControls();
+                scrollToBottom();
               };
               if (parentWindow.__dogetherAssistantPositionControls) {
                 parentWindow.removeEventListener(
@@ -658,6 +667,14 @@ class StreamlitAssistantView:
               }
               parentWindow.__dogetherAssistantPositionControls = positionControls;
               parentWindow.addEventListener('resize', positionControls);
+              if (parentWindow.__dogetherAssistantVisualViewportSync) {
+                parentWindow.visualViewport?.removeEventListener(
+                  'resize',
+                  parentWindow.__dogetherAssistantVisualViewportSync
+                );
+              }
+              parentWindow.__dogetherAssistantVisualViewportSync = syncLayout;
+              parentWindow.visualViewport?.addEventListener('resize', syncLayout);
               if (parentWindow.__dogetherAssistantControlsResizeObserver) {
                 parentWindow.__dogetherAssistantControlsResizeObserver.disconnect();
               }
@@ -668,7 +685,7 @@ class StreamlitAssistantView:
                 '[data-testid="stAppViewContainer"]'
               );
               if (transcript && parentWindow.ResizeObserver) {
-                const observer = new parentWindow.ResizeObserver(positionControls);
+                const observer = new parentWindow.ResizeObserver(syncLayout);
                 observer.observe(transcript);
                 if (appView) {
                   observer.observe(appView);
@@ -676,8 +693,8 @@ class StreamlitAssistantView:
                 parentWindow.__dogetherAssistantControlsResizeObserver = observer;
               }
               requestAnimationFrame(() => setTimeout(() => {
-                positionControls();
-                scrollToBottom();
+                syncLayout();
+                requestAnimationFrame(scrollToBottom);
               }, 50));
             </script>
             """,

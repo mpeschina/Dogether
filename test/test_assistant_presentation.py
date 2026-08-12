@@ -115,7 +115,7 @@ view.finish()
     assert len(app.chat_input) == expected_input_count
 
 
-def test_controls_align_with_transcript_and_clear_disabled_chat(monkeypatch) -> None:
+def test_controls_align_and_chat_scrolls_with_streamlits_main_scroller(monkeypatch) -> None:
     rendered_iframes: list[str] = []
     monkeypatch.setattr(
         presentation.st,
@@ -134,8 +134,11 @@ def test_controls_align_with_transcript_and_clear_disabled_chat(monkeypatch) -> 
     assert "choiceBar.style.width" in script
     assert "choiceBar.style.transform" in script
     assert "addEventListener('resize', positionControls)" in script
-    assert "ResizeObserver(positionControls)" in script
+    assert 'data-testid="stAppScrollToBottomContainer"' in script
+    assert "container.scrollTo" in script
+    assert "ResizeObserver(syncLayout)" in script
     assert "observer.observe(appView)" in script
+    assert "visualViewport?.addEventListener('resize', syncLayout)" in script
 
 
 def test_assistant_message_renderer_emits_a_break_for_each_line(monkeypatch) -> None:
