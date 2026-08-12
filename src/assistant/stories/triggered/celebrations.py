@@ -170,47 +170,43 @@ VARIANTS: Final = (
                 choices=(("close", "Thank you."),),
             ),
         ),
-        ("Keep the momentum. It suits you.",),
+        ("Keep the momentum. It suits you.", "Anything else?"),
     ),
     CelebrationVariant(
         "goal_spotlight",
         (
             _beat(
                 "Spotlight activated.",
-                "Your goals have noticed.",
-                choices=(("look", "*step into the spotlight*"),),
+                choices=(("look", "*step into the spotlight*"),("look2", "*feel yourself illuminated in the dark*")),
             ),
             _beat(
                 "{goal_status}",
                 choices=(("receive", "I appreciate the update."), ("focus", "I'll give it my focus.")),
                 replies={
-                    "receive": ("Update received with excellent posture.",),
-                    "focus": ("Focus mode looks good on you.",),
+                    "receive": ("Your welcome. You have excellent manners.",),
+                    "focus": ("Perfect. Focus mode looks good on you.",),
                 },
             ),
             _beat(
-                "Goals are not judging you.",
+                "Your goals are not judging you.",
                 "They are rooting for you.",
                 choices=(("believe", "I believe that."),),
             ),
             _beat(
-                "You gave this priority real attention.",
-                choices=(("continue", "I'll keep showing up."),),
+                "Focus your attention on your goals",
+                choices=(("continue", "I keep showing up. I promise!"),),
             ),
             _beat(
-                "That focus is building something meaningful.",
+                "Great.",
+                "I am enthusiastically on board to help you out.",
                 choices=(("thanks", "Thank you."),),
-            ),
-            _beat(
-                "I am enthusiastically on board.",
-                choices=(("wrap", "I feel encouraged."),),
             ),
             _beat(
                 "Spotlight dimming to a flattering glow.",
                 choices=(("finish", "*step out of the spotlight*"),),
             ),
         ),
-        ("The spotlight remains available whenever you need it.",),
+        ("My spotlight remains available whenever you need it.", "How can I help you today?", ),
     ),
     CelebrationVariant(
         "tiny_trophy",
