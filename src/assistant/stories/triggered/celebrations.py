@@ -327,31 +327,33 @@ VARIANTS: Final = (
         ("Appointment complete. You are doing better than you think.", "Anything else?"),
     ),
     CelebrationVariant(
-        "evidence_locker",
+        "personal_encouragement",
         (
             _beat(
-                "I opened the Evidence Locker.",
-                "It contains your follow-through.",
-                choices=(("inspect", "Let's see the evidence."),),
+                "I wanted to tell you something.",
+                "I’m genuinely glad you came back.",
+                choices=(("listen", "I'm listening."),),
             ),
             _beat(
-                "Exhibit A: you came back.",
-                choices=(("objection", "No objection here."), ("appeal", "*raise one skeptical eyebrow*")),
+                "Returning to your goals says a lot about you.",
+                choices=(("really", "You really think so?"), ("accept", "Thank you")),
                 replies={
-                    "objection": ("The record appreciates your honesty.",),
-                    "appeal": ("Appeal denied. Evidence is charmingly conclusive.",),
+                    "really": ("I do. Persistence deserves credit.",),
+                    "accept": ("Good. I meant every word that I wrote.",),
                 },
             ),
             _beat(
-                "Exhibit B: your growing momentum.",
-                choices=(("rest", "I rest my case."),),
+                "You’re making progress, even when it doesn’t feel dramatic.",
+                choices=(("remember", "I'll remember that."),),
             ),
             _beat(
-                "The verdict is encouraging.",
-                choices=(("verdict", "I'm ready for the verdict."),),
+                "I believe in where you’re going.",
+                "You don’t have to rush.",
+                "I’ll be here as you keep moving forward.",
+                choices=(("continue", "I'll keep going."),),
             ),
         ),
-        ("Verdict: keep being exactly this persistent.",),
+        ("I’m proud of your persistence.", "Anything else I can help you with?"),
     ),
     CelebrationVariant(
         "breakroom_legend",
