@@ -95,9 +95,9 @@ VARIANTS: Final = (
         "spreadsheet_audit",
         (
             _beat(
-                "I have a corporate morale report regarding your progress:",
-                "Its glowing!",
-                "The charts are doing jazz hands.",
+                "Hey, we just got a brand new tool at our hands",
+                "its a Corporate Morale Report about your progress.", 
+                "And we are doing so good.", 
                 choices=(("inspect", "Show it to me, please."),),
             ),
             _beat(
@@ -112,10 +112,10 @@ VARIANTS: Final = (
             _beat(
                 "Ah, there is a third metric.",
                 "It is called 'momentum'.",
-                choices=(("question", "And how is my progress in the this metric?"),("deny", "Okay, got it."),),
+                choices=(("question", "And how is my status in the this metric?"),("deny", "Okay, doesnt sound too interesting for me."),),
                 replies={
                     "question": ("Awesome, you have the biggest momentum I have ever seen!",),
-                    "deny": ("Ok, anyhow. Lets move to the end.",),
+                    "deny": ("Dont be shy", "You have the biggest momentum I have ever seen!", ),
                 },
             ),
             _beat(
@@ -124,7 +124,8 @@ VARIANTS: Final = (
                 choices=(("adopt", "I will be confident in myself."),),
             ),
             _beat(
-                "Thank you. I have highlighted that in an optimistic yellow in the Excel sheet.",
+                "Thank you.",
+                "I have highlighted that in an optimistic yellow in the corresponding data sheet.",
                 choices=(("file", "*smile*"),),
             ),
         ),
@@ -163,7 +164,7 @@ VARIANTS: Final = (
         "executive_briefing",
         (
             _beat(
-                "Here is the Executive summary",
+                "Here is the Executive summary:",
                 "You are doing remarkably well.",
                 choices=(("details", "Tell me more."), ("nod", "*nod professionally*")),
                 replies={
@@ -176,7 +177,7 @@ VARIANTS: Final = (
                 choices=(("continue", "That feels true."),),
             ),
             _beat(
-                "That is not an accident. That is you building trust with yourself.",
+                "That is not an accident. That is You building trust with yourself.",
                 choices=(("record", "I'll remember that."), ("smile", "*let that sink in*")),
                 replies={
                     "record": ("Its good to remember your excellent self-leadership.",),
@@ -184,13 +185,13 @@ VARIANTS: Final = (
                 },
             ),
             _beat(
-                "Consider me your proud assistant and I'll serve as your executive team.",
+                "Consider me your proud assistant and also your entire executive team.",
                 choices=(("close", "Thank you."),),
             ),
         ),
         ("Keep the momentum. It suits you.", "Anything else?"),
     ),
-    CelebrationVariant(########################## play this one here!
+    CelebrationVariant(
         "goal_spotlight",
         (
             _beat(
@@ -207,7 +208,7 @@ VARIANTS: Final = (
             ),
             _beat(
                 "Your goals are not judging you.",
-                "They are rooting for you.",
+                "They want to see you succeed.",
                 choices=(("believe", "I believe that."),),
             ),
             _beat(
@@ -228,20 +229,20 @@ VARIANTS: Final = (
         (
             _beat(
                 "A tiny trophy arrived.",
-                "It is heavy with admiration.",
+                "But it is heavy with admiration.",
                 choices=(("display", "*place it somewhere prominent*"), ("hold", "*hold it carefully*")),
                 replies={
                     "display": ("It has been placed somewhere prestigious.",),
-                    "hold": ("Good call. It is emotionally top-heavy.",),
+                    "hold": ("Good call. It is emotionally heavy.",),
                 },
             ),
             _beat(
                 "You showed up for yourself.",
-                "That is trophy-worthy work.",
-                choices=(("continue", "I needed to hear that."),),
+                "That is worth a trophy.",
+                choices=(("continue", "Thank you"),),
             ),
         ),
-        ("The trophy will pretend it is not proud of you.",),
+        ("The trophy is yours. I’m very proud to see you earn it.", "How can I serve you today?",),
     ),
     CelebrationVariant(
         "mission_control",
@@ -252,11 +253,11 @@ VARIANTS: Final = (
                 choices=(("copy", "Copy that."), ("radar", "*check the radar*")),
                 replies={
                     "copy": ("Copy received.",),
-                    "radar": ("Radar confirms: forward motion.",),
+                    "radar": ("Radar confirms: a BIG forward motion.",),
                 },
             ),
             _beat(
-                "No perfect flight plan exists.",
+                "Mission Control confirms: no perfect flight plan has ever survived the calendar.",
                 choices=(("good", "That's reassuring."),),
             ),
             _beat(
@@ -269,18 +270,19 @@ VARIANTS: Final = (
             ),
             _beat(
                 "You are absolutely on your way.",
-                choices=(("launch", "I'm ready for the next step."),),
+                "Mission Control is proud of you and attempting to remain professional.", 
+                choices=(("launch", "Thank you, Mission Control."),),
             ),
             _beat(
-                "Mission Control is quietly thrilled.",
-                choices=(("signoff", "Thanks, Mission Control."),),
-            ),
-            _beat(
-                "Over and very much upward.",
-                choices=(("finish", "*give a little salute*"),),
+                "That concludes today’s progress briefing.",
+                "Upward remains the preferred direction.", 
+                choices=(
+                    ("finish", "*give a little salute*"),
+                    ("notHappy", "I dont have time for this role play."),
+                ),
             ),
         ),
-        ("Trajectory saved: promising.",),
+        ("How can I help you today?",),
     ),
     CelebrationVariant(
         "goal_clinic",
@@ -301,36 +303,28 @@ VARIANTS: Final = (
             ),
             _beat(
                 "Some goals are sprinting.",
-                "Some need a gentler nudge.",
-                choices=(("normal", "That sounds human."),),
-            ),
-            _beat(
-                "Neither one changes your worth.",
-                choices=(("hear", "I hear you."),),
-            ),
-            _beat(
-                "But caring enough to return?",
-                "That is excellent medicine.",
-                choices=(("prescription", "I'll take that advice."),),
-            ),
-            _beat(
-                "Prescription: one manageable next step.",
-                choices=(("accept", "That feels manageable."), ("later", "I'll keep that in mind.")),
+                "Some need a gentle push.",
+                choices=(
+                    ("normal", "Ok, I am pushing"),
+                    ("question", "They need what?"),
+                ),
                 replies={
-                    "accept": ("Prescription accepted.",),
-                    "later": ("Kept handy. No expiration date.",),
+                    "normal": ("Great!",),
+                    "question": ("Some goals need your focus.", "You have plenty of potential.", "Let’s put it to work."),
                 },
             ),
             _beat(
-                "Side effect: deserved confidence.",
-                choices=(("noted", "A welcome side effect."),),
+                "A good day or a difficult day does not define your worth.",
+                "Returning to your goal shows that you still care.",
+                "That is progress.",
+                choices=(("hear", "I'll keep trying."),),
             ),
             _beat(
-                "Your care plan remains kind.",
-                choices=(("leave", "Thank you, doctor."),),
+                "Each small step helps building your confidence.",
+                choices=(("noted", "Good to know."),),
             ),
         ),
-        ("Appointment complete. You are doing better than you think.",),
+        ("Appointment complete. You are doing better than you think.", "Anything else?"),
     ),
     CelebrationVariant(
         "evidence_locker",
