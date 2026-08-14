@@ -1,6 +1,12 @@
 from src.db.json_persistence import JsonPersistence
 from src.friends.alerts import pending_friend_request_alert_items
-from src.pages.friends_page import _dismiss_all_friend_suggestion_candidates, _friend_name_with_email, _ranked_friends
+from src.pages.friends_page import (
+    _dismiss_all_friend_suggestion_candidates,
+    _has_stars,
+    _friend_name_with_email,
+    _ranked_friends,
+    _star_count,
+)
 from src.friends.suggestions import (
     friend_suggestion_candidates,
     load_friend_suggestion_data,
@@ -40,18 +46,32 @@ class CountingSuggestionPersistence(JsonPersistence):
         raise AssertionError("Suggestion calculations must use the preloaded snapshot.")
 
 
-def test_ranked_friends_order_by_completed_night_events_then_profile_identity() -> None:
+def test_star_count_normalizes_missing_and_invalid_assistant_state() -> None:
+    assert _star_count({"user_id": "missing"}) == 0
+    assert _star_count({"user_id": "invalid", "assistant_state": {"schema_version": 5, "stars": "invalid"}}) == 0
+    assert _star_count({"user_id": "earned", "assistant_state": {"schema_version": 5, "stars": 4}}) == 4
+
+
+def test_ranked_friends_order_by_stars_then_profile_identity() -> None:
     friends = [
-        {"user_id": "zara", "name": "Zara", "email": "zara@example.com", "completed_night_events": 1},
-        {"user_id": "bob", "name": "Bob", "email": "bob@example.com", "completed_night_events": 3},
-        {"user_id": "alex", "name": "Alex", "email": "alex@example.com", "completed_night_events": 1},
+        {"user_id": "zara", "name": "Zara", "email": "zara@example.com", "assistant_state": {"schema_version": 5, "stars": 1}},
+        {"user_id": "bob", "name": "Bob", "email": "bob@example.com", "assistant_state": {"schema_version": 5, "stars": 3}},
+        {"user_id": "alex", "name": "Alex", "email": "alex@example.com", "assistant_state": {"schema_version": 5, "stars": 1}},
         {"user_id": "unknown", "name": "Unknown", "email": "unknown@example.com"},
     ]
 
     ranked = _ranked_friends(friends)
 
     assert [friend["user_id"] for friend in ranked] == ["bob", "alex", "zara", "unknown"]
-    assert ranked[-1].get("completed_night_events", 0) == 0
+    assert _star_count(ranked[-1]) == 0
+
+
+def test_friend_star_display_is_gated_by_current_user_progress() -> None:
+    no_stars = {"user_id": "new-user", "assistant_state": {"schema_version": 5, "stars": 0}}
+    earned_stars = {"user_id": "earned-user", "assistant_state": {"schema_version": 5, "stars": 1}}
+
+    assert not _has_stars(no_stars)
+    assert _has_stars(earned_stars)
 
 
 def test_manual_friend_suggestion_options_include_unconnected_friends(tmp_path) -> None:

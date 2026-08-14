@@ -6,6 +6,7 @@ from typing import Any
 
 import streamlit as st
 
+from src.assistant.state import AssistantState
 from src.db.persistence import Persistence
 from src.friends.suggestions import (
     friend_suggestion_candidates,
@@ -47,18 +48,19 @@ def _friend_display_name(friend: dict[str, Any]) -> str:
     return str(friend.get("name") or friend.get("email") or friend["user_id"])
 
 
-def _completed_night_events(friend: dict[str, Any]) -> int:
-    try:
-        return max(0, int(friend.get("completed_night_events", 0)))
-    except (TypeError, ValueError):
-        return 0
+def _star_count(profile: dict[str, Any]) -> int:
+    return AssistantState.from_profile(profile).stars
+
+
+def _has_stars(profile: dict[str, Any]) -> bool:
+    return _star_count(profile) > 0
 
 
 def _ranked_friends(friends: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(
         friends,
         key=lambda friend: (
-            -_completed_night_events(friend),
+            -_star_count(friend),
             _friend_display_name(friend).casefold(),
             str(friend.get("email") or "").casefold(),
             str(friend.get("user_id") or ""),
@@ -207,7 +209,7 @@ def render_friends(
     show_invite_form = st.session_state.get("show_invite_friend_form", False)
     if show_invite_form:
         with st.form("add_friend"):
-            email = st.text_input("Add friend by email")
+            email = st.text_input("Add friend by email (they must already have an account)")
             submitted = st.form_submit_button("Send invite")
             if submitted:
                 try:
@@ -433,11 +435,12 @@ def render_friends(
     # Expandable Friendlist Section
     #
     friends = _ranked_friends(suggestion_data.friends)
+    show_friend_stars = _has_stars(current_user)
     pending_removals = set(st.session_state.get("friends_pending_removals", []))
     pending_removals &= {friend["user_id"] for friend in friends}
     st.session_state["friends_pending_removals"] = sorted(pending_removals)
 
-    with st.expander("Current friends", expanded=False):
+    with st.expander("Current friends", expanded=True):
         if not friends:
             st.info("No friends yet.")
         for friend_index, friend in enumerate(friends):
@@ -447,11 +450,10 @@ def render_friends(
             remove_type = "primary" if confirm_remove else "secondary"
 
             row = st.container(horizontal=True)
+            if show_friend_stars:
+                row.write(f"⭐ {_star_count(friend)}")
             row.write(friend.get("name", friend["email"]))
             row.write(friend.get("email", ""))
-            completed_night_events = _completed_night_events(friend)
-            if completed_night_events > 0:
-                row.write(f"🌙 {completed_night_events}")
             if row.button(remove_label, key=f"remove_friend_{friend_id}", type=remove_type):
                 if confirm_remove:
                     persistence.remove_friend(user_id, friend_id, now=now)
