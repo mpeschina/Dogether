@@ -23,6 +23,11 @@ from src.assistant.triggers import (
 CELEBRATION_STORY_PREFIX: Final = "celebration"
 ANY_TRIGGERED_STORY_SPACING: Final = timedelta(hours=28)
 CELEBRATION_WAIT: Final = timedelta(days=12)
+DEFER_CHOICE_ID: Final = "not_now"
+DEFER_CHOICE: Final = (
+    DEFER_CHOICE_ID,
+    "Sorry, I dont have time for this right now",
+)
 
 
 @dataclass(frozen=True)
@@ -642,6 +647,8 @@ class _CelebrationStory(TriggeredAssistantStory):
         if index is None:
             return self._beat(context, 0)
         beat = self.variant.beats[index]
+        if index == 0 and self._selected_defer_choice(selection, scene_id):
+            return self._defer(context)
         selected = self._selected_choice(selection, scene_id, beat)
         if selected is None:
             return self._beat(context, index)
@@ -656,11 +663,12 @@ class _CelebrationStory(TriggeredAssistantStory):
         reply: tuple[str, ...] = (),
     ) -> AssistantTurn:
         beat = self.variant.beats[index]
+        choices = beat.choices + (DEFER_CHOICE,) if index == 0 else beat.choices
         return AssistantTurn(
             story_id=self.story_id,
             scene_id=self._scene(index),
             lines=_lines(*reply, *beat.lines, context=context),
-            choices=tuple(_player_choice(choice_id, label) for choice_id, label in beat.choices),
+            choices=tuple(_player_choice(choice_id, label) for choice_id, label in choices),
             state_story=self.story_id,
             state_scene=self._scene(index),
             state_status="active",
@@ -682,6 +690,21 @@ class _CelebrationStory(TriggeredAssistantStory):
             execution_outcome="completed",
         )
 
+    def _defer(self, context: AssistantContext) -> AssistantTurn:
+        return AssistantTurn(
+            story_id=self.story_id,
+            scene_id=self._complete_scene,
+            lines=_lines("Ok, no worries.", "How can I support you?", context=context),
+            completed=True,
+            continue_flow=True,
+            skip_greeting=True,
+            open_standard_menu=True,
+            state_story=STANDARD_STORY_ID,
+            state_scene=READY_NODE,
+            state_status="completed",
+            execution_outcome="dismissed",
+        )
+
     def _scene_index(self, scene_id: str | None) -> int | None:
         if scene_id is None:
             return 0
@@ -700,6 +723,16 @@ class _CelebrationStory(TriggeredAssistantStory):
             return None
         choice_ids = {choice_id for choice_id, _ in beat.choices}
         return selection.choice_id if selection.choice_id in choice_ids else None
+
+    @staticmethod
+    def _selected_defer_choice(
+        selection: AssistantSelection | None, scene_id: str | None
+    ) -> bool:
+        return (
+            selection is not None
+            and selection.scene_id == scene_id
+            and selection.choice_id == DEFER_CHOICE_ID
+        )
 
 
 def _lines(*messages: str, context: AssistantContext) -> tuple[AssistantLine, ...]:

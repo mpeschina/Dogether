@@ -14,6 +14,7 @@ from src.assistant.stories.triggered import triggered_stories
 from src.assistant.stories.triggered.celebrations import (
     CELEBRATION_WAIT,
     CELEBRATION_STORY_IDS,
+    DEFER_CHOICE_ID,
     VARIANTS,
 )
 from src.assistant.triggers import StoryImportance, TriggerStorySelector
@@ -119,15 +120,37 @@ def test_every_choice_rejoins_the_same_linear_celebration_flow(story_id: str) ->
 
     while not turn.completed:
         assert 1 <= len(turn.choices) <= 3
+        story_choices = [
+            choice for choice in turn.choices if choice.id != DEFER_CHOICE_ID
+        ]
         alternatives = [
             story.advance(current, turn.scene_id, selection(turn, choice.id))
-            for choice in turn.choices
+            for choice in story_choices
         ]
         assert len({next_turn.scene_id for next_turn in alternatives}) == 1
         assert len({next_turn.completed for next_turn in alternatives}) == 1
         turn = alternatives[0]
 
     assert turn.execution_outcome == "completed"
+
+
+@pytest.mark.parametrize("story_id", CELEBRATION_STORY_IDS)
+def test_every_celebration_can_be_deferred_from_its_opening(story_id: str) -> None:
+    story = triggered_stories()[story_id]
+    opening = story.advance(context(), None, None)
+
+    defer_choice = next(choice for choice in opening.choices if choice.id == DEFER_CHOICE_ID)
+    deferred = story.advance(context(), opening.scene_id, selection(opening, defer_choice.id))
+
+    assert deferred.completed
+    assert not deferred.choices
+    assert deferred.continue_flow
+    assert deferred.skip_greeting
+    assert deferred.open_standard_menu
+    assert deferred.state_story == "standard"
+    assert deferred.state_scene == "ready"
+    assert deferred.state_status == "completed"
+    assert deferred.execution_outcome == "dismissed"
 
 
 @pytest.mark.parametrize("variant", VARIANTS, ids=lambda variant: variant.identifier)
@@ -186,6 +209,8 @@ def test_player_options_are_spoken_lines_or_italic_actions() -> None:
             scene_index = variant.beats.index(beat)
             turn = story.advance(context(), f"{story.story_id}.beat_{scene_index}", None)
             for choice in turn.choices:
+                if choice.id == DEFER_CHOICE_ID:
+                    continue
                 raw_label = raw_choices[choice.id]
                 if raw_label.startswith("*"):
                     assert choice.style == "italic"
@@ -220,3 +245,33 @@ def test_celebration_completion_opens_standard_menu_without_a_greeting() -> None
 
     assert view.turns[-1].story_id == "standard"
     assert all(turn.story_id != GREETINGS_STORY_ID for turn in view.turns)
+
+
+def test_deferring_a_celebration_opens_standard_menu_without_completing_it() -> None:
+    celebration = triggered_stories()[CELEBRATION_STORY_IDS[0]]
+    director = AssistantDirector(
+        RecordingPersistence(),
+        {
+            celebration.story_id: celebration,
+            "standard": StandardStory(),
+            GREETINGS_STORY_ID: GreetingsStory(),
+        },
+    )
+    current = context()
+    opening_view = RecordingView()
+    started_state = director.render(current, opening_view)
+    opening = opening_view.turns[-1]
+    defer_choice = next(choice for choice in opening.choices if choice.id == DEFER_CHOICE_ID)
+
+    deferred_view = RecordingView(selection(opening, defer_choice.id))
+    state = director.render(replace(current, state=started_state), deferred_view)
+
+    execution = state.story_executions[celebration.story_id]
+    assert deferred_view.turns[-1].story_id == "standard"
+    assert all(turn.story_id != GREETINGS_STORY_ID for turn in deferred_view.turns)
+    assert state.story == "standard"
+    assert state.scene == "ready"
+    assert state.status == "completed"
+    assert execution.starts == 1
+    assert execution.completions == 0
+    assert execution.last_dismissed_at is not None
