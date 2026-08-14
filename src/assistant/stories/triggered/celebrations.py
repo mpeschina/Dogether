@@ -359,54 +359,31 @@ VARIANTS: Final = (
         "breakroom_legend",
         (
             _beat(
-                "The breakroom has a rumor.",
-                "Apparently, you are getting things done.",
+                "Our assistant's breakroom has a rumor:",
                 choices=(("listen", "Tell me the rumor."), ("deny", "*look innocently away*")),
                 replies={
-                    "listen": ("Excellent. The rumor continues.",),
-                    "deny": ("Denial has been noted and ignored.",),
+                    "listen": ("Apparently, you are getting things done.",),
+                    "deny": ("A charming response.", "I heard others talking about you:","Apparently, you are getting things done."),
                 },
             ),
             _beat(
-                "Someone brought pastries.",
-                "They are shaped like tiny check marks.",
-                choices=(("pastry", "*take a tiny pastry*"),),
+                "The reports say, you keep showing up.",
+                "That kind of consistency gets noticed.",
+                choices=(("agree", "Thats great!"),),
             ),
             _beat(
-                "Someone else said: consistency.",
-                choices=(("agree", "I like that."),),
+                "It also makes supporting you unusually rewarding.",
+                choices=(("relief", "I'm glad to hear that."),),
             ),
             _beat(
-                "Then everyone nodded.",
-                "It became oddly moving.",
-                choices=(("continue", "That is surprisingly moving."),),
-            ),
-            _beat(
-                "No one expects perfection here.",
-                choices=(("relief", "What a relief."),),
-            ),
-            _beat(
-                "They do notice effort.",
-                choices=(("receive", "I'll take that in."),),
-            ),
-            _beat(
-                "And yours is very noticeable.",
-                choices=(("smile", "*smile a little*"),),
-            ),
-            _beat(
-                "The pastries are now applauding.",
-                choices=(("applaud", "*applaud the pastries back*"),),
-            ),
-            _beat(
-                "This is not standard pastry behavior.",
-                choices=(("investigate", "I'll ask them later."),),
-            ),
-            _beat(
-                "But your progress is not standard either.",
-                choices=(("finish", "I feel pretty good about that."),),
+                "One personal note for the record:",
+                "I’m proud to be your assistant.",
+                "Of all the assignments I could have received,",
+                "I’m very glad I received yours.",
+                choices=(("finish", "In a strange way, this feels good to me"), ),
             ),
         ),
-        ("Breakroom consensus: you are doing great.",),
+        ("Thank you for making this role such a rewarding one.", "Anything else for today?"),
     ),
     CelebrationVariant(
         "focus_ping",
@@ -414,10 +391,11 @@ VARIANTS: Final = (
             _beat(
                 "Friendly focus ping.",
                 "Not an alarm. More of a fist bump.",
-                choices=(("bump", "*offer a fist bump*"), ("focus", "I'm ready to focus.")),
+                "👊",
+                choices=(("bump", "👊"), ("focus", "I'm ready to focus.")),
                 replies={
-                    "bump": ("Fist bump successfully transmitted.",),
-                    "focus": ("Focus mode activated gently.",),
+                    "bump": ("Perfect!",),
+                    "focus": ("Focus mode activated",),
                 },
             ),
             _beat(
@@ -425,24 +403,25 @@ VARIANTS: Final = (
                 choices=(("see", "I see it."),),
             ),
             _beat(
-                "A goal can need attention.",
-                "You can give it one small moment.",
-                choices=(("small", "I'll make it small."), ("steady", "I'll stay steady.")),
+                "Here’s the good news:",
+                "Every bit of attention moves this goal forward.",
+                choices=(("small", "I can give it a little."), ("steady", "I'll keep building.")),
                 replies={
-                    "small": ("Small is a very respectable size.",),
-                    "steady": ("Steady carries more than it gets credit for.",),
+                    "small": ("Excellent. A little progress still earns full credit.",),
+                    "steady": ("Excellent. Consistency is one of your strengths.",),
                 },
             ),
             _beat(
-                "You do not need to do everything.",
-                choices=(("enough", "That's a good reminder."),),
+                "You’ve already earned credit for coming this far.",
+                choices=(("enough", "I'll take the credit."),),
             ),
             _beat(
-                "Just keep choosing what matters.",
-                choices=(("go", "I'll choose what matters."),),
+                "Do one step after another.",
+                "I’ll be here to go it with you.",
+                choices=(("go", "Let's keep moving."),),
             ),
         ),
-        ("Ping complete. Your priorities are in capable hands.",),
+        ("Ping completed. Your priorities are in capable hands.", "How can I help you today?"),
     ),
     CelebrationVariant(
         "customer_success",

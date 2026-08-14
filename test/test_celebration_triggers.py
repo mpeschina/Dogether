@@ -77,7 +77,7 @@ def test_all_celebration_variants_are_discovered_once_and_are_one_time_fun_stori
     assert len(variants) == 15
     assert all(story.trigger_policy.importance is StoryImportance.FUN for story in variants)
     assert all(story.trigger_policy.max_repetitions == 1 for story in variants)
-    assert {len(variant.beats) for variant in VARIANTS} >= {2, 10}
+    assert all(variant.beats for variant in VARIANTS)
     assert len({tuple(beat.lines for beat in variant.beats) for variant in VARIANTS}) == len(VARIANTS)
 
     used = replace(
