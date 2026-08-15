@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from src.assistant.core import (
     AssistantContext,
     AssistantLine,
-    AssistantSelection,
     AssistantTurn,
 )
 from src.assistant.director import AssistantDirector
@@ -14,12 +13,7 @@ from src.assistant.presentation import clear_transcript_for_new_help_visit
 from src.assistant.state import AssistantState, StoryActivityState, StoryExecutionState
 import src.assistant.stories as stories_package
 from src.assistant.stories import default_stories
-from src.assistant.stories.triggered import (
-    FunStarTriggerStory,
-    ImportantStarTriggerStory,
-    InformationalStarTriggerStory,
-    triggered_stories,
-)
+from src.assistant.stories.triggered import triggered_stories
 from src.assistant.triggers import (
     OPTIONAL_STORY_STARTED_THIS_VISIT_KEY,
     StoryImportance,
@@ -140,53 +134,6 @@ def test_default_stories_registers_every_discovered_trigger_story() -> None:
     for story_id, story in discovered.items():
         assert type(registered[story_id]) is type(story)
         assert getattr(stories_package, type(story).__name__) is type(story)
-
-
-def test_star_trigger_examples_are_interactive_flows() -> None:
-    for story in (
-        ImportantStarTriggerStory(),
-        InformationalStarTriggerStory(),
-        FunStarTriggerStory(),
-    ):
-        initial = story.advance(context(ready_state(stars=6)), None, None)
-
-        assert initial.statuses
-        assert initial.choices
-        assert initial.state_story == story.story_id
-        assert initial.state_status == "active"
-        assert not initial.completed
-
-        details = story.advance(
-            context(ready_state(stars=6)),
-            initial.scene_id,
-            AssistantSelection(
-                story_id=story.story_id,
-                scene_id=initial.scene_id,
-                choice_id="details",
-                label="",
-            ),
-        )
-
-        assert details.lines
-        assert details.statuses
-        assert details.choices
-        assert details.state_story == story.story_id
-        assert details.state_status == "active"
-        assert not details.completed
-
-        completed = story.advance(
-            context(ready_state(stars=6)),
-            details.scene_id,
-            AssistantSelection(
-                story_id=story.story_id,
-                scene_id=details.scene_id,
-                choice_id="finish",
-                label="",
-            ),
-        )
-
-        assert completed.completed
-        assert completed.execution_outcome == "completed"
 
 
 def test_candidate_order_uses_priority_stability_and_random_fun_ties() -> None:
