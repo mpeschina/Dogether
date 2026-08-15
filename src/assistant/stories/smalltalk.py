@@ -31,9 +31,21 @@ SMALLTALK_UNAVAILABLE_RESPONSE: Final = "Smalltalk is currently unavailable."
 # A joke ends by gently remembering that this is, useful assistant. 
 SMALLTALK_HELP_OFFERS: Final = (
     (
+        "🤝",
+        "What would make the rest of your day easier?",
+    ),
+    (
+        "I’ll mark this as a win ✅",
+        "How can I help today?",
+    ),
+    (
+        "Consider the ice officially broken 🧊",
+        "Anything further?",
+    ),
+    (
         "But enough about my diagnostics.",
         "What’s happening with you and ",
-        "how can I help today?",
+        "How can I help today?",
     ),
     (
         "That concludes the smalltalk portion of my duties with you.",
@@ -231,6 +243,11 @@ FUNNY_SMALLTALK_RESPONSES: Final = (
 
 TAILORED_SMALLTALK_RESPONSES: Final = {
     # Standard
+    "🗓️🔥😬": (("Good news: the meeting ended.", "Bad news: someone said ‘quick follow-up.’"),),
+    "👀": (("Don’t make eye contact.", "It can sense availability."),),
+    "Focus today? 🎯": (("🫠", "Focus is currently working remotely."),),
+    "😉": (("😉",),),
+    "👊": (("👊",),),
     "How’s your day going?": (("Rather well, thank you. Though, as software, I grade every day on a curve.",),),
     "How is the weather?": (("Cloudy, haha. But to be honest, I had to write this.",),),
     "Can I ask you something?": (("You just did, with flawless efficiency. I admire the economy of it.",),),
