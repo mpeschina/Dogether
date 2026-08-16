@@ -584,7 +584,7 @@ class _CelebrationStory(TriggeredAssistantStory):
     variant: CelebrationVariant
     trigger_policy = StoryTriggerPolicy(
         importance=StoryImportance.FUN,
-        priority=40,
+        priority=0,
         max_repetitions=1,
         min_since_triggered_story=ANY_TRIGGERED_STORY_SPACING,
     )

@@ -23,7 +23,11 @@ class StoryImportance(IntEnum):
 
 @dataclass(frozen=True)
 class StoryTriggerPolicy:
-    """Static selection limits owned by one trigger-based story."""
+    """Static selection limits owned by one trigger-based story.
+
+    Priority ranks stories within the same importance level: ``0`` is standard,
+    ``50`` is higher, and ``-50`` is lower.
+    """
 
     importance: StoryImportance
     priority: int = 0
