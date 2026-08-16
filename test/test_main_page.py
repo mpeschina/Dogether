@@ -33,6 +33,7 @@ from src.assistant.stories import default_stories
 from src.assistant.stories.tutorial import TUTORIAL_STORY_ID
 from src.pages.main_page import (
     ONBOARDING_OFFER_DISMISSED_KNOWLEDGE_KEY,
+    GOAL_ACTION_ERRORS_SESSION_KEY,
     GOAL_ACTION_RESULTS_SESSION_KEY,
     GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY,
     cleanup_goal_session_state,
@@ -58,7 +59,7 @@ from src.pages.main_page import (
 
 def test_submit_goal_progress_commits_once_and_stores_returned_goal(monkeypatch) -> None:
     calls = []
-    session_state = {}
+    session_state = {"current_goal-1": 2}
     updated_goal = {
         "id": "goal-1",
         "participants": {"alice": {"current": 4, "target": 10}},
@@ -85,7 +86,7 @@ def test_submit_goal_progress_commits_once_and_stores_returned_goal(monkeypatch)
     assert calls[0][1]["current"] == 4
     assert calls[0][1]["dispatcher"] is not None
     assert session_state[GOAL_ACTION_RESULTS_SESSION_KEY]["goal-1"] == updated_goal
-    assert session_state["current_goal-1"] == 4
+    assert "current_goal-1" not in session_state
 
 
 def test_submit_goal_progress_rejects_conflicting_current_sources(monkeypatch) -> None:
@@ -110,6 +111,35 @@ def test_submit_goal_progress_rejects_conflicting_current_sources(monkeypatch) -
     )
 
     assert calls == []
+    assert session_state["current_goal-1"] == 7
+
+
+def test_submit_goal_progress_preserves_input_when_persistence_rejects(monkeypatch) -> None:
+    session_state = {"current_goal-1": 7}
+    monkeypatch.setattr("src.pages.main_page.st.session_state", session_state)
+    monkeypatch.setattr("src.pages.main_page.get_notification_dispatcher", object)
+
+    def reject_update(*args, **kwargs) -> None:
+        raise ValueError("rejected")
+
+    monkeypatch.setattr(
+        "src.pages.main_page.update_goal_progress_with_push",
+        reject_update,
+    )
+
+    submit_goal_progress(
+        object(),
+        {"id": "goal-1"},
+        {"current": 0, "target": 10},
+        "alice",
+        None,
+        None,
+        None,
+        current_key="current_goal-1",
+    )
+
+    assert session_state["current_goal-1"] == 7
+    assert "goal-1" in session_state[GOAL_ACTION_ERRORS_SESSION_KEY]
 
 
 def test_save_callback_reads_the_submitted_number_input_from_session_state() -> None:
@@ -128,13 +158,23 @@ def update(*args, **kwargs):
 main_page.update_goal_progress_with_push = update
 main_page.get_notification_dispatcher = object
 goal = {"id": "goal-1"}
-participant = {"current": 0, "target": 10}
-st.number_input("Current", value=0, key="current_goal_1")
+pending_goals = st.session_state.get(main_page.GOAL_ACTION_RESULTS_SESSION_KEY, {})
+pending_goal = pending_goals.pop("goal-1", None)
+participant = (
+    pending_goal["participants"]["alice"]
+    if pending_goal
+    else {"current": 0, "target": 10}
+)
+st.number_input(
+    "Current",
+    value=participant["current"],
+    key="current_goal-1",
+)
 st.button(
     "Save",
     on_click=main_page.submit_goal_progress,
     args=(object(), goal, participant, "alice", None, None, None),
-    kwargs={"current_key": "current_goal_1"},
+    kwargs={"current_key": "current_goal-1"},
 )
 '''
     ).run()
@@ -143,6 +183,7 @@ st.button(
     app.button[0].click().run()
 
     assert app.session_state["persisted_current"] == 7
+    assert app.number_input[0].value == 7
 
 
 def test_goal_presentation_snapshot_refreshes_after_ttl_and_cleans_inactive_state(monkeypatch) -> None:

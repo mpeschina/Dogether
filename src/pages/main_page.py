@@ -294,12 +294,8 @@ def submit_goal_progress(
         _store_goal_action_value(GOAL_ACTION_ERRORS_SESSION_KEY, goal_id, str(error))
         return
 
-    updated_participant = updated_goal.get("participants", {}).get(user_id, {})
     rendered_current_key = f"current_{goal_id}"
-    if "current" in updated_participant:
-        st.session_state[rendered_current_key] = max(
-            0, int(updated_participant.get("current", 0) or 0)
-        )
+    st.session_state.pop(rendered_current_key, None)
     _store_goal_action_value(GOAL_ACTION_RESULTS_SESSION_KEY, goal_id, updated_goal)
     if skipped is not None:
         return
