@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from threading import Event
 from zoneinfo import ZoneInfo
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -14,7 +15,9 @@ from src.push.notifications import (
     create_goal_with_invitation_news,
     create_friend_invite_with_push,
     create_friend_suggestion_with_push,
+    InlineNotificationDispatcher,
     set_goal_completion_reaction_with_push,
+    ThreadedNotificationDispatcher,
     update_goal_progress_with_push,
 )
 from src.assistant.state import AssistantState
@@ -24,6 +27,8 @@ from src.assistant.stories.information import (
     pending_goal_invitations,
 )
 
+INLINE_DISPATCHER = InlineNotificationDispatcher()
+
 
 class MemoryPushStorage:
     def subscriptions_for_user(self, user_id: str) -> list[dict]:
@@ -31,6 +36,101 @@ class MemoryPushStorage:
 
     def delete_subscription(self, endpoint: str) -> None:
         pass
+
+
+def test_threaded_notification_dispatcher_returns_before_blocked_work_finishes() -> None:
+    dispatcher = ThreadedNotificationDispatcher(max_workers=1, max_pending_jobs=1)
+    started = Event()
+    release = Event()
+
+    accepted = dispatcher.submit(
+        "goal:alice:day",
+        lambda: (started.set(), release.wait()),
+    )
+
+    assert accepted is True
+    assert started.wait(timeout=1)
+    assert not release.is_set()
+    release.set()
+    dispatcher.shutdown()
+
+
+def test_threaded_notification_dispatcher_deduplicates_and_bounds_work() -> None:
+    dispatcher = ThreadedNotificationDispatcher(max_workers=1, max_pending_jobs=0)
+    started = Event()
+    release = Event()
+    calls: list[str] = []
+
+    def blocked_task() -> None:
+        calls.append("first")
+        started.set()
+        release.wait()
+
+    assert dispatcher.submit("same", blocked_task) is True
+    assert started.wait(timeout=1)
+    assert dispatcher.submit("same", lambda: calls.append("duplicate")) is True
+    assert dispatcher.submit("different", lambda: calls.append("overflow")) is False
+    release.set()
+    dispatcher.shutdown()
+
+    assert calls == ["first"]
+
+
+def test_threaded_notification_dispatcher_logs_worker_failures(caplog) -> None:
+    dispatcher = ThreadedNotificationDispatcher(max_workers=1, max_pending_jobs=0)
+
+    def fail() -> None:
+        raise RuntimeError("push failed")
+
+    dispatcher.submit("failed", fail)
+    dispatcher.shutdown()
+
+    assert any(
+        record.message.startswith("goal_notification_failed key=failed")
+        for record in caplog.records
+    )
+
+
+def test_goal_progress_uses_the_threaded_dispatcher_by_default(monkeypatch) -> None:
+    queued = []
+
+    class Dispatcher:
+        def submit(self, key, task):
+            queued.append((key, task))
+            return True
+
+    class Persistence:
+        def update_goal_progress(self, goal_id, user_id, **kwargs):
+            return {
+                "id": goal_id,
+                "participant_user_ids": [user_id],
+                "participants": {user_id: {"current": 1, "target": 1}},
+                "_notification_event": {"day": "2026-06-01"},
+            }
+
+        def list_friends(self, user_id):
+            raise AssertionError("notification work ran in the caller")
+
+    monkeypatch.setattr(
+        "src.push.notifications.get_notification_dispatcher",
+        lambda: Dispatcher(),
+    )
+
+    goal = update_goal_progress_with_push(
+        Persistence(),
+        MemoryPushStorage(),
+        {
+            "vapid_public_key": "public",
+            "vapid_private_key": "private",
+            "vapid_subject": "mailto:test@example.com",
+        },
+        goal_id="goal-1",
+        user_id="alice",
+        current=1,
+    )
+
+    assert goal["participants"]["alice"]["current"] == 1
+    assert len(queued) == 1
 
 
 def make_friends(persistence, first, second) -> None:
@@ -413,6 +513,7 @@ def test_goal_completion_pushes_to_friends_sharing_goal_once(monkeypatch, tmp_pa
         goal_id=goal["id"],
         user_id="alice",
         current=10,
+        dispatcher=INLINE_DISPATCHER,
     )
     update_goal_progress_with_push(
         persistence,
@@ -425,6 +526,7 @@ def test_goal_completion_pushes_to_friends_sharing_goal_once(monkeypatch, tmp_pa
         goal_id=goal["id"],
         user_id="alice",
         current=11,
+        dispatcher=INLINE_DISPATCHER,
     )
 
     assert len(calls) == 1
@@ -458,6 +560,7 @@ def test_skipped_goal_does_not_send_completion_push(monkeypatch, tmp_path: Path)
         goal_id=goal["id"],
         user_id="alice",
         skipped=True,
+        dispatcher=INLINE_DISPATCHER,
     )
 
     assert calls == []
@@ -489,6 +592,7 @@ def test_recipient_opted_out_goal_completion_push_does_not_send(monkeypatch, tmp
         goal_id=goal["id"],
         user_id="alice",
         current=10,
+        dispatcher=INLINE_DISPATCHER,
     )
 
     assert calls == []
@@ -524,6 +628,7 @@ def test_goal_completion_pushes_are_capped_per_recipient_goal_day(monkeypatch, t
             goal_id=goal["id"],
             user_id=friend_id,
             current=10,
+            dispatcher=INLINE_DISPATCHER,
         )
 
     assert [call[0][1] for call in calls] == ["alice", "alice", "alice"]

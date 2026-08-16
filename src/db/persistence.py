@@ -139,6 +139,13 @@ class Persistence(Protocol):
 
     def list_goals_for_user(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]: ...
 
+    def get_goal_for_user(
+        self,
+        goal_id: str,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None: ...
+
     def list_goal_history_for_user(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]: ...
 
     def add_goal_friends(

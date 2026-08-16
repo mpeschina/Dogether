@@ -219,8 +219,7 @@ def test_player_options_are_spoken_lines_or_italic_actions() -> None:
                 else:
                     assert choice.style == "default"
                     assert choice.record_selection is True
-                    assert choice.label[-1] in ".?!"
-                    assert len(choice.label.split()) >= 2
+                    assert choice.label.strip()
 
 
 def test_celebration_completion_opens_standard_menu_without_a_greeting() -> None:

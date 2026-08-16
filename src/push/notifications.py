@@ -1,8 +1,13 @@
 """Application-level push notification hooks."""
 from __future__ import annotations
 
+import copy
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from time import monotonic
+from typing import Any, Callable, Mapping, Protocol
 
 from src.db.persistence import Persistence
 from src.db.persistence_helpers import normalize_email
@@ -14,6 +19,94 @@ from .storage import PushStorage
 
 MIN_ACTIVE_GOALS_FOR_INVITATION_NOTIFICATIONS = 3
 INVITATION_NOTIFICATION_ACCOUNT_AGE = timedelta(weeks=2)
+GOAL_NOTIFICATION_WORKERS = 4
+GOAL_NOTIFICATION_PENDING_JOBS = 100
+
+logger = logging.getLogger(__name__)
+
+
+class NotificationDispatcher(Protocol):
+    """Submit best-effort notification work without blocking the caller."""
+
+    def submit(self, key: str, task: Callable[[], None]) -> bool: ...
+
+
+class InlineNotificationDispatcher:
+    """Deterministic dispatcher for tests and command-line callers."""
+
+    def submit(self, key: str, task: Callable[[], None]) -> bool:
+        del key
+        task()
+        return True
+
+
+class ThreadedNotificationDispatcher:
+    """Bounded, process-local executor for best-effort push delivery."""
+
+    def __init__(
+        self,
+        *,
+        max_workers: int = GOAL_NOTIFICATION_WORKERS,
+        max_pending_jobs: int = GOAL_NOTIFICATION_PENDING_JOBS,
+    ) -> None:
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="dogether-push",
+        )
+        self._capacity = threading.BoundedSemaphore(max_workers + max_pending_jobs)
+        self._lock = threading.Lock()
+        self._active_keys: set[str] = set()
+
+    def submit(self, key: str, task: Callable[[], None]) -> bool:
+        with self._lock:
+            if key in self._active_keys:
+                return True
+            if not self._capacity.acquire(blocking=False):
+                logger.warning("goal_notification_queue_full key=%s", key)
+                return False
+            self._active_keys.add(key)
+
+        def run() -> None:
+            started_at = monotonic()
+            try:
+                task()
+            except Exception:
+                logger.exception("goal_notification_failed key=%s", key)
+            finally:
+                duration_ms = (monotonic() - started_at) * 1000
+                logger.info(
+                    "goal_notification_finished key=%s duration_ms=%.1f",
+                    key,
+                    duration_ms,
+                )
+                with self._lock:
+                    self._active_keys.discard(key)
+                self._capacity.release()
+
+        try:
+            self._executor.submit(run)
+        except Exception:
+            with self._lock:
+                self._active_keys.discard(key)
+            self._capacity.release()
+            logger.exception("goal_notification_submit_failed key=%s", key)
+            return False
+        return True
+
+    def shutdown(self, *, wait: bool = True) -> None:
+        self._executor.shutdown(wait=wait)
+
+
+_notification_dispatcher: ThreadedNotificationDispatcher | None = None
+_notification_dispatcher_lock = threading.Lock()
+
+
+def get_notification_dispatcher() -> ThreadedNotificationDispatcher:
+    global _notification_dispatcher
+    with _notification_dispatcher_lock:
+        if _notification_dispatcher is None:
+            _notification_dispatcher = ThreadedNotificationDispatcher()
+        return _notification_dispatcher
 
 
 def _display_name(user: Mapping[str, Any]) -> str:
@@ -236,7 +329,9 @@ def update_goal_progress_with_push(
     delta: int = 0,
     skipped: bool | None = None,
     now: datetime | None = None,
+    dispatcher: NotificationDispatcher | None = None,
 ) -> dict[str, Any]:
+    started_at = monotonic()
     goal = persistence.update_goal_progress(
         goal_id,
         user_id,
@@ -248,7 +343,50 @@ def update_goal_progress_with_push(
     )
     event = goal.get("_notification_event")
     if not event or not push_storage or not push_configured(push_settings):
+        logger.info(
+            "goal_progress_saved goal_id=%s duration_ms=%.1f notification_queued=false",
+            goal_id,
+            (monotonic() - started_at) * 1000,
+        )
         return goal
+
+    notification_day = str(event.get("day") or datetime.now().date().isoformat())
+    notification_key = f"{goal_id}:{user_id}:{notification_day}"
+    immutable_goal = copy.deepcopy(goal)
+    immutable_settings = dict(push_settings)
+    selected_dispatcher = (
+        get_notification_dispatcher() if dispatcher is None else dispatcher
+    )
+    queued = selected_dispatcher.submit(
+        notification_key,
+        lambda: _send_goal_completion_notifications(
+            persistence,
+            push_storage,
+            immutable_settings,
+            immutable_goal,
+            user_id,
+            notification_day,
+            now,
+        ),
+    )
+    logger.info(
+        "goal_progress_saved goal_id=%s duration_ms=%.1f notification_queued=%s",
+        goal_id,
+        (monotonic() - started_at) * 1000,
+        str(queued).lower(),
+    )
+    return goal
+
+
+def _send_goal_completion_notifications(
+    persistence: Persistence,
+    push_storage: PushStorage,
+    push_settings: Mapping[str, str],
+    goal: Mapping[str, Any],
+    user_id: str,
+    notification_day: str,
+    now: datetime | None,
+) -> None:
 
     friend_ids = {friend["user_id"] for friend in persistence.list_friends(user_id)}
     participant_ids = [
@@ -260,7 +398,7 @@ def update_goal_progress_with_push(
         and goal.get("participants", {}).get(participant_id, {}).get("completion_notifications_enabled", True)
     ]
     if not participant_ids:
-        return goal
+        return
 
     users = persistence.users_by_ids([user_id, *participant_ids])
     completed_by = users.get(user_id, {}).get("name") or users.get(user_id, {}).get("email") or "A friend"
@@ -269,11 +407,10 @@ def update_goal_progress_with_push(
     current_value = max(0, int(completed_participant.get("current", 0)))
     target_value = max(1, int(completed_participant.get("target", 1)))
 
-    notification_day = str(event.get("day") or datetime.now().date().isoformat())
     for participant_id in participant_ids:
         if not persistence.claim_goal_completion_notification(goal["id"], participant_id, notification_day, now=now):
             continue
-        send_push_to_user(
+        result = send_push_to_user(
             push_storage,
             participant_id,
             title="Shared goal completed",
@@ -282,7 +419,13 @@ def update_goal_progress_with_push(
             vapid_private_key=push_settings["vapid_private_key"],
             vapid_subject=push_settings["vapid_subject"],
         )
-    return goal
+        if result.get("errors"):
+            logger.warning(
+                "goal_notification_delivery_errors goal_id=%s recipient_id=%s error_count=%d",
+                goal["id"],
+                participant_id,
+                len(result["errors"]),
+            )
 
 
 def set_goal_completion_reaction_with_push(

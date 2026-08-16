@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import threading
 import json
 import os
 import tempfile
@@ -69,6 +70,7 @@ class JsonPushStorage:
 
     def __init__(self, path: str | Path = "data/push_subscriptions.json") -> None:
         self.path = Path(path)
+        self._lock = threading.RLock()
 
     def _read(self) -> dict[str, dict[str, Any]]:
         if not self.path.exists():
@@ -106,38 +108,41 @@ class JsonPushStorage:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         endpoint = _validate_subscription(subscription)
-        data = self._read()
-        now_iso = _iso(now)
-        existing = data.get(endpoint, {})
-        record = _subscription_record(
-            endpoint=endpoint,
-            user_id=user_id,
-            user_email=user_email,
-            subscription=subscription,
-            user_agent=user_agent,
-            created_at=str(existing.get("created_at") or now_iso),
-            updated_at=now_iso,
-        )
-        data[endpoint] = record
-        self._write(data)
-        return record
+        with self._lock:
+            data = self._read()
+            now_iso = _iso(now)
+            existing = data.get(endpoint, {})
+            record = _subscription_record(
+                endpoint=endpoint,
+                user_id=user_id,
+                user_email=user_email,
+                subscription=subscription,
+                user_agent=user_agent,
+                created_at=str(existing.get("created_at") or now_iso),
+                updated_at=now_iso,
+            )
+            data[endpoint] = record
+            self._write(data)
+            return record
 
     def delete_subscription(self, endpoint: str) -> None:
-        data = self._read()
-        if endpoint in data:
-            del data[endpoint]
-            self._write(data)
+        with self._lock:
+            data = self._read()
+            if endpoint in data:
+                del data[endpoint]
+                self._write(data)
 
     def delete_subscriptions_for_user(self, user_id: str) -> None:
         for record in self.subscriptions_for_user(user_id):
             self.delete_subscription(record["endpoint"])
 
     def subscriptions_for_user(self, user_id: str) -> list[dict[str, Any]]:
-        return [
-            copy.deepcopy(record)
-            for record in self._read().values()
-            if record.get("user_id") == user_id and isinstance(record.get("subscription"), dict)
-        ]
+        with self._lock:
+            return [
+                copy.deepcopy(record)
+                for record in self._read().values()
+                if record.get("user_id") == user_id and isinstance(record.get("subscription"), dict)
+            ]
 
 
 class MongoPushStorage:
@@ -159,6 +164,8 @@ class MongoPushStorage:
         self._collection = mongo_collection
         self.cache_ttl_seconds = float(cache_ttl_seconds)
         self._cache: dict[tuple[str, str], tuple[float, list[dict[str, Any]]]] = {}
+        self._cache_lock = threading.RLock()
+        self._cache_revision = 0
         if mongo_collection is None and not uri:
             raise ValueError("MongoDB push storage requires mongodb_uri.")
 
@@ -205,37 +212,48 @@ class MongoPushStorage:
 
     def subscriptions_for_user(self, user_id: str) -> list[dict[str, Any]]:
         cache_key = ("subscriptions_for_user", user_id)
-        cached = self._cache_get(cache_key)
-        if cached is not None:
-            return cached
 
-        records = []
-        for document in self.collection.find({"user_id": user_id}):
-            record = dict(document)
-            record.pop("_id", None)
-            if isinstance(record.get("subscription"), dict):
-                records.append(record)
-        return self._cache_set(cache_key, records)
+        def load_records() -> list[dict[str, Any]]:
+            records = []
+            for document in self.collection.find({"user_id": user_id}):
+                record = dict(document)
+                record.pop("_id", None)
+                if isinstance(record.get("subscription"), dict):
+                    records.append(record)
+            return records
+
+        return self._read_cached(cache_key, load_records)
 
     def _cache_get(self, key: tuple[str, str]) -> list[dict[str, Any]] | None:
         if self.cache_ttl_seconds <= 0:
             return None
-        cached = self._cache.get(key)
-        if cached is None:
-            return None
-        cached_at, value = cached
-        if monotonic() - cached_at > self.cache_ttl_seconds:
-            self._cache.pop(key, None)
-            return None
-        return copy.deepcopy(value)
+        with self._cache_lock:
+            cached = self._cache.get(key)
+            if cached is None:
+                return None
+            cached_at, value = cached
+            if monotonic() - cached_at > self.cache_ttl_seconds:
+                self._cache.pop(key, None)
+                return None
+            return copy.deepcopy(value)
 
-    def _cache_set(self, key: tuple[str, str], value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _read_cached(self, key: tuple[str, str], loader) -> list[dict[str, Any]]:
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+        with self._cache_lock:
+            revision = self._cache_revision
+        value = loader()
         if self.cache_ttl_seconds > 0:
-            self._cache[key] = (monotonic(), copy.deepcopy(value))
+            with self._cache_lock:
+                if revision == self._cache_revision:
+                    self._cache[key] = (monotonic(), copy.deepcopy(value))
         return value
 
     def _cache_clear(self) -> None:
-        self._cache.clear()
+        with self._cache_lock:
+            self._cache_revision += 1
+            self._cache.clear()
 
     def close(self) -> None:
         if self._client is not None:

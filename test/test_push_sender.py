@@ -1,7 +1,7 @@
 import sys
 import types
 
-from src.push.sender import send_push_to_user
+from src.push.sender import PUSH_REQUEST_TIMEOUT_SECONDS, send_push_to_user
 
 
 class MemoryPushStorage:
@@ -58,6 +58,7 @@ def test_send_push_to_user_sends_to_all_subscriptions(monkeypatch) -> None:
     assert result == {"sent": 2, "removed": 0, "errors": []}
     assert [call["subscription_info"]["endpoint"] for call in calls] == ["one", "two"]
     assert all(call["vapid_private_key"] == "private" for call in calls)
+    assert all(call["timeout"] == PUSH_REQUEST_TIMEOUT_SECONDS for call in calls)
 
 
 def test_send_push_to_user_removes_expired_subscriptions(monkeypatch) -> None:

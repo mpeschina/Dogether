@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import threading
 from datetime import datetime, timedelta
 from time import monotonic
 from typing import Any, Iterable, Mapping
@@ -59,6 +60,8 @@ class MongoNativePersistence:
         self.legacy_collection = legacy_collection
         self.cache_ttl_seconds = float(cache_ttl_seconds)
         self._cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
+        self._cache_lock = threading.RLock()
+        self._cache_revision = 0
         self._client = None
         self._database = mongo_database
         if mongo_database is None and not uri:
@@ -112,28 +115,40 @@ class MongoNativePersistence:
     def _cache_get(self, key: tuple[Any, ...]) -> Any | None:
         if not self._cache_enabled():
             return None
-        cached = self._cache.get(key)
-        if cached is None:
-            return None
-        cached_at, value = cached
-        if monotonic() - cached_at > self.cache_ttl_seconds:
-            self._cache.pop(key, None)
-            return None
-        return copy.deepcopy(value)
-
-    def _cache_set(self, key: tuple[Any, ...], value: Any) -> Any:
-        if self._cache_enabled():
-            self._cache[key] = (monotonic(), copy.deepcopy(value))
-        return value
+        with self._cache_lock:
+            cached = self._cache.get(key)
+            if cached is None:
+                return None
+            cached_at, value = cached
+            if monotonic() - cached_at > self.cache_ttl_seconds:
+                self._cache.pop(key, None)
+                return None
+            return copy.deepcopy(value)
 
     def _cache_clear(self) -> None:
-        self._cache.clear()
+        with self._cache_lock:
+            self._cache_revision += 1
+            self._cache.clear()
+
+    def _cache_invalidate(self, *prefixes: str) -> None:
+        with self._cache_lock:
+            self._cache_revision += 1
+            for key in list(self._cache):
+                if key and key[0] in prefixes:
+                    self._cache.pop(key, None)
 
     def _read_cached(self, key: tuple[Any, ...], loader):
         cached = self._cache_get(key)
         if cached is not None:
             return cached
-        return self._cache_set(key, loader())
+        with self._cache_lock:
+            revision = self._cache_revision
+        value = loader()
+        if self._cache_enabled():
+            with self._cache_lock:
+                if revision == self._cache_revision:
+                    self._cache[key] = (monotonic(), copy.deepcopy(value))
+        return value
 
     def _ensure_indexes(self) -> None:
         self._users_inventory_collection().create_index("email")
@@ -1077,6 +1092,22 @@ class MongoNativePersistence:
         goals = self._rollover_user_goals(user_id, now)
         return sorted(goals, key=lambda goal: goal["created_at"])
 
+    def get_goal_for_user(
+        self,
+        goal_id: str,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        goal = self._strip_id(
+            self._goals_collection().find_one(
+                {"_id": goal_id, **self._user_goal_query(user_id)}
+            )
+        )
+        if not goal or not _goal_active_for_user(goal, user_id):
+            return None
+        _normalise_goal_participants({goal_id: goal})
+        return self._rollover_goal_participants(goal, _now(now))
+
     def list_goal_history_for_user(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
         """Return active and departed goals whose history belongs to a user."""
         self._rollover_user_goals(user_id, now)
@@ -1195,13 +1226,18 @@ class MongoNativePersistence:
             participant["last_completion_notification_day"] = today_key
             notification_event = {"type": "goal_completed", "goal_id": goal_id, "completed_by_user_id": user_id, "day": today_key}
         self._goals_collection().update_one({"_id": goal_id}, {"$set": {f"participants.{user_id}": participant}})
-        self._users_inventory_collection().update_one({"_id": user_id}, {"$set": {"last_seen_at": _iso(now)}})
+        user_updates: dict[str, Any] = {"last_seen_at": _iso(now)}
         if personal_best_changed:
-            self._users_inventory_collection().update_one(
-                {"_id": user_id}, {"$set": {"personal_bests": user["personal_bests"]}}
-            )
-        self._cache_clear()
-        self._refresh_activity_day_for_user(user_id, now_dt.date())
+            user_updates["personal_bests"] = user["personal_bests"]
+        self._users_inventory_collection().update_one(
+            {"_id": user_id}, {"$set": user_updates}
+        )
+        self._cache_invalidate(
+            "active_goals_for_user",
+            "active_goals_for_users",
+            "user",
+            "users_by_ids",
+        )
         result = copy.deepcopy(goal)
         if notification_event:
             result["_notification_event"] = notification_event

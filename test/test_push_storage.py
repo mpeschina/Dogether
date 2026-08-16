@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from threading import Event, Thread
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -149,6 +150,34 @@ def test_mongo_push_storage_caches_subscriptions_and_invalidates_after_writes() 
     storage.delete_subscription("https://push.example/one")
     assert storage.subscriptions_for_user("alice") == []
     assert collection.find_calls == 2
+
+
+def test_mongo_push_storage_does_not_reinsert_an_invalidated_inflight_read() -> None:
+    storage = MongoPushStorage(
+        mongo_collection=FakeMongoCollection(), cache_ttl_seconds=60
+    )
+    started = Event()
+    release = Event()
+    results = []
+
+    def load_stale_records():
+        started.set()
+        release.wait()
+        return [{"endpoint": "stale"}]
+
+    thread = Thread(
+        target=lambda: results.append(
+            storage._read_cached(("subscriptions_for_user", "alice"), load_stale_records)
+        )
+    )
+    thread.start()
+    assert started.wait(timeout=1)
+    storage._cache_clear()
+    release.set()
+    thread.join(timeout=1)
+
+    assert results == [[{"endpoint": "stale"}]]
+    assert storage._cache_get(("subscriptions_for_user", "alice")) is None
 
 
 def test_push_storage_defaults_to_json_with_json_persistence() -> None:

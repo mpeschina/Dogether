@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import replace
 from datetime import datetime
 from html import escape
+import logging
 from random import random
-from time import sleep
+from time import monotonic, sleep
 
 import streamlit as st
 
@@ -29,7 +31,11 @@ from src.pages.health_data_import_page import (
 )
 from src.pages.page_helpers import participant_name, schedule_label
 from src.reaction_component import participant_reaction_row
-from src.push.notifications import set_goal_completion_reaction_with_push, update_goal_progress_with_push
+from src.push.notifications import (
+    get_notification_dispatcher,
+    set_goal_completion_reaction_with_push,
+    update_goal_progress_with_push,
+)
 from src.push.storage import PushStorage
 from src.assistant.state import AssistantState
 from src.assistant.stories.information import (
@@ -44,6 +50,12 @@ SITE_BREAK_CHANCE = 0.20
 ONBOARDING_OFFER_DISMISSED_KNOWLEDGE_KEY = "tutorial.offer.dismissed"
 BALLOON_GOAL_ID_SESSION_KEY = "balloon_goal_id"
 SITE_BREAK_GOAL_ID_SESSION_KEY = "site_break_goal_id"
+GOAL_ACTION_RESULTS_SESSION_KEY = "goal_action_results"
+GOAL_ACTION_ERRORS_SESSION_KEY = "goal_action_errors"
+MAIN_RENDER_GENERATION_SESSION_KEY = "main_render_generation"
+GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY = "goal_presentation_snapshots"
+GOAL_PRESENTATION_TTL_SECONDS = 5.0
+logger = logging.getLogger(__name__)
 SITE_BREAK_CSS = """.goal--too-motivated {
   --coffee-consumed: 47;
   --reasonable-expectations: none;
@@ -144,6 +156,156 @@ def queue_site_break_for_goal_hit(
         return False
     st.session_state[SITE_BREAK_GOAL_ID_SESSION_KEY] = updated_goal.get("id")
     return True
+
+
+def _store_goal_action_value(session_key: str, goal_id: str, value: object) -> None:
+    values = st.session_state.setdefault(session_key, {})
+    if not isinstance(values, dict):
+        values = {}
+        st.session_state[session_key] = values
+    values[goal_id] = value
+
+
+def _pop_goal_action_value(session_key: str, goal_id: str) -> object | None:
+    values = st.session_state.get(session_key)
+    if not isinstance(values, dict):
+        return None
+    value = values.pop(goal_id, None)
+    if not values:
+        st.session_state.pop(session_key, None)
+    return value
+
+
+def _store_goal_presentation_snapshot(
+    goal_id: str,
+    users: dict[str, dict],
+    friends: list[dict],
+    *,
+    loaded_at: float,
+) -> None:
+    snapshots = st.session_state.setdefault(GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY, {})
+    if not isinstance(snapshots, dict):
+        snapshots = {}
+        st.session_state[GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY] = snapshots
+    snapshots[goal_id] = {
+        "loaded_at": float(loaded_at),
+        "users": copy.deepcopy(users),
+        "friends": copy.deepcopy(friends),
+    }
+
+
+def goal_presentation_data(
+    persistence: Persistence,
+    goal: dict,
+    user_id: str,
+    *,
+    current_time: float | None = None,
+) -> tuple[dict[str, dict], list[dict]]:
+    """Return a bounded-age presentation snapshot for one goal."""
+    timestamp = monotonic() if current_time is None else float(current_time)
+    goal_id = str(goal["id"])
+    snapshots = st.session_state.get(GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY, {})
+    snapshot = snapshots.get(goal_id) if isinstance(snapshots, dict) else None
+    if isinstance(snapshot, dict):
+        loaded_at = snapshot.get("loaded_at")
+        users = snapshot.get("users")
+        friends = snapshot.get("friends")
+        if (
+            isinstance(loaded_at, (int, float))
+            and timestamp - float(loaded_at) <= GOAL_PRESENTATION_TTL_SECONDS
+            and isinstance(users, dict)
+            and isinstance(friends, list)
+        ):
+            return copy.deepcopy(users), copy.deepcopy(friends)
+
+    participant_ids = sorted(goal.get("participants", {}))
+    users = persistence.users_by_ids(participant_ids)
+    friends = persistence.list_friends(user_id)
+    _store_goal_presentation_snapshot(
+        goal_id,
+        users,
+        friends,
+        loaded_at=timestamp,
+    )
+    return users, friends
+
+
+def cleanup_goal_session_state(active_goal_ids: set[str]) -> None:
+    snapshots = st.session_state.get(GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY)
+    known_goal_ids = set(snapshots) if isinstance(snapshots, dict) else set()
+    if isinstance(snapshots, dict):
+        for goal_id in known_goal_ids - active_goal_ids:
+            snapshots.pop(goal_id, None)
+        if not snapshots:
+            st.session_state.pop(GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY, None)
+    generation_prefix = "goal_render_generation:"
+    for key in list(st.session_state):
+        if not str(key).startswith(generation_prefix):
+            continue
+        goal_id = str(key)[len(generation_prefix):]
+        if goal_id not in active_goal_ids:
+            st.session_state.pop(key, None)
+    for session_key in (GOAL_ACTION_RESULTS_SESSION_KEY, GOAL_ACTION_ERRORS_SESSION_KEY):
+        values = st.session_state.get(session_key)
+        if not isinstance(values, dict):
+            continue
+        for goal_id in set(values) - active_goal_ids:
+            values.pop(goal_id, None)
+        if not values:
+            st.session_state.pop(session_key, None)
+
+
+def submit_goal_progress(
+    persistence: Persistence,
+    goal: dict,
+    participant: dict,
+    user_id: str,
+    push_storage: PushStorage | None,
+    push_settings: dict[str, str] | None,
+    now: datetime | None,
+    *,
+    current: int | None = None,
+    current_key: str | None = None,
+    skipped: bool | None = None,
+) -> None:
+    """Commit one progress action before Streamlit redraws its fragment."""
+    goal_id = str(goal["id"])
+    try:
+        if current is not None and current_key is not None:
+            raise ValueError("Provide either current or current_key, not both.")
+        submitted_current = current
+        if current_key is not None:
+            try:
+                submitted_current = max(0, int(st.session_state[current_key]))
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValueError("Current progress is unavailable.") from error
+        updated_goal = update_goal_progress_with_push(
+            persistence,
+            push_storage,
+            push_settings or {},
+            goal_id=goal_id,
+            user_id=user_id,
+            current=submitted_current,
+            skipped=skipped,
+            now=now,
+            dispatcher=get_notification_dispatcher(),
+        )
+    except ValueError as error:
+        _store_goal_action_value(GOAL_ACTION_ERRORS_SESSION_KEY, goal_id, str(error))
+        return
+
+    updated_participant = updated_goal.get("participants", {}).get(user_id, {})
+    rendered_current_key = f"current_{goal_id}"
+    if "current" in updated_participant:
+        st.session_state[rendered_current_key] = max(
+            0, int(updated_participant.get("current", 0) or 0)
+        )
+    _store_goal_action_value(GOAL_ACTION_RESULTS_SESSION_KEY, goal_id, updated_goal)
+    if skipped is not None:
+        return
+    queue_balloons_for_goal_hit(participant, updated_goal, user_id)
+    if queue_site_break_for_goal_hit(persistence, participant, updated_goal, user_id, now):
+        st.rerun(scope="app")
 
 
 class AchievementGremlinError(RuntimeError):
@@ -405,18 +567,15 @@ def render_goal_actions(
         viewport,
     )
     if goal_is_done or skipped:
-        if skipped and actions.button("Reset", key=f"reset_{goal['id']}", use_container_width=True):
-            update_goal_progress_with_push(
-                persistence,
-                push_storage,
-                push_settings or {},
-                goal_id=goal["id"],
-                user_id=user_id,
-                current=0,
-                skipped=False,
-                now=now,
+        if skipped:
+            actions.button(
+                "Reset",
+                key=f"reset_{goal['id']}",
+                width="stretch",
+                on_click=submit_goal_progress,
+                args=(persistence, goal, participant, user_id, push_storage, push_settings, now),
+                kwargs={"current": 0, "skipped": False},
             )
-            st.rerun(scope="fragment")
     elif can_use_apple_steps_shortcut:
         shortcut_name = health_data_settings.get("apple_steps_shortcut_name", "Dogether Steps")
         actions.link_button(
@@ -425,25 +584,23 @@ def render_goal_actions(
             type="primary",
             use_container_width=True,
         )
-    elif actions.button("", key=f"done_{goal['id']}", type="primary", icon=":material/check_circle:", use_container_width=True, help="Done"):
-        updated_goal = update_goal_progress_with_push(
-            persistence,
-            push_storage,
-            push_settings or {},
-            goal_id=goal["id"],
-            user_id=user_id,
-            current=max(1, target),
-            now=now,
+    else:
+        actions.button(
+            "",
+            key=f"done_{goal['id']}",
+            type="primary",
+            icon=":material/check_circle:",
+            width="stretch",
+            help="Done",
+            on_click=submit_goal_progress,
+            args=(persistence, goal, participant, user_id, push_storage, push_settings, now),
+            kwargs={"current": max(1, target)},
         )
-        queue_balloons_for_goal_hit(participant, updated_goal, user_id)
-        if queue_site_break_for_goal_hit(persistence, participant, updated_goal, user_id, now):
-            st.rerun(scope="app")
-        st.rerun(scope="fragment")
     if not skipped:
         with actions.popover("", icon=":material/edit:", help="Edit progress", use_container_width=True):
             
             current_key = f"current_{goal['id']}"
-            current = st.number_input(
+            st.number_input(
                 "Current",
                 min_value=0,
                 value=int(participant.get("current", 0)),
@@ -451,31 +608,23 @@ def render_goal_actions(
             )
             focus_popover_number_input()
             manage_actions = st.container(horizontal=True)
-            if manage_actions.button("Skip", key=f"skip_{goal['id']}", use_container_width=True):
-                update_goal_progress_with_push(
-                    persistence,
-                    push_storage,
-                    push_settings or {},
-                    goal_id=goal["id"],
-                    user_id=user_id,
-                    skipped=True,
-                    now=now,
-                )
-                st.rerun(scope="fragment")
-            if manage_actions.button("Save", key=f"save_{goal['id']}", type="primary", use_container_width=True):
-                updated_goal = update_goal_progress_with_push(
-                    persistence,
-                    push_storage,
-                    push_settings or {},
-                    goal_id=goal["id"],
-                    user_id=user_id,
-                    current=current,
-                    now=now,
-                )
-                queue_balloons_for_goal_hit(participant, updated_goal, user_id)
-                if queue_site_break_for_goal_hit(persistence, participant, updated_goal, user_id, now):
-                    st.rerun(scope="app")
-                st.rerun(scope="fragment")
+            manage_actions.button(
+                "Skip",
+                key=f"skip_{goal['id']}",
+                width="stretch",
+                on_click=submit_goal_progress,
+                args=(persistence, goal, participant, user_id, push_storage, push_settings, now),
+                kwargs={"skipped": True},
+            )
+            manage_actions.button(
+                "Save",
+                key=f"save_{goal['id']}",
+                type="primary",
+                width="stretch",
+                on_click=submit_goal_progress,
+                args=(persistence, goal, participant, user_id, push_storage, push_settings, now),
+                kwargs={"current_key": current_key},
+            )
 
 
 def render_participant_progress(
@@ -543,7 +692,7 @@ def render_participant_progress(
         return
     if action == "react" and emote in REACTION_EMOTES:
         try:
-            set_goal_completion_reaction_with_push(
+            updated_goal = set_goal_completion_reaction_with_push(
                 persistence,
                 push_storage,
                 push_settings or {},
@@ -556,36 +705,46 @@ def render_participant_progress(
         except ValueError as error:
             st.error(str(error))
         else:
+            _store_goal_action_value(
+                GOAL_ACTION_RESULTS_SESSION_KEY,
+                str(goal["id"]),
+                updated_goal,
+            )
             st.session_state["participant_reaction_open_row"] = None
             st.rerun(scope="fragment")
-
-
-def _current_goal_for_user(
-    persistence: Persistence,
-    goal_id: str,
-    user_id: str,
-    now: datetime | None = None,
-) -> dict | None:
-    for goal in persistence.list_goals_for_user(user_id, now=now):
-        if goal.get("id") == goal_id:
-            return goal
-    return None
 
 
 @st.fragment
 def render_goal_card(
     persistence: Persistence,
-    goal_id: str,
+    initial_goal: dict,
     user_id: str,
+    render_generation: int,
     push_storage: PushStorage | None = None,
     push_settings: dict[str, str] | None = None,
     now: datetime | None = None,
     viewport: dict | None = None,
 ) -> bool:
-    goal = _current_goal_for_user(persistence, goal_id, user_id, now=now)
+    started_at = monotonic()
+    goal_id = str(initial_goal["id"])
+    pending_goal = _pop_goal_action_value(GOAL_ACTION_RESULTS_SESSION_KEY, goal_id)
+    seen_generation_key = f"goal_render_generation:{goal_id}"
+    is_fragment_refresh = (
+        st.session_state.get(seen_generation_key) == render_generation
+    )
+    st.session_state[seen_generation_key] = render_generation
+    if isinstance(pending_goal, dict):
+        goal = pending_goal
+    elif is_fragment_refresh:
+        goal = persistence.get_goal_for_user(goal_id, user_id, now=now)
+    else:
+        goal = initial_goal
     if goal is None or user_id not in goal.get("participants", {}):
         st.info("This goal is no longer available.")
         return False
+    action_error = _pop_goal_action_value(GOAL_ACTION_ERRORS_SESSION_KEY, goal_id)
+    if isinstance(action_error, str):
+        st.error(action_error)
     if st.session_state.get(BALLOON_GOAL_ID_SESSION_KEY) == goal_id:
         st.session_state.pop(BALLOON_GOAL_ID_SESSION_KEY)
         st.balloons()
@@ -594,9 +753,7 @@ def render_goal_card(
     if isinstance(viewport, dict) and viewport.get("renderPath") == "widescreen":
         render_path = "widescreen"
 
-    all_participant_ids = sorted(goal.get("participants", {}))
-    users = persistence.users_by_ids(all_participant_ids)
-    friends = persistence.list_friends(user_id)
+    users, friends = goal_presentation_data(persistence, goal, user_id)
     users = display_users_for_goal(goal, users, friends, user_id)
     friend_ids = {friend["user_id"] for friend in friends}
 
@@ -672,6 +829,12 @@ def render_goal_card(
                         now,
                         viewport,
                     )
+    logger.info(
+        "goal_card_rendered goal_id=%s duration_ms=%.1f used_action_snapshot=%s",
+        goal_id,
+        (monotonic() - started_at) * 1000,
+        str(isinstance(pending_goal, dict)).lower(),
+    )
     return False
 
 
@@ -766,15 +929,45 @@ def render_main(
                 st.rerun(scope="app")
 
     goals = persistence.list_goals_for_user(user_id, now=now)
+    active_goal_ids = {str(goal["id"]) for goal in goals}
+    cleanup_goal_session_state(active_goal_ids)
     if not goals:
         st.info("Create a shared goal with a friend to get started.")
         return
 
+    all_participant_ids = sorted(
+        {
+            participant_id
+            for goal in goals
+            for participant_id in goal.get("participants", {})
+        }
+    )
+    users = persistence.users_by_ids(all_participant_ids)
+    friends = persistence.list_friends(user_id)
+    presentation_loaded_at = monotonic()
+    for goal in goals:
+        goal_users = {
+            participant_id: users[participant_id]
+            for participant_id in goal.get("participants", {})
+            if participant_id in users
+        }
+        _store_goal_presentation_snapshot(
+            str(goal["id"]),
+            goal_users,
+            friends,
+            loaded_at=presentation_loaded_at,
+        )
+    render_generation = int(
+        st.session_state.get(MAIN_RENDER_GENERATION_SESSION_KEY, 0)
+    ) + 1
+    st.session_state[MAIN_RENDER_GENERATION_SESSION_KEY] = render_generation
+
     for goal in goals:
         site_break_rendered = render_goal_card(
             persistence,
-            goal["id"],
+            goal,
             user_id,
+            render_generation,
             push_storage,
             push_settings,
             now,

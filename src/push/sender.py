@@ -9,6 +9,9 @@ import streamlit as st
 from .storage import PushStorage
 
 
+PUSH_REQUEST_TIMEOUT_SECONDS = 5.0
+
+
 def push_config(secrets: Mapping[str, Any] | None = None) -> dict[str, str]:
     secrets = st.secrets if secrets is None else secrets
     push = secrets.get("push", {})
@@ -35,6 +38,7 @@ def send_push(
     url: str,
     vapid_private_key: str,
     vapid_subject: str,
+    timeout: float = PUSH_REQUEST_TIMEOUT_SECONDS,
 ) -> None:
     from pywebpush import webpush
 
@@ -43,6 +47,7 @@ def send_push(
         data=json.dumps({"title": title, "body": body, "url": url}),
         vapid_private_key=vapid_private_key,
         vapid_claims={"sub": vapid_subject},
+        timeout=max(0.1, float(timeout)),
     )
 
 

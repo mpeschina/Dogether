@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import copy
 import json
 import pytest
+from threading import Event, Thread
 
 import src.db.cached_document_persistence as cached_document_persistence
 from src.assistant.state import (
@@ -1759,6 +1760,27 @@ def test_mongodb_native_goal_progress_uses_targeted_updates() -> None:
     assert database["goals"].documents[goal["id"]]["participants"]["alice"]["current"] == 4
 
 
+def test_mongodb_native_goal_progress_defers_activity_refresh_until_stats_read() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    goal = persistence.create_goal(
+        "alice", "Run", "daily", 1, [], 10, current=0,
+        now=at("2026-06-01T09:01:00"),
+    )
+    persistence.account_stats("alice", now=at("2026-06-01T09:01:00"))
+    for collection in database.collections.values():
+        collection.calls.clear()
+
+    persistence.update_goal_progress(
+        goal["id"], "alice", current=10, now=at("2026-06-01T09:02:00")
+    )
+
+    assert database["user_stats"].calls == []
+    stats = persistence.account_stats("alice", now=at("2026-06-01T09:03:00"))
+    assert stats["activity_days"]["2026-06-01"]["fulfilled_goals"] == 1
+
+
 def test_mongodb_native_personal_bests_follow_live_progress() -> None:
     database = FakeMongoNativeDatabase()
     persistence = MongoNativePersistence(mongo_database=database)
@@ -1916,6 +1938,24 @@ def test_mongodb_native_list_goals_reads_matching_goal_collection_only() -> None
     assert goal_find_calls
     assert goal_find_calls[0][1]["participant_user_ids"] == "alice"
     assert not database["users_inventory"].calls
+
+
+def test_mongodb_native_get_goal_for_user_uses_targeted_authorized_query() -> None:
+    database = FakeMongoNativeDatabase()
+    persistence = MongoNativePersistence(mongo_database=database)
+    alice = persistence.upsert_user("alice", "alice@example.com", "Alice", at("2026-06-01T09:00:00"))
+    bob = persistence.upsert_user("bob", "bob@example.com", "Bob", at("2026-06-01T09:00:00"))
+    goal = persistence.create_goal("alice", "Run", "daily", 1, [], 10, now=at("2026-06-01T09:01:00"))
+    database["goals"].calls.clear()
+
+    loaded = persistence.get_goal_for_user(goal["id"], alice["user_id"], now=at("2026-06-01T10:00:00"))
+    denied = persistence.get_goal_for_user(goal["id"], bob["user_id"], now=at("2026-06-01T10:00:00"))
+
+    assert loaded and loaded["id"] == goal["id"]
+    assert denied is None
+    find_calls = [call for call in database["goals"].calls if call[0] == "find_one"]
+    assert find_calls[0][1]["_id"] == goal["id"]
+    assert find_calls[0][1]["participant_user_ids"] == "alice"
 
 
 def test_mongodb_native_leave_goal_retains_history_and_archives_last_participant() -> None:
@@ -2323,6 +2363,34 @@ def test_mongodb_native_cache_can_be_disabled() -> None:
 
     find_calls = [call for call in database["users_inventory"].calls if call[0] == "find_one"]
     assert len(find_calls) == 2
+
+
+def test_mongodb_native_does_not_reinsert_a_read_invalidated_while_loading() -> None:
+    persistence = MongoNativePersistence(
+        mongo_database=FakeMongoNativeDatabase(), cache_ttl_seconds=5
+    )
+    started = Event()
+    release = Event()
+    results = []
+
+    def load_stale_value():
+        started.set()
+        release.wait()
+        return {"version": "stale"}
+
+    thread = Thread(
+        target=lambda: results.append(
+            persistence._read_cached(("race",), load_stale_value)
+        )
+    )
+    thread.start()
+    assert started.wait(timeout=1)
+    persistence._cache_clear()
+    release.set()
+    thread.join(timeout=1)
+
+    assert results == [{"version": "stale"}]
+    assert persistence._cache_get(("race",)) is None
 
 
 def test_mongodb_native_list_goals_uses_cached_targeted_query() -> None:

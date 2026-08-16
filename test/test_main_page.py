@@ -1,6 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 
+from streamlit.testing.v1 import AppTest
+
 from src.pages.health_data_import_page import (
     DEFAULT_SHORTCUT_INSTALL_URL,
     active_health_data_import_goal,
@@ -31,9 +33,13 @@ from src.assistant.stories import default_stories
 from src.assistant.stories.tutorial import TUTORIAL_STORY_ID
 from src.pages.main_page import (
     ONBOARDING_OFFER_DISMISSED_KNOWLEDGE_KEY,
+    GOAL_ACTION_RESULTS_SESSION_KEY,
+    GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY,
+    cleanup_goal_session_state,
     current_user_reaction_emote,
     dismiss_tutorial_offer,
     display_users_for_goal,
+    goal_presentation_data,
     participant_goal_is_completed,
     participant_name_with_progress_html,
     participant_progress_label,
@@ -43,10 +49,149 @@ from src.pages.main_page import (
     queue_site_break_for_goal_hit,
     should_render_balloons_for_goal_hit,
     should_render_site_break_for_goal_hit,
+    submit_goal_progress,
     tutorial_has_never_started,
     visible_participant_ids,
     truncate_participant_name,
 )
+
+
+def test_submit_goal_progress_commits_once_and_stores_returned_goal(monkeypatch) -> None:
+    calls = []
+    session_state = {}
+    updated_goal = {
+        "id": "goal-1",
+        "participants": {"alice": {"current": 4, "target": 10}},
+    }
+    monkeypatch.setattr("src.pages.main_page.st.session_state", session_state)
+    monkeypatch.setattr(
+        "src.pages.main_page.update_goal_progress_with_push",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or updated_goal,
+    )
+    monkeypatch.setattr("src.pages.main_page.get_notification_dispatcher", object)
+
+    submit_goal_progress(
+        object(),
+        {"id": "goal-1"},
+        {"current": 0, "target": 10},
+        "alice",
+        None,
+        None,
+        None,
+        current=4,
+    )
+
+    assert len(calls) == 1
+    assert calls[0][1]["current"] == 4
+    assert calls[0][1]["dispatcher"] is not None
+    assert session_state[GOAL_ACTION_RESULTS_SESSION_KEY]["goal-1"] == updated_goal
+    assert session_state["current_goal-1"] == 4
+
+
+def test_submit_goal_progress_rejects_conflicting_current_sources(monkeypatch) -> None:
+    calls = []
+    session_state = {"current_goal-1": 7}
+    monkeypatch.setattr("src.pages.main_page.st.session_state", session_state)
+    monkeypatch.setattr(
+        "src.pages.main_page.update_goal_progress_with_push",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    submit_goal_progress(
+        object(),
+        {"id": "goal-1"},
+        {"current": 0, "target": 10},
+        "alice",
+        None,
+        None,
+        None,
+        current=4,
+        current_key="current_goal-1",
+    )
+
+    assert calls == []
+
+
+def test_save_callback_reads_the_submitted_number_input_from_session_state() -> None:
+    app = AppTest.from_string(
+        '''
+import streamlit as st
+from src.pages import main_page
+
+def update(*args, **kwargs):
+    st.session_state["persisted_current"] = kwargs["current"]
+    return {
+        "id": "goal-1",
+        "participants": {"alice": {"current": kwargs["current"], "target": 10}},
+    }
+
+main_page.update_goal_progress_with_push = update
+main_page.get_notification_dispatcher = object
+goal = {"id": "goal-1"}
+participant = {"current": 0, "target": 10}
+st.number_input("Current", value=0, key="current_goal_1")
+st.button(
+    "Save",
+    on_click=main_page.submit_goal_progress,
+    args=(object(), goal, participant, "alice", None, None, None),
+    kwargs={"current_key": "current_goal_1"},
+)
+'''
+    ).run()
+
+    app.number_input[0].set_value(7)
+    app.button[0].click().run()
+
+    assert app.session_state["persisted_current"] == 7
+
+
+def test_goal_presentation_snapshot_refreshes_after_ttl_and_cleans_inactive_state(monkeypatch) -> None:
+    class Persistence:
+        def __init__(self) -> None:
+            self.user_calls = 0
+            self.friend_calls = 0
+            self.users = {"alice": {"name": "Alice"}, "charlie": {"name": "Charlie"}}
+            self.friends = [{"user_id": "charlie", "name": "Charlie"}]
+
+        def users_by_ids(self, user_ids):
+            self.user_calls += 1
+            return {user_id: self.users[user_id] for user_id in user_ids if user_id in self.users}
+
+        def list_friends(self, user_id):
+            self.friend_calls += 1
+            return list(self.friends)
+
+    session_state = {
+        GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY: {
+            "goal-1": {
+                "loaded_at": 10.0,
+                "users": {"alice": {"name": "Old Alice"}},
+                "friends": [{"user_id": "bob", "name": "Bob"}],
+            },
+            "inactive": {"loaded_at": 10.0, "users": {}, "friends": []},
+        },
+        "goal_render_generation:inactive": 1,
+    }
+    monkeypatch.setattr("src.pages.main_page.st.session_state", session_state)
+    persistence = Persistence()
+    goal = {"id": "goal-1", "participants": {"alice": {}, "charlie": {}}}
+
+    cached_users, cached_friends = goal_presentation_data(
+        persistence, goal, "alice", current_time=14.9
+    )
+    fresh_users, fresh_friends = goal_presentation_data(
+        persistence, goal, "alice", current_time=15.1
+    )
+    cleanup_goal_session_state({"goal-1"})
+
+    assert cached_users == {"alice": {"name": "Old Alice"}}
+    assert cached_friends[0]["user_id"] == "bob"
+    assert fresh_users["charlie"]["name"] == "Charlie"
+    assert fresh_friends[0]["user_id"] == "charlie"
+    assert persistence.user_calls == 1
+    assert persistence.friend_calls == 1
+    assert "inactive" not in session_state[GOAL_PRESENTATION_SNAPSHOTS_SESSION_KEY]
+    assert "goal_render_generation:inactive" not in session_state
 
 
 def test_standard_reaction_emotes_exclude_remove_and_include_rocket() -> None:
@@ -717,8 +862,8 @@ def test_main_page_uses_viewport_render_paths() -> None:
     assert "def main_render_path" not in content
     assert "@st.fragment" in content
     assert "def render_goal_card(" in content
-    assert "def _current_goal_for_user(" in content
-    assert '_current_goal_for_user(persistence, goal_id, user_id, now=now)' in content
+    assert "def _current_goal_for_user(" not in content
+    assert "persistence.get_goal_for_user(goal_id, user_id, now=now)" in content
     assert 'render_path = "widescreen"' in content
     assert 'viewport.get("renderPath") == "widescreen"' in content
     assert "def render_goal_actions(" in content
@@ -753,6 +898,9 @@ def test_main_page_goal_actions_use_fragment_scoped_reruns() -> None:
     assert 'st.rerun(scope="fragment")' in content
     assert 'st.rerun(scope="app")' in content
     assert "st.rerun()" not in content
+    actions = content[content.index("def render_goal_actions("):content.index("def render_participant_progress(")]
+    assert "on_click=submit_goal_progress" in actions
+    assert 'st.rerun(scope="fragment")' not in actions
 
 
 def test_main_page_site_break_stops_after_the_goal_header() -> None:

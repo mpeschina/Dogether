@@ -770,6 +770,19 @@ class DocumentPersistence:
             ]
         return sorted(goals, key=lambda goal: goal["created_at"])
 
+    def get_goal_for_user(
+        self,
+        goal_id: str,
+        user_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        self.rollover_periods(now)
+        with self._lock:
+            goal = self._read()["goals"].get(goal_id)
+            if not goal or not _goal_active_for_user(goal, user_id):
+                return None
+            return copy.deepcopy(goal)
+
     def list_goal_history_for_user(self, user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
         """Return active and departed goals whose history belongs to a user."""
         self.rollover_periods(now)
@@ -921,7 +934,6 @@ class DocumentPersistence:
                     "completed_by_user_id": user_id,
                     "day": today_key,
                 }
-            _refresh_activity_day(data, user_id, now_dt.date())
             self._write(data)
             result = copy.deepcopy(goal)
             if notification_event:
