@@ -21,6 +21,7 @@ from src.assistant.triggers import (
 
 
 CELEBRATION_STORY_PREFIX: Final = "celebration"
+MIN_CELEBRATION_STARS: Final = 5
 ANY_TRIGGERED_STORY_SPACING: Final = timedelta(hours=28)
 CELEBRATION_WAIT: Final = timedelta(days=12)
 DEFER_CHOICE_ID: Final = "not_now"
@@ -719,6 +720,8 @@ def _lines(*messages: str, context: AssistantContext) -> tuple[AssistantLine, ..
 
 
 def _has_progress_to_celebrate(context: AssistantContext) -> bool:
+    if context.state.stars < MIN_CELEBRATION_STARS:
+        return False
     created_at = _aware_datetime(context.current_user.get("created_at"))
     if created_at is None or _now(context) < created_at.astimezone(timezone.utc) + CELEBRATION_WAIT:
         return False
